@@ -24,6 +24,7 @@ import {
   Palette,
   Copy,
   FolderInput,
+  FileDown,
 } from 'lucide-react';
 import { MorphIcon } from 'morphicons/react';
 import { ChevronDown, ChevronRight, PanelLeftClose } from 'lucide';
@@ -2151,6 +2152,22 @@ export const NotesSidebar: React.FC<NotesSidebarProps> = ({
                 >
                   <Copy className="w-3.5 h-3.5 text-veyra-subtle shrink-0" />
                   <span>Duplicar nota</span>
+                </button>
+              )}
+
+              {/* Abrir para exportar a PDF */}
+              {activeView !== 'trash' && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const targetNote = contextMenu.target?.type === 'note' ? contextMenu.target.note : null;
+                    closeContextMenu();
+                    if (targetNote) onSelectNote(targetNote.id);
+                  }}
+                  className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded hover:bg-white/5 text-left transition-colors cursor-pointer"
+                >
+                  <FileDown className="w-3.5 h-3.5 text-accent shrink-0" />
+                  <span>Exportar a PDF</span>
                 </button>
               )}
 

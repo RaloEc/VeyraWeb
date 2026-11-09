@@ -115,11 +115,27 @@ export function useEvents(userId?: string) {
       end_time_ms: number;
       location?: string;
       color?: string;
-      note_id?: string;
-    }) => {
+      note_id?: string | null;
+      folder_id?: string | null;
+      is_all_day?: boolean;
+      all_day_date?: string | null;
+      timezone?: string | null;
+      repeat_rule?: string | null;
+      recurrence_rule?: string | null;
+      is_birthday_like?: boolean;
+      notification_offset_min?: number | null;
+      notification_offsets?: string | null;
+      tags?: string[] | string | null;
+    }): Promise<string | undefined> => {
       if (!userId) return;
       const newId = crypto.randomUUID();
       const nowMs = Date.now();
+
+      const tagsFormatted = Array.isArray(payload.tags)
+        ? JSON.stringify(payload.tags)
+        : typeof payload.tags === 'string'
+        ? payload.tags
+        : null;
 
       const newEvent: CalendarEvent = {
         id: newId,
@@ -128,15 +144,17 @@ export function useEvents(userId?: string) {
         description: payload.description?.trim() || null,
         start_time_ms: payload.start_time_ms,
         end_time_ms: payload.end_time_ms,
-        repeat_rule: null,
+        repeat_rule: payload.repeat_rule || null,
+        recurrence_rule: payload.recurrence_rule || null,
         location: payload.location?.trim() || null,
-        color: payload.color || '#10b981',
+        color: payload.color || '#3B82F6',
         note_id: payload.note_id || null,
+        folder_id: payload.folder_id || null,
         deleted: 0,
-        tags: null,
-        is_all_day: false,
-        all_day_date: null,
-        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
+        tags: tagsFormatted,
+        is_all_day: Boolean(payload.is_all_day),
+        all_day_date: payload.all_day_date || null,
+        timezone: payload.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
         created_at_ms: nowMs,
         updated_at_ms: nowMs,
         last_modified_ms: nowMs,
@@ -145,12 +163,18 @@ export function useEvents(userId?: string) {
       setEvents((prev) => [...prev, newEvent].sort((a, b) => a.start_time_ms - b.start_time_ms));
 
       try {
-        const { error } = await supabase.from('events').insert(newEvent);
+        const { error } = await supabase.from('events').insert({
+          ...newEvent,
+          is_birthday_like: payload.is_birthday_like ? 1 : 0,
+          notification_offset_min: payload.notification_offset_min ?? null,
+          notification_offsets: payload.notification_offsets ?? null,
+        });
         if (error) {
           console.error('[useEvents] Insert error:', error);
           setEvents((prev) => prev.filter((e) => e.id !== newId));
           throw error;
         }
+        return newId;
       } catch (err) {
         console.error('[useEvents] Exception inserting:', err);
         throw err;

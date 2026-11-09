@@ -20,6 +20,8 @@ import { useEvents } from '../../hooks/useEvents';
 import { ReminderCard } from '../reminders/ReminderCard';
 import { EventCard } from '../reminders/EventCard';
 import { AgendaQuickPreview } from '../agenda/AgendaQuickPreview';
+import { ReminderModal } from '../reminders/ReminderModal';
+import { EventModal } from '../agenda/EventModal';
 
 export type AgendaFilter = 'all' | 'reminders' | 'events';
 
@@ -62,16 +64,12 @@ export const AgendaSidebarView: React.FC<AgendaSidebarViewProps> = ({
 
   const isViewingNote = Boolean(selectedNoteId);
 
-  // Modal for creating new item
-  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
-  const [createType, setCreateType] = useState<'reminder' | 'event'>('reminder');
-  const [newTitle, setNewTitle] = useState('');
-  const [newTime, setNewTime] = useState('12:00');
-  const [newPriority, setNewPriority] = useState<number>(2); // Media
-  const [newLocation, setNewLocation] = useState('Google Meet');
-  const [newLinkedNoteId, setNewLinkedNoteId] = useState<string>('');
-  const [newEventColor, setNewEventColor] = useState<string>('#3B82F6');
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  // Modals for creating / editing items
+  const [isReminderModalOpen, setIsReminderModalOpen] = useState(false);
+  const [editingReminder, setEditingReminder] = useState<Reminder | null>(null);
+  const [isEventModalOpen, setIsEventModalOpen] = useState(false);
+  const [editingEvent, setEditingEvent] = useState<CalendarEvent | null>(null);
+  const [isTypeSelectorOpen, setIsTypeSelectorOpen] = useState(false);
 
   // Real Database Reminders & Events
   const reminders = remindersHook?.reminders || [];
@@ -83,6 +81,103 @@ export const AgendaSidebarView: React.FC<AgendaSidebarViewProps> = ({
   const todayEvents = eventsHook?.todayEvents || [];
   const upcomingEvents = eventsHook?.upcomingEvents || [];
   const pastEvents = eventsHook?.pastEvents || [];
+
+  // Handlers for Saving
+  const handleSaveReminder = async (payload: {
+    id?: string;
+    title: string;
+    description?: string;
+    due_date_ms: number;
+    priority?: ReminderPriority;
+    control_level?: ReminderControlLevel;
+    subtasks?: any[];
+    repeat_rule?: string | null;
+    attachments?: string | null;
+  }) => {
+    if (payload.id) {
+      await remindersHook?.updateReminder(payload.id, {
+        title: payload.title,
+        description: payload.description,
+        due_date_ms: payload.due_date_ms,
+        priority: payload.priority,
+        control_level: payload.control_level,
+        subtasks: payload.subtasks,
+        repeat_rule: payload.repeat_rule,
+        attachments: payload.attachments,
+      });
+    } else {
+      await remindersHook?.createReminder({
+        title: payload.title,
+        description: payload.description,
+        due_date_ms: payload.due_date_ms,
+        priority: payload.priority,
+        control_level: payload.control_level,
+        subtasks: payload.subtasks,
+        repeat_rule: payload.repeat_rule,
+        attachments: payload.attachments,
+      });
+    }
+  };
+
+  const handleSaveEvent = async (payload: {
+    id?: string;
+    title: string;
+    description?: string;
+    start_time_ms: number;
+    end_time_ms: number;
+    location?: string;
+    color?: string;
+    is_all_day?: boolean;
+    all_day_date?: string | null;
+    timezone?: string;
+    tags?: string[] | null;
+    repeat_rule?: string | null;
+    recurrence_rule?: string | null;
+    is_birthday_like?: boolean;
+    notification_offset_min?: number | null;
+    notification_offsets?: string | null;
+    note_id?: string | null;
+  }) => {
+    if (payload.id) {
+      await eventsHook?.updateEvent(payload.id, {
+        title: payload.title,
+        description: payload.description,
+        start_time_ms: payload.start_time_ms,
+        end_time_ms: payload.end_time_ms,
+        location: payload.location,
+        color: payload.color,
+        is_all_day: payload.is_all_day,
+        all_day_date: payload.all_day_date,
+        timezone: payload.timezone,
+        tags: payload.tags,
+        repeat_rule: payload.repeat_rule,
+        recurrence_rule: payload.recurrence_rule,
+        is_birthday_like: payload.is_birthday_like ? 1 : 0,
+        notification_offset_min: payload.notification_offset_min,
+        notification_offsets: payload.notification_offsets,
+        note_id: payload.note_id,
+      });
+    } else {
+      await eventsHook?.createEvent({
+        title: payload.title,
+        description: payload.description,
+        start_time_ms: payload.start_time_ms,
+        end_time_ms: payload.end_time_ms,
+        location: payload.location,
+        color: payload.color,
+        is_all_day: payload.is_all_day,
+        all_day_date: payload.all_day_date,
+        timezone: payload.timezone,
+        tags: payload.tags,
+        repeat_rule: payload.repeat_rule,
+        recurrence_rule: payload.recurrence_rule,
+        is_birthday_like: payload.is_birthday_like,
+        notification_offset_min: payload.notification_offset_min,
+        notification_offsets: payload.notification_offsets,
+        note_id: payload.note_id,
+      });
+    }
+  };
 
   // Helper to find linked note for a reminder
   const getLinkedNote = (reminder: Reminder): Note | undefined => {
@@ -156,47 +251,7 @@ export const AgendaSidebarView: React.FC<AgendaSidebarViewProps> = ({
     }
   };
 
-  // Action: Create Reminder or Event in Supabase
-  const handleCreateSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newTitle.trim()) return;
 
-    setIsSubmitting(true);
-    try {
-      const now = new Date();
-      const [hours, mins] = newTime.split(':').map(Number);
-      const dueDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), hours || 12, mins || 0);
-
-      if (createType === 'reminder') {
-        if (remindersHook) {
-          await remindersHook.createReminder({
-            title: newTitle.trim(),
-            due_date_ms: dueDate.getTime(),
-            priority: newPriority as ReminderPriority,
-            control_level: (newPriority === 3 ? 'critical' : newPriority === 2 ? 'strict' : 'normal') as ReminderControlLevel,
-          });
-        }
-      } else {
-        if (eventsHook) {
-          await eventsHook.createEvent({
-            title: newTitle.trim(),
-            start_time_ms: dueDate.getTime(),
-            end_time_ms: dueDate.getTime() + 60 * 60 * 1000,
-            location: newLocation,
-            color: newEventColor,
-            note_id: newLinkedNoteId || undefined,
-          });
-        }
-      }
-
-      setNewTitle('');
-      setIsCreateModalOpen(false);
-    } catch (err) {
-      console.error('[Agenda] Create error:', err);
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
 
   // Search filter
   const q = search.trim().toLowerCase();
@@ -445,8 +500,15 @@ export const AgendaSidebarView: React.FC<AgendaSidebarViewProps> = ({
         <button
           type="button"
           onClick={() => {
-            setCreateType(filter === 'events' ? 'event' : 'reminder');
-            setIsCreateModalOpen(true);
+            if (filter === 'events') {
+              setEditingEvent(null);
+              setIsEventModalOpen(true);
+            } else if (filter === 'reminders') {
+              setEditingReminder(null);
+              setIsReminderModalOpen(true);
+            } else {
+              setIsTypeSelectorOpen(true);
+            }
           }}
           title={
             filter === 'events'
@@ -520,8 +582,8 @@ export const AgendaSidebarView: React.FC<AgendaSidebarViewProps> = ({
                 <button
                   type="button"
                   onClick={() => {
-                    setCreateType('reminder');
-                    setIsCreateModalOpen(true);
+                    setEditingReminder(null);
+                    setIsReminderModalOpen(true);
                   }}
                   className="mt-1 px-3 py-1 rounded-md bg-accent text-white text-xs font-semibold hover:opacity-90 transition-opacity cursor-pointer"
                 >
@@ -694,8 +756,8 @@ export const AgendaSidebarView: React.FC<AgendaSidebarViewProps> = ({
                 <button
                   type="button"
                   onClick={() => {
-                    setCreateType('event');
-                    setIsCreateModalOpen(true);
+                    setEditingEvent(null);
+                    setIsEventModalOpen(true);
                   }}
                   className="mt-1 px-3 py-1 rounded-md bg-accent text-white text-xs font-semibold hover:opacity-90 transition-opacity cursor-pointer"
                 >
@@ -798,194 +860,90 @@ export const AgendaSidebarView: React.FC<AgendaSidebarViewProps> = ({
         </button>
       </div>
 
-      {/* Modal / Popover de Creación Rápida */}
-      {isCreateModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in duration-150">
-          <div className="w-full max-w-sm bg-veyra-card border border-veyra-border rounded-xl p-5 shadow-elevated">
-            <div className="flex items-center justify-between pb-3 border-b border-veyra-border mb-4">
-              <h3 className="font-bold text-sm text-veyra-text">Nuevo Registro de Agenda</h3>
+      {/* Modal Selector de Tipo si filter === 'all' */}
+      {isTypeSelectorOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-xs p-4 animate-in fade-in duration-150">
+          <div className="w-full max-w-xs bg-veyra-card border border-veyra-border rounded-xl p-4 shadow-elevated">
+            <div className="flex items-center justify-between pb-2 border-b border-veyra-border mb-3">
+              <h3 className="font-bold text-xs text-veyra-text tracking-tight">
+                ¿Qué deseas registrar?
+              </h3>
               <button
                 type="button"
-                onClick={() => setIsCreateModalOpen(false)}
+                onClick={() => setIsTypeSelectorOpen(false)}
                 className="p-1 rounded text-veyra-subtle hover:text-veyra-text cursor-pointer"
               >
-                <X className="w-4 h-4" />
+                <X className="w-3.5 h-3.5" />
               </button>
             </div>
 
-            <form onSubmit={handleCreateSubmit} className="space-y-3.5">
-              {/* Type selector */}
-              <div className="grid grid-cols-2 gap-1 p-0.5 rounded-lg bg-veyra-elevated border border-veyra-border text-xs">
-                <button
-                  type="button"
-                  onClick={() => setCreateType('reminder')}
-                  className={cn(
-                    'py-1 rounded font-medium transition-colors cursor-pointer',
-                    createType === 'reminder'
-                      ? 'bg-accent/20 text-accent font-semibold'
-                      : 'text-veyra-muted'
-                  )}
-                >
-                  Recordatorio / Tarea
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setCreateType('event')}
-                  className={cn(
-                    'py-1 rounded font-medium transition-colors cursor-pointer',
-                    createType === 'event'
-                      ? 'bg-emerald-500/20 text-emerald-400 font-semibold'
-                      : 'text-veyra-muted'
-                  )}
-                >
-                  Evento / Reunión
-                </button>
-              </div>
-
-              {/* Title input */}
-              <div>
-                <label className="block text-[11px] font-medium text-veyra-muted mb-1">
-                  Título
-                </label>
-                <input
-                  type="text"
-                  required
-                  placeholder={
-                    createType === 'reminder'
-                      ? 'Ej. Enviar propuesta a Marketing'
-                      : 'Ej. Sync con equipo de diseño'
-                  }
-                  value={newTitle}
-                  onChange={(e) => setNewTitle(e.target.value)}
-                  className="w-full bg-veyra-elevated border border-veyra-border rounded-lg px-3 py-1.5 text-xs text-veyra-text placeholder:text-veyra-subtle focus:border-accent outline-none"
-                />
-              </div>
-
-              {/* Time & Priority / Location */}
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="block text-[11px] font-medium text-veyra-muted mb-1">
-                    Hora
-                  </label>
-                  <input
-                    type="time"
-                    value={newTime}
-                    onChange={(e) => setNewTime(e.target.value)}
-                    className="w-full bg-veyra-elevated border border-veyra-border rounded-lg px-2.5 py-1.5 text-xs text-veyra-text focus:border-accent outline-none font-mono"
-                  />
+            <div className="space-y-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsTypeSelectorOpen(false);
+                  setEditingReminder(null);
+                  setIsReminderModalOpen(true);
+                }}
+                className="w-full p-2.5 rounded-lg border border-veyra-border bg-veyra-elevated/50 hover:bg-accent/10 hover:border-accent/40 text-left transition-all cursor-pointer group flex items-start gap-2.5"
+              >
+                <div className="w-7 h-7 rounded-md bg-accent/15 flex items-center justify-center text-accent shrink-0 group-hover:scale-105 transition-transform">
+                  <Clock className="w-3.5 h-3.5" />
                 </div>
-
-                {createType === 'reminder' ? (
-                  <div>
-                    <label className="block text-[11px] font-medium text-veyra-muted mb-1">
-                      Prioridad
-                    </label>
-                    <select
-                      value={newPriority}
-                      onChange={(e) => setNewPriority(Number(e.target.value))}
-                      className="w-full bg-veyra-elevated border border-veyra-border rounded-lg px-2 py-1.5 text-xs text-veyra-text focus:border-accent outline-none"
-                    >
-                      <option value={3}>Alta</option>
-                      <option value={2}>Media</option>
-                      <option value={1}>Baja</option>
-                    </select>
-                  </div>
-                ) : (
-                  <div>
-                    <label className="block text-[11px] font-medium text-veyra-muted mb-1">
-                      Plataforma
-                    </label>
-                    <input
-                      type="text"
-                      value={newLocation}
-                      onChange={(e) => setNewLocation(e.target.value)}
-                      placeholder="Google Meet"
-                      className="w-full bg-veyra-elevated border border-veyra-border rounded-lg px-2.5 py-1.5 text-xs text-veyra-text focus:border-accent outline-none"
-                    />
-                  </div>
-                )}
-              </div>
-
-              {/* Color selector for events */}
-              {createType === 'event' && (
                 <div>
-                  <label className="block text-[11px] font-medium text-veyra-muted mb-1.5">
-                    Color de Acento del Evento
-                  </label>
-                  <div className="flex items-center gap-2">
-                    {[
-                      { label: 'Azul', value: '#3B82F6' },
-                      { label: 'Esmeralda', value: '#10B981' },
-                      { label: 'Violeta', value: '#8B5CF6' },
-                      { label: 'Ámbar', value: '#F59E0B' },
-                      { label: 'Rosa', value: '#EC4899' },
-                      { label: 'Rojo', value: '#EF4444' },
-                      { label: 'Cian', value: '#06B6D4' },
-                    ].map((c) => (
-                      <button
-                        key={c.value}
-                        type="button"
-                        onClick={() => setNewEventColor(c.value)}
-                        title={c.label}
-                        style={{ backgroundColor: c.value }}
-                        className={cn(
-                          'w-5 h-5 rounded-full transition-all cursor-pointer flex items-center justify-center shrink-0',
-                          newEventColor === c.value
-                            ? 'ring-2 ring-white ring-offset-2 ring-offset-[#1C1F26] scale-110'
-                            : 'opacity-70 hover:opacity-100 hover:scale-105'
-                        )}
-                      >
-                        {newEventColor === c.value && (
-                          <span className="text-[10px] text-white font-bold leading-none">✓</span>
-                        )}
-                      </button>
-                    ))}
+                  <div className="text-xs font-semibold text-veyra-text group-hover:text-accent transition-colors">
+                    Recordatorio / Tarea
+                  </div>
+                  <div className="text-[10px] text-veyra-subtle mt-0.5 leading-tight">
+                    Alarmas, niveles de control, repetición y subtareas
                   </div>
                 </div>
-              )}
+              </button>
 
-              {/* Link to note selector */}
-              {allNotes.length > 0 && (
-                <div>
-                  <label className="block text-[11px] font-medium text-veyra-muted mb-1">
-                    Vincular a una Nota (Opcional)
-                  </label>
-                  <select
-                    value={newLinkedNoteId}
-                    onChange={(e) => setNewLinkedNoteId(e.target.value)}
-                    className="w-full bg-veyra-elevated border border-veyra-border rounded-lg px-2.5 py-1.5 text-xs text-veyra-text focus:border-accent outline-none"
-                  >
-                    <option value="">Sin nota vinculada</option>
-                    {allNotes.map((n) => (
-                      <option key={n.id} value={n.id}>
-                        {n.title || 'Nota sin título'}
-                      </option>
-                    ))}
-                  </select>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsTypeSelectorOpen(false);
+                  setEditingEvent(null);
+                  setIsEventModalOpen(true);
+                }}
+                className="w-full p-2.5 rounded-lg border border-veyra-border bg-veyra-elevated/50 hover:bg-emerald-500/10 hover:border-emerald-500/40 text-left transition-all cursor-pointer group flex items-start gap-2.5"
+              >
+                <div className="w-7 h-7 rounded-md bg-emerald-500/15 flex items-center justify-center text-emerald-400 shrink-0 group-hover:scale-105 transition-transform">
+                  <Calendar className="w-3.5 h-3.5" />
                 </div>
-              )}
-
-              {/* Actions */}
-              <div className="pt-2 flex justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={() => setIsCreateModalOpen(false)}
-                  className="px-3 py-1.5 rounded-lg border border-veyra-border text-veyra-muted hover:text-veyra-text text-xs"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  disabled={isSubmitting}
-                  className="px-3.5 py-1.5 rounded-lg bg-accent text-white font-medium hover:opacity-90 text-xs shadow-sm"
-                >
-                  {isSubmitting ? 'Guardando...' : 'Crear en Supabase'}
-                </button>
-              </div>
-            </form>
+                <div>
+                  <div className="text-xs font-semibold text-veyra-text group-hover:text-emerald-400 transition-colors">
+                    Evento / Reunión
+                  </div>
+                  <div className="text-[10px] text-veyra-subtle mt-0.5 leading-tight">
+                    Horario, Meet/Zoom, avisos previos y notas
+                  </div>
+                </div>
+              </button>
+            </div>
           </div>
         </div>
       )}
+
+      {/* Modal de Recordatorios Completo (Congruente con Android) */}
+      <ReminderModal
+        isOpen={isReminderModalOpen}
+        onClose={() => setIsReminderModalOpen(false)}
+        reminder={editingReminder}
+        onSave={handleSaveReminder}
+        onDelete={(id) => remindersHook?.deleteReminder(id)}
+      />
+
+      {/* Modal de Eventos Completo (Congruente con Android) */}
+      <EventModal
+        isOpen={isEventModalOpen}
+        onClose={() => setIsEventModalOpen(false)}
+        event={editingEvent}
+        allNotes={allNotes}
+        onSave={handleSaveEvent}
+        onDelete={(id) => eventsHook?.deleteEvent(id)}
+      />
 
       {/* Floating Quick Preview Tooltip when viewing a note */}
       {previewObject && previewItem && (

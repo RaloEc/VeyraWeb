@@ -33,9 +33,10 @@ import { cn } from '../../lib/utils';
 import type { Note, CollabUser, Folder, NoteContentPaginated, NotePage } from '../../types/notes';
 import type { CalendarEvent } from '../../hooks/useEvents';
 import { getEventCategoryTag } from './NotesSidebar';
-import { Loader2, Plus, ChevronLeft, ChevronRight, PanelLeft, X, Layers, GraduationCap, Folder as FolderIcon, Calendar } from 'lucide-react';
+import { Loader2, Plus, ChevronLeft, ChevronRight, PanelLeft, X, Layers, GraduationCap, Folder as FolderIcon, Calendar, FileDown } from 'lucide-react';
 import { useTheme } from '../../theme/ThemeProvider';
 import { PagesSidebar } from './PagesSidebar';
+import { ExportPdfModal } from './pdf/ExportPdfModal';
 
 export interface NoteEditorProps {
   note: Note | null;
@@ -269,6 +270,50 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
       content: JSON.stringify(paginated),
       previewText: preview,
     };
+  }, [ydoc]);
+
+  const [isExportPdfOpen, setIsExportPdfOpen] = useState(false);
+  const [exportPdfPages, setExportPdfPages] = useState<NotePage[]>([]);
+
+  const handleOpenExportPdf = useCallback(() => {
+    const currentEditor = editorRef.current;
+    const currentActiveId = activePageIdRef.current;
+    if (
+      currentEditor &&
+      !currentEditor.isDestroyed &&
+      currentEditor.view &&
+      currentActiveId
+    ) {
+      try {
+        pageHtmlCacheRef.current.set(currentActiveId, currentEditor.getHTML());
+      } catch {
+        // ignore
+      }
+    }
+
+    const po = ydoc.getArray<string>('pageOrder');
+    const order = po.toArray();
+    const currentPages = order.length > 0 ? order : pagesRef.current;
+
+    const pagesData: NotePage[] = currentPages.map((pid) => {
+      let pageHtml = pageHtmlCacheRef.current.get(pid);
+      if (!pageHtml) {
+        try {
+          const fragKey = resolvePageFragmentName(ydoc, pid);
+          const frag = ydoc.getXmlFragment(fragKey);
+          pageHtml = yFragmentToHtml(frag);
+        } catch {
+          pageHtml = '<p></p>';
+        }
+      }
+      return {
+        id: pid,
+        content: pageHtml || '<p></p>',
+      };
+    });
+
+    setExportPdfPages(pagesData);
+    setIsExportPdfOpen(true);
   }, [ydoc]);
 
   const performSave = useCallback(async () => {
@@ -1049,6 +1094,17 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
             </span>
           </button>
 
+          {/* Export to PDF Button */}
+          <button
+            type="button"
+            onClick={handleOpenExportPdf}
+            title="Exportar a PDF / Imprimir nota (Formato Word)"
+            className="flex items-center gap-1.5 px-2.5 py-0.5 rounded text-xs transition-colors cursor-pointer border bg-white/5 border-veyra-border text-veyra-muted hover:text-veyra-text hover:bg-white/10"
+          >
+            <FileDown className="w-3.5 h-3.5 text-accent" />
+            <span className="hidden sm:inline font-medium">Exportar PDF</span>
+          </button>
+
           {onCloseNote && (
             <>
               <div className="w-[1px] h-3.5 bg-veyra-border mx-0.5" />
@@ -1130,6 +1186,14 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
           </div>
         </div>
       </div>
+
+      {/* Export to PDF Modal with Word Page Layout Controls */}
+      <ExportPdfModal
+        isOpen={isExportPdfOpen}
+        onClose={() => setIsExportPdfOpen(false)}
+        title={title || note.title || 'Nota sin título'}
+        pages={exportPdfPages}
+      />
     </div>
   );
 };

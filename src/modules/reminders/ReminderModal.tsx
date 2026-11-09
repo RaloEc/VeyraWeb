@@ -1,10 +1,33 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Modal } from '../../components/common/Modal';
 import { Input } from '../../components/common/Input';
 import { Button } from '../../components/common/Button';
-import { Plus, X, ListPlus } from 'lucide-react';
+import {
+  Bell,
+  AlertCircle,
+  ShieldAlert,
+  Calendar as CalendarIcon,
+  Repeat,
+  CheckSquare,
+  Paperclip,
+  Trash2,
+  Plus,
+  X,
+  ChevronDown,
+  Sliders,
+  Check,
+  Link as LinkIcon,
+  FileText,
+  ExternalLink,
+} from 'lucide-react';
 import type { Reminder, ReminderPriority, ReminderControlLevel, Subtask } from '../../types/reminders';
-import { parseSubtasks } from '../../lib/utils';
+import { parseSubtasks, cn } from '../../lib/utils';
+import { uploadNoteImage } from '../../lib/storage-upload';
+
+export interface ReminderAttachment {
+  uri: string;
+  name: string;
+}
 
 export interface ReminderModalProps {
   isOpen: boolean;
@@ -18,36 +41,109 @@ export interface ReminderModalProps {
     priority?: ReminderPriority;
     control_level?: ReminderControlLevel;
     subtasks?: Subtask[];
+    repeat_rule?: string | null;
+    attachments?: string | null;
+    links?: string | null;
   }) => Promise<void>;
+  onDelete?: (id: string) => Promise<void> | void;
 }
+
+type RecurrenceType = 'none' | 'daily' | 'weekly' | 'weekdays' | 'monthly' | 'yearly';
+
+const WEEKDAYS = [
+  { label: 'L', name: 'Lun', day: 1 },
+  { label: 'M', name: 'Mar', day: 2 },
+  { label: 'M', name: 'Mié', day: 3 },
+  { label: 'J', name: 'Jue', day: 4 },
+  { label: 'V', name: 'Vie', day: 5 },
+  { label: 'S', name: 'Sáb', day: 6 },
+  { label: 'D', name: 'Dom', day: 0 },
+];
 
 export const ReminderModal: React.FC<ReminderModalProps> = ({
   isOpen,
   onClose,
   reminder,
   onSave,
+  onDelete,
 }) => {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [dateStr, setDateStr] = useState('');
   const [timeStr, setTimeStr] = useState('12:00');
   const [controlLevel, setControlLevel] = useState<ReminderControlLevel>('normal');
+
+  // Advanced options state
+  const [isAdvancedOpen, setIsAdvancedOpen] = useState(false);
+  const [recurrenceType, setRecurrenceType] = useState<RecurrenceType>('none');
+  const [selectedDays, setSelectedDays] = useState<number[]>([1]); // Monday default for weekly
   const [subtasks, setSubtasks] = useState<Subtask[]>([]);
   const [newSubtaskTitle, setNewSubtaskTitle] = useState('');
+  const [attachments, setAttachments] = useState<ReminderAttachment[]>([]);
+  const [linkInput, setLinkInput] = useState('');
+  const [showAddLinkForm, setShowAddLinkForm] = useState(false);
+
+  const [isUploading, setIsUploading] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const notesInputRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     if (reminder) {
-      setTitle(reminder.title);
+      setTitle(reminder.title || '');
       setDescription(reminder.description || '');
       const d = new Date(reminder.due_date_ms);
       setDateStr(d.toISOString().split('T')[0]);
       setTimeStr(d.toTimeString().substring(0, 5));
-      setControlLevel(reminder.control_level || (reminder.priority === 3 ? 'critical' : reminder.priority === 2 ? 'strict' : 'normal'));
+      setControlLevel(
+        reminder.control_level ||
+          (reminder.priority === 3 ? 'critical' : reminder.priority === 2 ? 'strict' : 'normal')
+      );
       setSubtasks(parseSubtasks(reminder.subtasks));
+
+      // Parse recurrence
+      const rawRule = reminder.repeat_rule || '';
+      let parsedRecurrence: RecurrenceType = 'none';
+      if (rawRule) {
+        try {
+          const parsed = JSON.parse(rawRule);
+          if (parsed.type) parsedRecurrence = parsed.type;
+          if (Array.isArray(parsed.days)) setSelectedDays(parsed.days);
+          else if (Array.isArray(parsed.by_weekday)) setSelectedDays(parsed.by_weekday);
+        } catch {
+          if (rawRule.includes('daily') || rawRule.includes('diario')) parsedRecurrence = 'daily';
+          else if (rawRule.includes('weekdays')) parsedRecurrence = 'weekdays';
+          else if (rawRule.includes('weekly') || rawRule.includes('semanal')) parsedRecurrence = 'weekly';
+          else if (rawRule.includes('monthly') || rawRule.includes('mensual')) parsedRecurrence = 'monthly';
+          else if (rawRule.includes('yearly') || rawRule.includes('anual')) parsedRecurrence = 'yearly';
+        }
+      }
+      setRecurrenceType(parsedRecurrence);
+
+      // Parse attachments
+      if (reminder.attachments) {
+        try {
+          const parsed = JSON.parse(reminder.attachments);
+          setAttachments(Array.isArray(parsed) ? parsed : []);
+        } catch {
+          setAttachments([]);
+        }
+      } else {
+        setAttachments([]);
+      }
+
+      // Auto-open advanced options if reminder has active advanced settings
+      const hasAdvanced =
+        parsedRecurrence !== 'none' ||
+        (reminder.subtasks && parseSubtasks(reminder.subtasks).length > 0) ||
+        Boolean(reminder.attachments);
+      setIsAdvancedOpen(Boolean(hasAdvanced));
     } else {
-      // Default to today + 2 hours
+      // Default new reminder: today + 2 hours
       const now = new Date();
       now.setHours(now.getHours() + 2);
       setDateStr(now.toISOString().split('T')[0]);
@@ -56,13 +152,64 @@ export const ReminderModal: React.FC<ReminderModalProps> = ({
       setDescription('');
       setControlLevel('normal');
       setSubtasks([]);
+      setAttachments([]);
+      setRecurrenceType('none');
+      setSelectedDays([new Date().getDay()]);
+      setIsAdvancedOpen(false);
     }
     setNewSubtaskTitle('');
+    setLinkInput('');
+    setShowAddLinkForm(false);
+    setShowDeleteConfirm(false);
     setError(null);
   }, [reminder, isOpen]);
 
-  const handleAddSubtask = (e: React.FormEvent) => {
-    e.preventDefault();
+  // Color dynamic tokens based on controlLevel
+  const priorityTheme = useMemo(() => {
+    switch (controlLevel) {
+      case 'critical':
+        return {
+          color: '#EF4444',
+          bg: 'rgba(239, 68, 68, 0.12)',
+          border: 'rgba(239, 68, 68, 0.35)',
+          label: 'CRÍTICO',
+          desc: 'Alarma máxima con sonido continuo hasta confirmar',
+          icon: ShieldAlert,
+        };
+      case 'strict':
+        return {
+          color: '#F59E0B',
+          bg: 'rgba(245, 158, 11, 0.12)',
+          border: 'rgba(245, 158, 11, 0.35)',
+          label: 'ESTRICTO',
+          desc: 'Alarma persistente e insistente que repite periódicamente',
+          icon: AlertCircle,
+        };
+      case 'normal':
+      default:
+        return {
+          color: '#64748B',
+          bg: 'rgba(100, 116, 139, 0.12)',
+          border: 'rgba(100, 116, 139, 0.35)',
+          label: 'NORMAL',
+          desc: 'Notificación estándar para tareas habituales',
+          icon: Bell,
+        };
+    }
+  }, [controlLevel]);
+
+  // Count active advanced options
+  const activeAdvancedCount = useMemo(() => {
+    let count = 0;
+    if (recurrenceType !== 'none') count++;
+    if (subtasks.length > 0) count++;
+    if (attachments.length > 0) count++;
+    return count;
+  }, [recurrenceType, subtasks, attachments]);
+
+  // Subtasks actions
+  const handleAddSubtask = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
     if (!newSubtaskTitle.trim()) return;
     const newItem: Subtask = {
       id: 'st-' + Math.random().toString(36).substring(2, 9),
@@ -73,10 +220,70 @@ export const ReminderModal: React.FC<ReminderModalProps> = ({
     setNewSubtaskTitle('');
   };
 
+  const handleToggleSubtask = (id: string) => {
+    setSubtasks(
+      subtasks.map((st) => (st.id === id ? { ...st, completed: !st.completed } : st))
+    );
+  };
+
   const handleRemoveSubtask = (id: string) => {
     setSubtasks(subtasks.filter((s) => s.id !== id));
   };
 
+  // Recurrence weekday toggle
+  const toggleWeekday = (dayNum: number) => {
+    if (selectedDays.includes(dayNum)) {
+      if (selectedDays.length > 1) {
+        setSelectedDays(selectedDays.filter((d) => d !== dayNum));
+      }
+    } else {
+      setSelectedDays([...selectedDays, dayNum].sort());
+    }
+  };
+
+  // Attachments handlers
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      setIsUploading(true);
+      setError(null);
+      let uri = '';
+      try {
+        uri = await uploadNoteImage(file);
+      } catch {
+        // Fallback to local Object URL / base64 for preview
+        uri = URL.createObjectURL(file);
+      }
+      setAttachments((prev) => [...prev, { uri, name: file.name }]);
+    } catch (err: unknown) {
+      console.error('[ReminderModal] Error uploading file:', err);
+      setError((err as Error).message || 'Error cargando archivo adjunto');
+    } finally {
+      setIsUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
+  const handleAddLink = (e: React.FormEvent) => {
+    e.preventDefault();
+    const raw = linkInput.trim();
+    if (!raw) return;
+    const cleanUrl = raw.startsWith('http://') || raw.startsWith('https://') ? raw : `https://${raw}`;
+    setAttachments((prev) => [
+      ...prev,
+      { uri: cleanUrl, name: cleanUrl.replace(/^https?:\/\//, '') },
+    ]);
+    setLinkInput('');
+    setShowAddLinkForm(false);
+  };
+
+  const handleRemoveAttachment = (idx: number) => {
+    setAttachments(attachments.filter((_, i) => i !== idx));
+  };
+
+  // Submit handler
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!title.trim()) {
@@ -88,12 +295,20 @@ export const ReminderModal: React.FC<ReminderModalProps> = ({
       setLoading(true);
       setError(null);
 
-      // Parse date and time to timestamp ms
       const [year, month, day] = dateStr.split('-').map(Number);
       const [hours, minutes] = timeStr.split(':').map(Number);
       const dueDate = new Date(year, month - 1, day, hours, minutes);
 
-      const priorityNum = controlLevel === 'critical' ? 3 : controlLevel === 'strict' ? 2 : 1;
+      const priorityNum: ReminderPriority =
+        controlLevel === 'critical' ? 3 : controlLevel === 'strict' ? 2 : 1;
+
+      // Recurrence rule JSON
+      let repeatRule: string | null = null;
+      if (recurrenceType === 'weekly') {
+        repeatRule = JSON.stringify({ type: 'weekly', by_weekday: selectedDays });
+      } else if (recurrenceType !== 'none') {
+        repeatRule = JSON.stringify({ type: recurrenceType });
+      }
 
       await onSave({
         id: reminder?.id,
@@ -102,7 +317,9 @@ export const ReminderModal: React.FC<ReminderModalProps> = ({
         due_date_ms: dueDate.getTime(),
         control_level: controlLevel,
         priority: priorityNum,
-        subtasks,
+        subtasks: subtasks.length > 0 ? subtasks : undefined,
+        repeat_rule: repeatRule,
+        attachments: attachments.length > 0 ? JSON.stringify(attachments) : null,
       });
 
       onClose();
@@ -114,31 +331,20 @@ export const ReminderModal: React.FC<ReminderModalProps> = ({
     }
   };
 
-  const controlLevelOptions: {
-    value: ReminderControlLevel;
-    label: string;
-    desc: string;
-    dotColor: string;
-  }[] = [
-    {
-      value: 'normal',
-      label: 'Normal',
-      desc: 'Notificación estándar',
-      dotColor: 'bg-zinc-400',
-    },
-    {
-      value: 'strict',
-      label: 'Estricto',
-      desc: 'Alerta persistente',
-      dotColor: 'bg-amber-400',
-    },
-    {
-      value: 'critical',
-      label: 'Crítico',
-      desc: 'Alarma de alta prioridad',
-      dotColor: 'bg-red-400',
-    },
-  ];
+  // Delete handler
+  const handleDelete = async () => {
+    if (!reminder?.id || !onDelete) return;
+    try {
+      setIsDeleting(true);
+      await onDelete(reminder.id);
+      onClose();
+    } catch (err: unknown) {
+      console.error('[ReminderModal] Delete error:', err);
+      setError((err as Error).message || 'Error eliminando el recordatorio');
+    } finally {
+      setIsDeleting(false);
+    }
+  };
 
   return (
     <Modal
@@ -146,147 +352,545 @@ export const ReminderModal: React.FC<ReminderModalProps> = ({
       onClose={onClose}
       title={reminder ? 'Editar Recordatorio' : 'Nuevo Recordatorio'}
       description="Sincronización en tiempo real con tu teléfono móvil"
-      maxWidth="md"
+      maxWidth="lg"
     >
       <form onSubmit={handleSubmit} className="space-y-4">
         {error && (
-          <div className="p-2.5 rounded-md bg-red-500/10 border border-red-500/30 text-red-400 text-xs">
-            {error}
+          <div className="p-2.5 rounded-lg bg-red-500/10 border border-red-500/30 text-red-400 text-xs flex items-center justify-between">
+            <span>{error}</span>
+            <button
+              type="button"
+              onClick={() => setError(null)}
+              className="text-red-400 hover:text-red-300 ml-2"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
           </div>
         )}
 
-        <Input
-          label="Título"
-          placeholder="¿Qué necesitas recordar?"
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-          required
-          autoFocus
-        />
+        {/* ─── 1. HERO CARD: TIPO, TÍTULO Y NOTAS (Congruencia Android) ─── */}
+        <div
+          className="rounded-xl border p-3.5 transition-all"
+          style={{
+            borderColor: priorityTheme.border,
+            borderTopWidth: 3,
+            borderTopColor: priorityTheme.color,
+            backgroundColor: 'var(--color-card, rgba(255, 255, 255, 0.03))',
+          }}
+        >
+          {/* Header pill */}
+          <div className="flex items-center justify-between mb-2">
+            <div
+              className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold tracking-wider"
+              style={{
+                backgroundColor: priorityTheme.bg,
+                color: priorityTheme.color,
+              }}
+            >
+              <span
+                className="w-1.5 h-1.5 rounded-full"
+                style={{ backgroundColor: priorityTheme.color }}
+              />
+              <span>RECORDATORIO • {priorityTheme.label}</span>
+            </div>
 
-        <div>
-          <label className="block text-xs font-medium text-veyra-muted mb-1.5">
-            Descripción (Opcional)
-          </label>
+            {reminder && (
+              <span className="text-[11px] text-veyra-subtle font-mono">
+                ID: {reminder.id.substring(0, 8)}...
+              </span>
+            )}
+          </div>
+
+          {/* Title Input */}
+          <input
+            type="text"
+            required
+            autoFocus
+            placeholder="¿Qué necesitas recordar?"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                notesInputRef.current?.focus();
+              }
+            }}
+            className="w-full bg-transparent text-veyra-text text-base font-semibold placeholder:text-veyra-subtle focus:outline-none mb-2 border-none p-0"
+          />
+
+          <div className="h-px bg-veyra-border/60 my-2" />
+
+          {/* Notes description */}
           <textarea
+            ref={notesInputRef}
             rows={2}
-            placeholder="Detalles, enlaces o instrucciones..."
+            placeholder="Añadir notas o detalles adicionales..."
             value={description}
             onChange={(e) => setDescription(e.target.value)}
-            className="w-full bg-veyra-card border border-veyra-border text-veyra-text placeholder:text-veyra-subtle rounded-md px-3.5 py-2 text-sm focus:outline-none focus:border-accent transition-colors"
+            className="w-full bg-transparent text-veyra-text placeholder:text-veyra-subtle text-xs focus:outline-none resize-none border-none p-0 leading-relaxed"
           />
         </div>
 
-        <div className="grid grid-cols-2 gap-3">
-          <Input
-            label="Fecha de vencimiento"
-            type="date"
-            value={dateStr}
-            onChange={(e) => setDateStr(e.target.value)}
-            required
-          />
-          <Input
-            label="Hora"
-            type="time"
-            value={timeStr}
-            onChange={(e) => setTimeStr(e.target.value)}
-            required
-          />
-        </div>
-
-        {/* Priority & Control Level Selector */}
-        <div>
-          <label className="block text-xs font-medium text-veyra-muted mb-2">
-            Nivel de Control & Prioridad
+        {/* ─── 2. SECCIÓN FECHA Y HORA ─── */}
+        <div className="space-y-1.5">
+          <label className="text-xs font-medium text-veyra-muted flex items-center gap-1.5">
+            <CalendarIcon className="w-3.5 h-3.5 text-accent" />
+            <span>Fecha y Hora</span>
           </label>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+            <div className="relative">
+              <Input
+                type="date"
+                value={dateStr}
+                onChange={(e) => setDateStr(e.target.value)}
+                required
+              />
+            </div>
+            <div className="relative">
+              <Input
+                type="time"
+                value={timeStr}
+                onChange={(e) => setTimeStr(e.target.value)}
+                required
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* ─── 3. SECCIÓN NIVEL DE CONTROL (Segmented Card congruente con Android) ─── */}
+        <div className="space-y-1.5">
+          <div className="flex items-center justify-between">
+            <label className="text-xs font-medium text-veyra-muted flex items-center gap-1.5">
+              <Bell className="w-3.5 h-3.5 text-accent" />
+              <span>Nivel de Control & Insistencia</span>
+            </label>
+            <span className="text-[11px] text-veyra-subtle font-medium">
+              {priorityTheme.desc}
+            </span>
+          </div>
+
           <div className="grid grid-cols-3 gap-2">
-            {controlLevelOptions.map((opt) => {
-              const isSelected = controlLevel === opt.value;
+            {[
+              {
+                key: 'normal' as ReminderControlLevel,
+                label: 'Normal',
+                desc: 'Estándar',
+                icon: Bell,
+                color: '#64748B',
+              },
+              {
+                key: 'strict' as ReminderControlLevel,
+                label: 'Estricto',
+                desc: 'Insistente',
+                icon: AlertCircle,
+                color: '#F59E0B',
+              },
+              {
+                key: 'critical' as ReminderControlLevel,
+                label: 'Crítico',
+                desc: 'Alarma Máxima',
+                icon: ShieldAlert,
+                color: '#EF4444',
+              },
+            ].map((opt) => {
+              const isSelected = controlLevel === opt.key;
+              const IconComp = opt.icon;
               return (
                 <button
-                  key={opt.value}
+                  key={opt.key}
                   type="button"
-                  onClick={() => setControlLevel(opt.value)}
-                  className={`p-2.5 rounded-md border text-left transition-colors select-none cursor-pointer ${
+                  onClick={() => setControlLevel(opt.key)}
+                  className={cn(
+                    'p-2.5 rounded-lg border text-left transition-all select-none cursor-pointer flex flex-col gap-1',
                     isSelected
-                      ? 'border-accent bg-accent/10 text-veyra-text'
-                      : 'border-veyra-border bg-veyra-card text-veyra-muted hover:border-accent/40'
-                  }`}
+                      ? 'border-transparent shadow-sm'
+                      : 'border-veyra-border bg-veyra-card/50 text-veyra-muted hover:border-accent/40'
+                  )}
+                  style={{
+                    backgroundColor: isSelected ? `${opt.color}18` : undefined,
+                    borderColor: isSelected ? opt.color : undefined,
+                  }}
                 >
-                  <div className="flex items-center gap-1.5 text-xs font-medium">
-                    <span className={`w-1.5 h-1.5 rounded-full ${opt.dotColor}`} />
-                    <span>{opt.label}</span>
+                  <div className="flex items-center gap-1.5 text-xs font-semibold">
+                    <IconComp
+                      className="w-3.5 h-3.5"
+                      style={{ color: isSelected ? opt.color : 'inherit' }}
+                    />
+                    <span style={{ color: isSelected ? opt.color : undefined }}>
+                      {opt.label}
+                    </span>
                   </div>
-                  <div className="text-[10px] text-veyra-subtle mt-0.5 truncate">
+                  <span className="text-[10px] text-veyra-subtle leading-tight">
                     {opt.desc}
-                  </div>
+                  </span>
                 </button>
               );
             })}
           </div>
         </div>
 
-        {/* Subtasks Section */}
-        <div>
-          <div className="flex items-center justify-between mb-1.5">
-            <label className="text-xs font-medium text-veyra-muted flex items-center gap-1.5">
-              <ListPlus className="w-3.5 h-3.5 text-accent" />
-              <span>Subtareas ({subtasks.length})</span>
-            </label>
-          </div>
+        {/* ─── 4. ACORDEÓN: OPCIONES AVANZADAS (Igual que Android) ─── */}
+        <div className="rounded-xl border border-veyra-border bg-veyra-card/30 overflow-hidden">
+          <button
+            type="button"
+            onClick={() => setIsAdvancedOpen(!isAdvancedOpen)}
+            className="w-full flex items-center justify-between p-3 text-left hover:bg-veyra-card/70 transition-colors cursor-pointer"
+          >
+            <div className="flex items-center gap-2.5">
+              <div className="w-7 h-7 rounded-lg bg-accent/15 flex items-center justify-center text-accent">
+                <Sliders className="w-3.5 h-3.5" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-semibold text-veyra-text">
+                    Opciones avanzadas
+                  </span>
+                  {activeAdvancedCount > 0 && (
+                    <span className="px-1.5 py-0.2 rounded-full bg-accent/20 border border-accent/40 text-accent text-[10px] font-semibold">
+                      {activeAdvancedCount} {activeAdvancedCount === 1 ? 'activa' : 'activas'}
+                    </span>
+                  )}
+                </div>
+                <p className="text-[11px] text-veyra-subtle">
+                  {isAdvancedOpen
+                    ? 'Toca para contraer'
+                    : 'Repetición, subtareas, archivos adjuntos...'}
+                </p>
+              </div>
+            </div>
 
-          <div className="flex items-center gap-2 mb-2">
-            <input
-              type="text"
-              placeholder="Añadir una subtarea..."
-              value={newSubtaskTitle}
-              onChange={(e) => setNewSubtaskTitle(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') {
-                  e.preventDefault();
-                  handleAddSubtask(e);
-                }
-              }}
-              className="flex-1 bg-veyra-card border border-veyra-border text-veyra-text placeholder:text-veyra-subtle rounded-md px-3 py-1.5 text-xs focus:outline-none focus:border-accent"
+            <ChevronDown
+              className={cn(
+                'w-4 h-4 text-veyra-muted transition-transform duration-200',
+                isAdvancedOpen && 'rotate-180'
+              )}
             />
-            <button
-              type="button"
-              onClick={handleAddSubtask}
-              disabled={!newSubtaskTitle.trim()}
-              className="p-1.5 rounded-md bg-veyra-elevated border border-veyra-border hover:border-accent/40 text-veyra-text hover:text-accent disabled:opacity-40 transition-colors"
-            >
-              <Plus className="w-4 h-4" />
-            </button>
-          </div>
+          </button>
 
-          {subtasks.length > 0 && (
-            <div className="space-y-1 max-h-32 overflow-y-auto p-1.5 rounded-md bg-veyra-card/40 border border-veyra-border">
-              {subtasks.map((st) => (
-                <div
-                  key={st.id}
-                  className="flex items-center justify-between gap-2 px-2 py-1 rounded bg-veyra-card border border-veyra-border text-xs"
-                >
-                  <span className="truncate text-veyra-text">{st.title}</span>
+          {isAdvancedOpen && (
+            <div className="p-3.5 pt-1 space-y-4 border-t border-veyra-border/60 bg-veyra-card/20 animate-in fade-in duration-150">
+              {/* 4.1 REPETICIÓN */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-medium text-veyra-muted flex items-center gap-1.5">
+                    <Repeat className="w-3.5 h-3.5 text-accent" />
+                    <span>Repetir recordatorio</span>
+                  </label>
+                  <span className="text-[11px] text-veyra-subtle">
+                    {recurrenceType === 'none'
+                      ? 'Evento único'
+                      : recurrenceType === 'daily'
+                      ? 'Todos los días'
+                      : recurrenceType === 'weekly'
+                      ? 'Semanal'
+                      : recurrenceType === 'weekdays'
+                      ? 'Lunes a Viernes'
+                      : recurrenceType === 'monthly'
+                      ? 'Mensual'
+                      : 'Anual'}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
+                  {[
+                    { key: 'none' as RecurrenceType, label: 'No repetir' },
+                    { key: 'daily' as RecurrenceType, label: 'Diario' },
+                    { key: 'weekly' as RecurrenceType, label: 'Semanal' },
+                    { key: 'weekdays' as RecurrenceType, label: 'Lun a Vie' },
+                    { key: 'monthly' as RecurrenceType, label: 'Mensual' },
+                    { key: 'yearly' as RecurrenceType, label: 'Anual' },
+                  ].map((rec) => {
+                    const isSelected = recurrenceType === rec.key;
+                    return (
+                      <button
+                        key={rec.key}
+                        type="button"
+                        onClick={() => setRecurrenceType(rec.key)}
+                        className={cn(
+                          'py-1.5 px-2 rounded-lg text-xs font-medium border text-center transition-all cursor-pointer',
+                          isSelected
+                            ? 'bg-accent/15 border-accent text-accent font-semibold'
+                            : 'bg-veyra-card border-veyra-border text-veyra-muted hover:border-accent/40'
+                        )}
+                      >
+                        {rec.label}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Weekday selector when 'weekly' is active */}
+                {recurrenceType === 'weekly' && (
+                  <div className="pt-1.5">
+                    <div className="text-[11px] text-veyra-subtle mb-1.5">
+                      Selecciona los días en que debe sonar:
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      {WEEKDAYS.map((wd) => {
+                        const isDaySelected = selectedDays.includes(wd.day);
+                        return (
+                          <button
+                            key={wd.day}
+                            type="button"
+                            onClick={() => toggleWeekday(wd.day)}
+                            title={wd.name}
+                            className={cn(
+                              'w-7 h-7 rounded-md text-xs font-semibold flex items-center justify-center transition-all cursor-pointer border',
+                              isDaySelected
+                                ? 'bg-accent text-white border-accent'
+                                : 'bg-veyra-card border-veyra-border text-veyra-muted hover:border-accent/50'
+                            )}
+                          >
+                            {wd.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="h-px bg-veyra-border/60" />
+
+              {/* 4.2 SUBTAREAS (CHECKLIST INTERACTIVO) */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-medium text-veyra-muted flex items-center gap-1.5">
+                    <CheckSquare className="w-3.5 h-3.5 text-accent" />
+                    <span>Subtareas</span>
+                  </label>
+                  {subtasks.length > 0 && (
+                    <span className="text-[11px] font-semibold text-accent bg-accent/15 px-2 py-0.5 rounded-full">
+                      {subtasks.filter((s) => s.completed).length}/{subtasks.length} completadas
+                    </span>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    placeholder="Desglosa en pasos o subtareas..."
+                    value={newSubtaskTitle}
+                    onChange={(e) => setNewSubtaskTitle(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        handleAddSubtask();
+                      }
+                    }}
+                    className="flex-1 bg-veyra-card border border-veyra-border text-veyra-text placeholder:text-veyra-subtle rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:border-accent"
+                  />
                   <button
                     type="button"
-                    onClick={() => handleRemoveSubtask(st.id)}
-                    className="p-1 text-veyra-subtle hover:text-red-400"
+                    onClick={() => handleAddSubtask()}
+                    disabled={!newSubtaskTitle.trim()}
+                    className="p-1.5 rounded-lg bg-veyra-elevated border border-veyra-border hover:border-accent/40 text-veyra-text hover:text-accent disabled:opacity-40 transition-colors cursor-pointer"
                   >
-                    <X className="w-3.5 h-3.5" />
+                    <Plus className="w-4 h-4" />
                   </button>
                 </div>
-              ))}
+
+                {subtasks.length > 0 && (
+                  <div className="space-y-1.5 max-h-36 overflow-y-auto p-1.5 rounded-lg bg-veyra-card/50 border border-veyra-border">
+                    {subtasks.map((st) => (
+                      <div
+                        key={st.id}
+                        className="flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-md bg-veyra-card border border-veyra-border text-xs group"
+                      >
+                        <div
+                          className="flex items-center gap-2 flex-1 cursor-pointer select-none"
+                          onClick={() => handleToggleSubtask(st.id)}
+                        >
+                          <div
+                            className={cn(
+                              'w-4 h-4 rounded border flex items-center justify-center transition-colors',
+                              st.completed
+                                ? 'bg-accent border-accent text-white'
+                                : 'border-veyra-border bg-veyra-elevated hover:border-accent'
+                            )}
+                          >
+                            {st.completed && <Check className="w-3 h-3 stroke-[3]" />}
+                          </div>
+                          <span
+                            className={cn(
+                              'truncate',
+                              st.completed
+                                ? 'line-through text-veyra-subtle'
+                                : 'text-veyra-text font-medium'
+                            )}
+                          >
+                            {st.title}
+                          </span>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveSubtask(st.id)}
+                          className="p-1 text-veyra-subtle hover:text-red-400 opacity-70 group-hover:opacity-100 transition-opacity cursor-pointer"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="h-px bg-veyra-border/60" />
+
+              {/* 4.3 ARCHIVOS ADJUNTOS Y ENLACES */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-medium text-veyra-muted flex items-center gap-1.5">
+                    <Paperclip className="w-3.5 h-3.5 text-accent" />
+                    <span>Adjuntos y Enlaces</span>
+                  </label>
+                  <span className="text-[11px] text-veyra-subtle">
+                    {attachments.length} adjuntos
+                  </span>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <input
+                    type="file"
+                    ref={fileInputRef}
+                    onChange={handleFileUpload}
+                    className="hidden"
+                    accept="image/*,.pdf,.doc,.docx"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={isUploading}
+                    className="flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg border border-dashed border-veyra-border hover:border-accent/60 bg-veyra-card/50 text-xs text-veyra-muted hover:text-veyra-text transition-all cursor-pointer"
+                  >
+                    <Paperclip className="w-3.5 h-3.5 text-accent" />
+                    <span>{isUploading ? 'Subiendo archivo...' : 'Adjuntar foto o archivo'}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setShowAddLinkForm(!showAddLinkForm)}
+                    className="flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg border border-veyra-border bg-veyra-card/50 text-xs text-veyra-muted hover:text-veyra-text hover:border-accent/40 transition-all cursor-pointer"
+                  >
+                    <LinkIcon className="w-3.5 h-3.5 text-accent" />
+                    <span>Enlace Web</span>
+                  </button>
+                </div>
+
+                {showAddLinkForm && (
+                  <div className="flex items-center gap-2 p-2 rounded-lg bg-veyra-card border border-veyra-border">
+                    <input
+                      type="url"
+                      placeholder="https://..."
+                      value={linkInput}
+                      onChange={(e) => setLinkInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          handleAddLink(e);
+                        }
+                      }}
+                      className="flex-1 bg-veyra-elevated border border-veyra-border text-veyra-text placeholder:text-veyra-subtle rounded-md px-2.5 py-1 text-xs focus:outline-none focus:border-accent"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleAddLink}
+                      disabled={!linkInput.trim()}
+                      className="px-2.5 py-1 rounded-md bg-accent text-white text-xs font-medium hover:opacity-90 disabled:opacity-40 cursor-pointer"
+                    >
+                      Añadir
+                    </button>
+                  </div>
+                )}
+
+                {attachments.length > 0 && (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 pt-1">
+                    {attachments.map((att, idx) => (
+                      <div
+                        key={idx}
+                        className="flex items-center justify-between gap-2 p-2 rounded-lg bg-veyra-card border border-veyra-border text-xs group"
+                      >
+                        <a
+                          href={att.uri}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex items-center gap-2 flex-1 min-w-0 hover:text-accent transition-colors"
+                          title={att.name}
+                        >
+                          <FileText className="w-3.5 h-3.5 text-accent shrink-0" />
+                          <span className="truncate text-veyra-text font-medium text-[11px]">
+                            {att.name}
+                          </span>
+                          <ExternalLink className="w-3 h-3 text-veyra-subtle shrink-0" />
+                        </a>
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveAttachment(idx)}
+                          className="p-1 text-veyra-subtle hover:text-red-400 opacity-60 group-hover:opacity-100 transition-opacity cursor-pointer shrink-0"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
           )}
         </div>
 
-        <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-veyra-border">
-          <Button type="button" variant="ghost" size="sm" onClick={onClose}>
-            Cancelar
-          </Button>
-          <Button type="submit" loading={loading} size="sm">
-            {reminder ? 'Guardar Cambios' : 'Crear Recordatorio'}
-          </Button>
+        {/* ─── 5. FOOTER CON ACCIONES (Eliminar + Cancelar + Guardar) ─── */}
+        <div className="flex items-center justify-between gap-3 pt-3 border-t border-veyra-border">
+          <div>
+            {reminder && onDelete && !showDeleteConfirm && (
+              <button
+                type="button"
+                onClick={() => setShowDeleteConfirm(true)}
+                className="flex items-center gap-1.5 text-xs text-red-400 hover:text-red-300 py-1.5 px-2 rounded hover:bg-red-500/10 transition-colors cursor-pointer"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>Eliminar</span>
+              </button>
+            )}
+
+            {showDeleteConfirm && (
+              <div className="flex items-center gap-2 animate-in fade-in">
+                <span className="text-[11px] text-red-400 font-medium">¿Eliminar?</span>
+                <button
+                  type="button"
+                  onClick={handleDelete}
+                  disabled={isDeleting}
+                  className="px-2 py-1 rounded bg-red-500 text-white text-[11px] font-semibold hover:bg-red-600 cursor-pointer disabled:opacity-50"
+                >
+                  {isDeleting ? 'Borrando...' : 'Sí, eliminar'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowDeleteConfirm(false)}
+                  className="px-2 py-1 rounded bg-veyra-card border border-veyra-border text-[11px] text-veyra-muted hover:text-veyra-text cursor-pointer"
+                >
+                  No
+                </button>
+              </div>
+            )}
+          </div>
+
+          <div className="flex items-center gap-2.5">
+            <Button type="button" variant="ghost" size="sm" onClick={onClose}>
+              Cancelar
+            </Button>
+            <Button
+              type="submit"
+              loading={loading}
+              disabled={!title.trim()}
+              size="sm"
+              className="gap-1.5"
+            >
+              <Check className="w-3.5 h-3.5 stroke-[3]" />
+              <span>{reminder ? 'Guardar Cambios' : 'Crear Recordatorio'}</span>
+            </Button>
+          </div>
         </div>
       </form>
     </Modal>

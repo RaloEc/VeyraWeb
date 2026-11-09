@@ -94,6 +94,8 @@ export const RemindersModule: React.FC<RemindersModuleProps> = ({ userId, remind
     priority?: ReminderPriority;
     control_level?: ReminderControlLevel;
     subtasks?: Subtask[];
+    repeat_rule?: string | null;
+    attachments?: string | null;
   }) => {
     if (payload.id) {
       await updateReminder(payload.id, {
@@ -103,6 +105,8 @@ export const RemindersModule: React.FC<RemindersModuleProps> = ({ userId, remind
         priority: payload.priority,
         control_level: payload.control_level,
         subtasks: payload.subtasks,
+        repeat_rule: payload.repeat_rule,
+        attachments: payload.attachments,
       });
     } else {
       await createReminder({
@@ -112,6 +116,8 @@ export const RemindersModule: React.FC<RemindersModuleProps> = ({ userId, remind
         priority: payload.priority,
         control_level: payload.control_level,
         subtasks: payload.subtasks,
+        repeat_rule: payload.repeat_rule,
+        attachments: payload.attachments,
       });
     }
   };
@@ -234,6 +240,7 @@ export const RemindersModule: React.FC<RemindersModuleProps> = ({ userId, remind
         onClose={() => setIsModalOpen(false)}
         reminder={editingReminder}
         onSave={handleSaveModal}
+        onDelete={deleteReminder}
       />
     </div>
   );

@@ -134,6 +134,9 @@ export interface Database {
           is_all_day: boolean | null;
           all_day_date: string | null;
           timezone: string | null;
+          is_birthday_like?: number | boolean | null;
+          notification_offset_min?: number | null;
+          notification_offsets?: string | null;
           created_at_ms: number;
           updated_at_ms: number;
           last_modified_ms: number;
@@ -157,6 +160,9 @@ export interface Database {
           is_all_day?: boolean | null;
           all_day_date?: string | null;
           timezone?: string | null;
+          is_birthday_like?: number | boolean | null;
+          notification_offset_min?: number | null;
+          notification_offsets?: string | null;
           created_at_ms?: number;
           updated_at_ms?: number;
           last_modified_ms?: number;
@@ -180,6 +186,9 @@ export interface Database {
           is_all_day?: boolean | null;
           all_day_date?: string | null;
           timezone?: string | null;
+          is_birthday_like?: number | boolean | null;
+          notification_offset_min?: number | null;
+          notification_offsets?: string | null;
           created_at_ms?: number;
           updated_at_ms?: number;
           last_modified_ms?: number;

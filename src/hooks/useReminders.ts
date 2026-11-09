@@ -188,7 +188,7 @@ export function useReminders(userId?: string) {
     [reminders, fetchReminders]
   );
 
-  // Create new reminder with UUID, due_date_ms, priority, control_level
+  // Create new reminder with UUID, due_date_ms, priority, control_level, repeat_rule, attachments, etc.
   const createReminder = useCallback(
     async (payload: {
       title: string;
@@ -197,6 +197,11 @@ export function useReminders(userId?: string) {
       priority?: ReminderPriority;
       control_level?: ReminderControlLevel;
       subtasks?: Subtask[];
+      repeat_rule?: string | null;
+      attachments?: string | null;
+      links?: string | null;
+      event_id?: string | null;
+      offset_minutes?: number | null;
     }) => {
       if (!userId) return;
       const newId = crypto.randomUUID();
@@ -213,7 +218,7 @@ export function useReminders(userId?: string) {
         description: payload.description?.trim() || null,
         due_date_ms: payload.due_date_ms,
         snooze_until_ms: null,
-        repeat_rule: null,
+        repeat_rule: payload.repeat_rule || null,
         control_level: controlLevel,
         priority: priorityNum,
         status: 'pending',
@@ -224,6 +229,10 @@ export function useReminders(userId?: string) {
         deleted: 0,
         deleted_at_ms: null,
         subtasks: subtasksJson,
+        attachments: payload.attachments || null,
+        links: payload.links || null,
+        event_id: payload.event_id || null,
+        offset_minutes: payload.offset_minutes !== undefined ? payload.offset_minutes : null,
       };
 
       // Optimistic instant addition
@@ -241,7 +250,12 @@ export function useReminders(userId?: string) {
           status: 'pending',
           last_modified_ms: nowMs,
           deleted: 0,
+          repeat_rule: newReminder.repeat_rule,
           subtasks: newReminder.subtasks,
+          attachments: newReminder.attachments,
+          links: newReminder.links,
+          event_id: newReminder.event_id,
+          offset_minutes: newReminder.offset_minutes,
         });
 
         if (error) {
@@ -268,6 +282,11 @@ export function useReminders(userId?: string) {
         priority?: ReminderPriority;
         control_level?: ReminderControlLevel;
         subtasks?: Subtask[];
+        repeat_rule?: string | null;
+        attachments?: string | null;
+        links?: string | null;
+        event_id?: string | null;
+        offset_minutes?: number | null;
       }
     ) => {
       const nowMs = Date.now();
@@ -280,6 +299,11 @@ export function useReminders(userId?: string) {
         ...(updates.priority !== undefined && { priority: updates.priority }),
         ...(updates.control_level !== undefined && { control_level: updates.control_level }),
         ...(subtasksJson !== undefined && { subtasks: subtasksJson }),
+        ...(updates.repeat_rule !== undefined && { repeat_rule: updates.repeat_rule }),
+        ...(updates.attachments !== undefined && { attachments: updates.attachments }),
+        ...(updates.links !== undefined && { links: updates.links }),
+        ...(updates.event_id !== undefined && { event_id: updates.event_id }),
+        ...(updates.offset_minutes !== undefined && { offset_minutes: updates.offset_minutes }),
         last_modified_ms: nowMs,
       };
 

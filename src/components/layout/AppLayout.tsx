@@ -76,9 +76,9 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ user, profile, onSignOut }
   const initialRoute = parseInitialRoute();
   const [activeModule, setActiveModule] = useState<ActiveModule>(initialRoute.module);
   const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(() => {
-    if (typeof window === 'undefined') return false;
+    if (typeof window === 'undefined') return true;
     const stored = localStorage.getItem('veyra_sidebar_open');
-    return stored !== null ? stored === 'true' : false; // Colapsada por defecto (false)
+    return stored !== null ? stored === 'true' : true; // Desplegada por defecto (true)
   });
 
   const remindersState = useReminders(user.id);
