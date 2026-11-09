@@ -9,7 +9,7 @@ export interface ModalProps {
   description?: string;
   children: React.ReactNode;
   className?: string;
-  maxWidth?: 'sm' | 'md' | 'lg' | 'xl';
+  maxWidth?: 'sm' | 'md' | 'lg' | 'xl' | '2xl' | '3xl' | '4xl' | '5xl';
 }
 
 export const Modal: React.FC<ModalProps> = ({
@@ -38,10 +38,14 @@ export const Modal: React.FC<ModalProps> = ({
     md: 'max-w-md',
     lg: 'max-w-lg',
     xl: 'max-w-xl',
+    '2xl': 'max-w-2xl',
+    '3xl': 'max-w-3xl',
+    '4xl': 'max-w-4xl',
+    '5xl': 'max-w-5xl',
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 md:p-6">
       {/* Backdrop */}
       <div
         className="fixed inset-0 bg-black/80 backdrop-blur-sm transition-opacity duration-200"
@@ -53,12 +57,12 @@ export const Modal: React.FC<ModalProps> = ({
         role="dialog"
         aria-modal="true"
         className={cn(
-          'relative w-full bg-veyra-elevated border border-veyra-border rounded-lg shadow-elevated p-6 z-10 transition-all duration-200 animate-in fade-in zoom-in-95',
+          'relative w-full bg-veyra-elevated border border-veyra-border rounded-xl shadow-elevated p-4 sm:p-6 z-10 transition-all duration-200 animate-in fade-in zoom-in-95 max-h-[92vh] flex flex-col',
           maxWidths[maxWidth],
           className
         )}
       >
-        <div className="flex items-start justify-between mb-4">
+        <div className="flex items-start justify-between mb-3 shrink-0">
           <div>
             {title && (
               <h3 className="text-lg font-semibold text-veyra-text tracking-tight">
@@ -71,13 +75,13 @@ export const Modal: React.FC<ModalProps> = ({
           </div>
           <button
             onClick={onClose}
-            className="text-veyra-muted hover:text-veyra-text p-1 rounded-sm hover:bg-veyra-card transition-colors duration-180"
+            className="text-veyra-muted hover:text-veyra-text p-1.5 rounded-lg hover:bg-veyra-card transition-colors duration-180 cursor-pointer"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        <div>{children}</div>
+        <div className="flex-1 overflow-y-auto min-h-0 pr-1">{children}</div>
       </div>
     </div>
   );

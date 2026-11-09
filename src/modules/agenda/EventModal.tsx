@@ -427,13 +427,433 @@ export const EventModal: React.FC<EventModalProps> = ({
     }
   };
 
+  // Sub-renderers for clean horizontal/vertical responsiveness
+  const renderHeroCard = () => (
+    <div
+      className="rounded-xl border p-3.5 transition-all"
+      style={{
+        borderColor: `${color}40`,
+        borderTopWidth: 3,
+        borderTopColor: color,
+        backgroundColor: 'var(--color-card, rgba(255, 255, 255, 0.03))',
+      }}
+    >
+      {/* Header pill */}
+      <div className="flex items-center justify-between mb-2">
+        <div
+          className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold tracking-wider"
+          style={{
+            backgroundColor: `${color}18`,
+            color: color,
+          }}
+        >
+          <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: color }} />
+          <span>
+            {isBirthdayLike
+              ? 'CUMPLEAÑOS / ANIVERSARIO'
+              : `EVENTO • ${currentColorObj.label.toUpperCase()}`}
+          </span>
+        </div>
+
+        {isBirthdayLike && (
+          <span className="inline-flex items-center gap-1 text-[11px] font-medium text-pink-400 bg-pink-500/10 px-2 py-0.5 rounded-full">
+            <Cake className="w-3 h-3" />
+            <span>Cumpleaños</span>
+          </span>
+        )}
+      </div>
+
+      {/* Title Input */}
+      <input
+        type="text"
+        required
+        autoFocus
+        placeholder="¿Cuál es el nombre del evento o reunión?"
+        value={title}
+        onChange={(e) => setTitle(e.target.value)}
+        onBlur={handleTitleBlur}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            notesInputRef.current?.focus();
+          }
+        }}
+        className="w-full bg-transparent text-veyra-text text-base font-semibold placeholder:text-veyra-subtle focus:outline-none mb-2 border-none p-0"
+      />
+
+      <div className="h-px bg-veyra-border/60 my-2" />
+
+      {/* Notes description */}
+      <textarea
+        ref={notesInputRef}
+        rows={2}
+        placeholder="Detalles, enlaces de videoconferencia o agenda..."
+        value={description}
+        onChange={(e) => setDescription(e.target.value)}
+        className="w-full bg-transparent text-veyra-text placeholder:text-veyra-subtle text-xs focus:outline-none resize-none border-none p-0 leading-relaxed"
+      />
+    </div>
+  );
+
+  const renderDateTime = () => (
+    <div className="space-y-1.5">
+      <div className="flex items-center justify-between">
+        <label className="text-xs font-medium text-veyra-muted flex items-center gap-1.5">
+          <CalendarIcon className="w-3.5 h-3.5 text-accent" />
+          <span>Fecha y Horario</span>
+        </label>
+        <label className="flex items-center gap-1.5 text-xs text-veyra-muted cursor-pointer select-none hover:text-veyra-text">
+          <input
+            type="checkbox"
+            checked={isAllDay}
+            onChange={(e) => setIsAllDay(e.target.checked)}
+            className="rounded border-veyra-border text-accent focus:ring-accent w-3.5 h-3.5 cursor-pointer"
+          />
+          <span className="font-medium">Todo el día</span>
+        </label>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+        <div className={isAllDay ? 'sm:col-span-3' : 'sm:col-span-1'}>
+          <Input
+            label="Fecha"
+            type="date"
+            value={dateStr}
+            onChange={(e) => setDateStr(e.target.value)}
+            required
+          />
+        </div>
+
+        {!isAllDay && (
+          <>
+            <Input
+              label="Inicio"
+              type="time"
+              value={startTimeStr}
+              onChange={(e) => handleStartTimeChange(e.target.value)}
+              required
+            />
+            <Input
+              label="Fin"
+              type="time"
+              value={endTimeStr}
+              onChange={(e) => setEndTimeStr(e.target.value)}
+              required
+            />
+          </>
+        )}
+      </div>
+    </div>
+  );
+
+  const renderLocationAndColor = () => (
+    <div className="space-y-3">
+      {/* Ubicación */}
+      <div className="space-y-1.5">
+        <div className="flex items-center justify-between">
+          <label className="text-xs font-medium text-veyra-muted flex items-center gap-1.5">
+            <MapPin className="w-3.5 h-3.5 text-accent" />
+            <span>Ubicación o Enlace</span>
+          </label>
+          <div className="flex items-center gap-1">
+            {['Google Meet', 'Zoom', 'Presencial'].map((preset) => (
+              <button
+                key={preset}
+                type="button"
+                onClick={() => setLocation(preset)}
+                className="px-2 py-0.5 rounded text-[10px] bg-veyra-card hover:bg-veyra-elevated border border-veyra-border text-veyra-subtle hover:text-veyra-text transition-colors cursor-pointer"
+              >
+                {preset}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <Input
+          placeholder="Ej. Oficina Central, Google Meet, Zoom, Sala 3..."
+          value={location}
+          onChange={(e) => setLocation(e.target.value)}
+        />
+      </div>
+
+      {/* Color Identificador */}
+      <div className="space-y-1.5">
+        <div className="flex items-center justify-between">
+          <span className="text-xs font-medium text-veyra-muted">Color identificador</span>
+          <span className="text-[11px] text-veyra-subtle font-medium">
+            {currentColorObj.label}
+          </span>
+        </div>
+        <div className="flex items-center gap-2 flex-wrap">
+          {EVENT_COLORS.map((c) => {
+            const isSelected = color.toLowerCase() === c.value.toLowerCase();
+            return (
+              <button
+                key={c.value}
+                type="button"
+                title={c.label}
+                onClick={() => setColor(c.value)}
+                style={{ backgroundColor: c.value }}
+                className={cn(
+                  'w-6 h-6 rounded-full transition-all cursor-pointer flex items-center justify-center border border-white/20',
+                  isSelected
+                    ? 'ring-2 ring-offset-2 ring-accent scale-110 shadow-md'
+                    : 'hover:scale-105 opacity-80 hover:opacity-100'
+                )}
+              >
+                {isSelected && <Check className="w-3 h-3 text-white stroke-[3]" />}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+
+  const renderAdvancedPanel = () => (
+    <div className="rounded-xl border border-veyra-border bg-veyra-card/30 p-3.5 space-y-3.5">
+      {/* Header con botón para contraer */}
+      <div className="flex items-center justify-between pb-2 border-b border-veyra-border/60">
+        <div className="flex items-center gap-2">
+          <div className="w-6 h-6 rounded-md bg-accent/15 flex items-center justify-center text-accent">
+            <Sliders className="w-3.5 h-3.5" />
+          </div>
+          <span className="text-xs font-semibold text-veyra-text">
+            Opciones avanzadas
+          </span>
+          {activeAdvancedCount > 0 && (
+            <span className="px-1.5 py-0.2 rounded-full bg-accent/20 border border-accent/40 text-accent text-[10px] font-semibold">
+              {activeAdvancedCount} {activeAdvancedCount === 1 ? 'activa' : 'activas'}
+            </span>
+          )}
+        </div>
+        <button
+          type="button"
+          onClick={() => setIsAdvancedOpen(false)}
+          className="text-xs text-veyra-subtle hover:text-veyra-text flex items-center gap-1 px-2 py-0.5 rounded hover:bg-veyra-card transition-colors cursor-pointer"
+        >
+          <span>Contraer</span>
+          <ChevronDown className="w-3.5 h-3.5 rotate-180" />
+        </button>
+      </div>
+
+      {/* 5.1 REPETICIÓN */}
+      <div className="space-y-1.5">
+        <div className="flex items-center justify-between">
+          <label className="text-xs font-medium text-veyra-muted flex items-center gap-1.5">
+            <Repeat className="w-3.5 h-3.5 text-accent" />
+            <span>Repetir evento</span>
+          </label>
+          <span className="text-[11px] text-veyra-subtle">
+            {recurrence === 'none'
+              ? 'Evento único'
+              : recurrence === 'daily'
+              ? 'Todos los días'
+              : recurrence === 'weekly'
+              ? 'Semanal'
+              : recurrence === 'weekdays'
+              ? 'Lunes a Viernes'
+              : recurrence === 'monthly'
+              ? 'Mensual'
+              : 'Anual (Cumpleaños)'}
+          </span>
+        </div>
+
+        <div className="grid grid-cols-3 gap-1.5">
+          {[
+            { key: 'none' as ExtendedRecurrence, label: 'No repetir' },
+            { key: 'daily' as ExtendedRecurrence, label: 'Diario' },
+            { key: 'weekly' as ExtendedRecurrence, label: 'Semanal' },
+            { key: 'weekdays' as ExtendedRecurrence, label: 'Lun a Vie' },
+            { key: 'monthly' as ExtendedRecurrence, label: 'Mensual' },
+            { key: 'yearly' as ExtendedRecurrence, label: 'Anual' },
+          ].map((rec) => {
+            const isSelected = recurrence === rec.key;
+            return (
+              <button
+                key={rec.key}
+                type="button"
+                onClick={() => setRecurrence(rec.key)}
+                className={cn(
+                  'py-1.5 px-2 rounded-lg text-xs font-medium border text-center transition-all cursor-pointer',
+                  isSelected
+                    ? 'bg-accent/15 border-accent text-accent font-semibold'
+                    : 'bg-veyra-card border-veyra-border text-veyra-muted hover:border-accent/40'
+                )}
+              >
+                {rec.label}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Weekday selector when 'weekly' is active */}
+        {recurrence === 'weekly' && (
+          <div className="pt-1">
+            <div className="text-[11px] text-veyra-subtle mb-1">
+              Días de la semana:
+            </div>
+            <div className="flex items-center gap-1 flex-wrap">
+              {WEEKDAYS.map((wd) => {
+                const isDaySelected = selectedDays.includes(wd.day);
+                return (
+                  <button
+                    key={wd.day}
+                    type="button"
+                    onClick={() => toggleWeekday(wd.day)}
+                    title={wd.name}
+                    className={cn(
+                      'w-7 h-7 rounded-md text-xs font-semibold flex items-center justify-center transition-all cursor-pointer border',
+                      isDaySelected
+                        ? 'bg-accent text-white border-accent'
+                        : 'bg-veyra-card border-veyra-border text-veyra-muted hover:border-accent/50'
+                    )}
+                  >
+                    {wd.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div className="h-px bg-veyra-border/60" />
+
+      {/* 5.2 RECORDATORIOS / ALERTAS PREVIAS */}
+      <div className="space-y-1.5">
+        <div className="flex items-center justify-between">
+          <label className="text-xs font-medium text-veyra-muted flex items-center gap-1.5">
+            <Bell className="w-3.5 h-3.5 text-accent" />
+            <span>Avisos y Alertas Previas</span>
+          </label>
+          <span className="text-[11px] text-veyra-subtle">
+            {selectedOffsets.length === 0
+              ? 'Sin aviso'
+              : `${selectedOffsets.length} ${selectedOffsets.length === 1 ? 'aviso activo' : 'avisos activos'}`}
+          </span>
+        </div>
+
+        <div className="flex flex-wrap gap-1">
+          {AVAILABLE_OFFSETS.map((off) => {
+            const isSelected = selectedOffsets.includes(off.value);
+            return (
+              <button
+                key={off.value}
+                type="button"
+                onClick={() => toggleOffset(off.value)}
+                className={cn(
+                  'px-2 py-0.5 rounded-md text-[11px] border transition-all cursor-pointer select-none',
+                  isSelected
+                    ? 'bg-accent/20 border-accent text-accent font-semibold shadow-xs'
+                    : 'bg-veyra-card border-veyra-border text-veyra-muted hover:border-accent/40'
+                )}
+              >
+                {off.label}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="h-px bg-veyra-border/60" />
+
+      {/* 5.3 VINCULAR NOTA DE VEYRA NOTES */}
+      <div className="space-y-1.5">
+        <div className="flex items-center justify-between">
+          <label className="text-xs font-medium text-veyra-muted flex items-center gap-1.5">
+            <FileText className="w-3.5 h-3.5 text-accent" />
+            <span>Vincular Nota de Veyra</span>
+          </label>
+          {linkedNoteId && (
+            <button
+              type="button"
+              onClick={() => setLinkedNoteId('')}
+              className="text-[11px] text-red-400 hover:text-red-300 cursor-pointer"
+            >
+              Desvincular
+            </button>
+          )}
+        </div>
+
+        <select
+          value={linkedNoteId}
+          onChange={(e) => setLinkedNoteId(e.target.value)}
+          className="w-full bg-veyra-card border border-veyra-border text-veyra-text rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:border-accent cursor-pointer"
+        >
+          <option value="">Sin nota vinculada</option>
+          {allNotes.map((n) => (
+            <option key={n.id} value={n.id}>
+              {n.title || 'Nota sin título'}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      <div className="h-px bg-veyra-border/60" />
+
+      {/* 5.4 ETIQUETAS (TAGS) */}
+      <div className="space-y-1.5">
+        <label className="text-xs font-medium text-veyra-muted flex items-center gap-1.5">
+          <TagIcon className="w-3.5 h-3.5 text-accent" />
+          <span>Etiquetas del evento</span>
+        </label>
+
+        <div className="flex items-center gap-2">
+          <input
+            type="text"
+            placeholder="Nueva etiqueta (ej. trabajo, urgente)..."
+            value={newTagInput}
+            onChange={(e) => setNewTagInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                handleAddTag();
+              }
+            }}
+            className="flex-1 bg-veyra-card border border-veyra-border text-veyra-text placeholder:text-veyra-subtle rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:border-accent"
+          />
+          <button
+            type="button"
+            onClick={() => handleAddTag()}
+            disabled={!newTagInput.trim()}
+            className="p-1.5 rounded-lg bg-veyra-elevated border border-veyra-border hover:border-accent/40 text-veyra-text hover:text-accent disabled:opacity-40 transition-colors cursor-pointer"
+          >
+            <Plus className="w-4 h-4" />
+          </button>
+        </div>
+
+        {tags.length > 0 && (
+          <div className="flex flex-wrap gap-1.5 pt-0.5">
+            {tags.map((tag) => (
+              <span
+                key={tag}
+                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-veyra-card border border-veyra-border text-xs text-veyra-text"
+              >
+                <span className="text-accent font-semibold">#</span>
+                <span>{tag}</span>
+                <button
+                  type="button"
+                  onClick={() => handleRemoveTag(tag)}
+                  className="p-0.5 text-veyra-subtle hover:text-red-400 cursor-pointer"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+
   return (
     <Modal
       isOpen={isOpen}
       onClose={onClose}
       title={event ? 'Editar Evento' : 'Nuevo Evento'}
       description="Organiza tus reuniones, clases y agenda"
-      maxWidth="lg"
+      maxWidth={isAdvancedOpen ? '4xl' : 'lg'}
     >
       <form onSubmit={handleSubmit} className="space-y-4">
         {error && (
@@ -449,435 +869,64 @@ export const EventModal: React.FC<EventModalProps> = ({
           </div>
         )}
 
-        {/* ─── 1. HERO CARD: TIPO, COLOR, TÍTULO Y NOTAS ─── */}
-        <div
-          className="rounded-xl border p-3.5 transition-all"
-          style={{
-            borderColor: `${color}40`,
-            borderTopWidth: 3,
-            borderTopColor: color,
-            backgroundColor: 'var(--color-card, rgba(255, 255, 255, 0.03))',
-          }}
-        >
-          {/* Header pill */}
-          <div className="flex items-center justify-between mb-2">
-            <div
-              className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold tracking-wider"
-              style={{
-                backgroundColor: `${color}18`,
-                color: color,
-              }}
+        {/* ─── CONTENIDO: LAYOUT ADAPTATIVO HORIZONTAL ─── */}
+        {!isAdvancedOpen ? (
+          /* Vista compacta cuando opciones avanzadas están contraídas */
+          <div className="space-y-4">
+            {renderHeroCard()}
+            {renderDateTime()}
+            {renderLocationAndColor()}
+
+            {/* Botón para desplegar opciones avanzadas */}
+            <button
+              type="button"
+              onClick={() => setIsAdvancedOpen(true)}
+              className="w-full flex items-center justify-between p-3 rounded-xl border border-veyra-border bg-veyra-card/30 hover:bg-veyra-card/70 transition-colors cursor-pointer text-left"
             >
-              <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: color }} />
-              <span>
-                {isBirthdayLike
-                  ? 'CUMPLEAÑOS / ANIVERSARIO'
-                  : `EVENTO • ${currentColorObj.label.toUpperCase()}`}
-              </span>
-            </div>
-
-            {isBirthdayLike && (
-              <span className="inline-flex items-center gap-1 text-[11px] font-medium text-pink-400 bg-pink-500/10 px-2 py-0.5 rounded-full">
-                <Cake className="w-3 h-3" />
-                <span>Cumpleaños</span>
-              </span>
-            )}
-          </div>
-
-          {/* Title Input */}
-          <input
-            type="text"
-            required
-            autoFocus
-            placeholder="¿Cuál es el nombre del evento o reunión?"
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            onBlur={handleTitleBlur}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') {
-                e.preventDefault();
-                notesInputRef.current?.focus();
-              }
-            }}
-            className="w-full bg-transparent text-veyra-text text-base font-semibold placeholder:text-veyra-subtle focus:outline-none mb-2 border-none p-0"
-          />
-
-          <div className="h-px bg-veyra-border/60 my-2" />
-
-          {/* Notes description */}
-          <textarea
-            ref={notesInputRef}
-            rows={2}
-            placeholder="Detalles, enlaces de videoconferencia o agenda..."
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            className="w-full bg-transparent text-veyra-text placeholder:text-veyra-subtle text-xs focus:outline-none resize-none border-none p-0 leading-relaxed"
-          />
-        </div>
-
-        {/* ─── 2. SECCIÓN FECHA Y HORARIO (Con opción Todo el día) ─── */}
-        <div className="space-y-2">
-          <div className="flex items-center justify-between">
-            <label className="text-xs font-medium text-veyra-muted flex items-center gap-1.5">
-              <CalendarIcon className="w-3.5 h-3.5 text-accent" />
-              <span>Fecha y Horario</span>
-            </label>
-            <label className="flex items-center gap-2 text-xs text-veyra-muted cursor-pointer select-none hover:text-veyra-text">
-              <input
-                type="checkbox"
-                checked={isAllDay}
-                onChange={(e) => setIsAllDay(e.target.checked)}
-                className="rounded border-veyra-border text-accent focus:ring-accent w-3.5 h-3.5 cursor-pointer"
-              />
-              <span className="font-medium">Todo el día</span>
-            </label>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-            <div className={isAllDay ? 'sm:col-span-3' : 'sm:col-span-1'}>
-              <Input
-                label="Fecha"
-                type="date"
-                value={dateStr}
-                onChange={(e) => setDateStr(e.target.value)}
-                required
-              />
-            </div>
-
-            {!isAllDay && (
-              <>
-                <Input
-                  label="Inicio"
-                  type="time"
-                  value={startTimeStr}
-                  onChange={(e) => handleStartTimeChange(e.target.value)}
-                  required
-                />
-                <Input
-                  label="Fin"
-                  type="time"
-                  value={endTimeStr}
-                  onChange={(e) => setEndTimeStr(e.target.value)}
-                  required
-                />
-              </>
-            )}
-          </div>
-        </div>
-
-        {/* ─── 3. UBICACIÓN / PLATAFORMA ─── */}
-        <div className="space-y-1.5">
-          <div className="flex items-center justify-between">
-            <label className="text-xs font-medium text-veyra-muted flex items-center gap-1.5">
-              <MapPin className="w-3.5 h-3.5 text-accent" />
-              <span>Ubicación o Enlace</span>
-            </label>
-            <div className="flex items-center gap-1">
-              {['Google Meet', 'Zoom', 'Presencial'].map((preset) => (
-                <button
-                  key={preset}
-                  type="button"
-                  onClick={() => setLocation(preset)}
-                  className="px-2 py-0.5 rounded text-[10px] bg-veyra-card hover:bg-veyra-elevated border border-veyra-border text-veyra-subtle hover:text-veyra-text transition-colors cursor-pointer"
-                >
-                  {preset}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <Input
-            placeholder="Ej. Oficina Central, Google Meet, Zoom, Sala 3..."
-            value={location}
-            onChange={(e) => setLocation(e.target.value)}
-          />
-        </div>
-
-        {/* ─── 4. PALETA DE COLORES OFICIALES (8 colores de Android) ─── */}
-        <div className="space-y-1.5">
-          <label className="text-xs font-medium text-veyra-muted flex items-center justify-between">
-            <span>Color identificador</span>
-            <span className="text-[11px] text-veyra-subtle font-medium">
-              {currentColorObj.label}
-            </span>
-          </label>
-          <div className="flex items-center gap-2.5 flex-wrap">
-            {EVENT_COLORS.map((c) => {
-              const isSelected = color.toLowerCase() === c.value.toLowerCase();
-              return (
-                <button
-                  key={c.value}
-                  type="button"
-                  title={c.label}
-                  onClick={() => setColor(c.value)}
-                  style={{ backgroundColor: c.value }}
-                  className={cn(
-                    'w-7 h-7 rounded-full transition-all cursor-pointer flex items-center justify-center border border-white/20',
-                    isSelected
-                      ? 'ring-2 ring-offset-2 ring-accent scale-110 shadow-md'
-                      : 'hover:scale-105 opacity-80 hover:opacity-100'
-                  )}
-                >
-                  {isSelected && <Check className="w-3.5 h-3.5 text-white stroke-[3]" />}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* ─── 5. ACORDEÓN: OPCIONES AVANZADAS (Igual que Android) ─── */}
-        <div className="rounded-xl border border-veyra-border bg-veyra-card/30 overflow-hidden">
-          <button
-            type="button"
-            onClick={() => setIsAdvancedOpen(!isAdvancedOpen)}
-            className="w-full flex items-center justify-between p-3 text-left hover:bg-veyra-card/70 transition-colors cursor-pointer"
-          >
-            <div className="flex items-center gap-2.5">
-              <div className="w-7 h-7 rounded-lg bg-accent/15 flex items-center justify-center text-accent">
-                <Sliders className="w-3.5 h-3.5" />
-              </div>
-              <div>
-                <div className="flex items-center gap-2">
-                  <span className="text-xs font-semibold text-veyra-text">
-                    Opciones avanzadas
-                  </span>
-                  {activeAdvancedCount > 0 && (
-                    <span className="px-1.5 py-0.2 rounded-full bg-accent/20 border border-accent/40 text-accent text-[10px] font-semibold">
-                      {activeAdvancedCount} {activeAdvancedCount === 1 ? 'activa' : 'activas'}
+              <div className="flex items-center gap-2.5">
+                <div className="w-7 h-7 rounded-lg bg-accent/15 flex items-center justify-center text-accent">
+                  <Sliders className="w-3.5 h-3.5" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-semibold text-veyra-text">
+                      Opciones avanzadas
                     </span>
-                  )}
-                </div>
-                <p className="text-[11px] text-veyra-subtle">
-                  {isAdvancedOpen
-                    ? 'Toca para contraer'
-                    : 'Repetición, alertas previas, nota vinculada, etiquetas...'}
-                </p>
-              </div>
-            </div>
-
-            <ChevronDown
-              className={cn(
-                'w-4 h-4 text-veyra-muted transition-transform duration-200',
-                isAdvancedOpen && 'rotate-180'
-              )}
-            />
-          </button>
-
-          {isAdvancedOpen && (
-            <div className="p-3.5 pt-1 space-y-4 border-t border-veyra-border/60 bg-veyra-card/20 animate-in fade-in duration-150">
-              {/* 5.1 REPETICIÓN */}
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <label className="text-xs font-medium text-veyra-muted flex items-center gap-1.5">
-                    <Repeat className="w-3.5 h-3.5 text-accent" />
-                    <span>Repetir evento</span>
-                  </label>
-                  <span className="text-[11px] text-veyra-subtle">
-                    {recurrence === 'none'
-                      ? 'Evento único'
-                      : recurrence === 'daily'
-                      ? 'Todos los días'
-                      : recurrence === 'weekly'
-                      ? 'Semanal'
-                      : recurrence === 'weekdays'
-                      ? 'Lunes a Viernes'
-                      : recurrence === 'monthly'
-                      ? 'Mensual'
-                      : 'Anual (Cumpleaños)'}
-                  </span>
-                </div>
-
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
-                  {[
-                    { key: 'none' as ExtendedRecurrence, label: 'No repetir' },
-                    { key: 'daily' as ExtendedRecurrence, label: 'Diario' },
-                    { key: 'weekly' as ExtendedRecurrence, label: 'Semanal' },
-                    { key: 'weekdays' as ExtendedRecurrence, label: 'Lun a Vie' },
-                    { key: 'monthly' as ExtendedRecurrence, label: 'Mensual' },
-                    { key: 'yearly' as ExtendedRecurrence, label: 'Anual' },
-                  ].map((rec) => {
-                    const isSelected = recurrence === rec.key;
-                    return (
-                      <button
-                        key={rec.key}
-                        type="button"
-                        onClick={() => setRecurrence(rec.key)}
-                        className={cn(
-                          'py-1.5 px-2 rounded-lg text-xs font-medium border text-center transition-all cursor-pointer',
-                          isSelected
-                            ? 'bg-accent/15 border-accent text-accent font-semibold'
-                            : 'bg-veyra-card border-veyra-border text-veyra-muted hover:border-accent/40'
-                        )}
-                      >
-                        {rec.label}
-                      </button>
-                    );
-                  })}
-                </div>
-
-                {/* Weekday selector when 'weekly' is active */}
-                {recurrence === 'weekly' && (
-                  <div className="pt-1.5">
-                    <div className="text-[11px] text-veyra-subtle mb-1.5">
-                      Repetir en los siguientes días de la semana:
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                      {WEEKDAYS.map((wd) => {
-                        const isDaySelected = selectedDays.includes(wd.day);
-                        return (
-                          <button
-                            key={wd.day}
-                            type="button"
-                            onClick={() => toggleWeekday(wd.day)}
-                            title={wd.name}
-                            className={cn(
-                              'w-7 h-7 rounded-md text-xs font-semibold flex items-center justify-center transition-all cursor-pointer border',
-                              isDaySelected
-                                ? 'bg-accent text-white border-accent'
-                                : 'bg-veyra-card border-veyra-border text-veyra-muted hover:border-accent/50'
-                            )}
-                          >
-                            {wd.label}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              <div className="h-px bg-veyra-border/60" />
-
-              {/* 5.2 RECORDATORIOS / ALERTAS PREVIAS (notification_offsets) */}
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <label className="text-xs font-medium text-veyra-muted flex items-center gap-1.5">
-                    <Bell className="w-3.5 h-3.5 text-accent" />
-                    <span>Avisos y Alertas Previas</span>
-                  </label>
-                  <span className="text-[11px] text-veyra-subtle">
-                    {selectedOffsets.length === 0
-                      ? 'Sin aviso'
-                      : `${selectedOffsets.length} ${selectedOffsets.length === 1 ? 'aviso activo' : 'avisos activos'}`}
-                  </span>
-                </div>
-
-                <div className="flex flex-wrap gap-1.5">
-                  {AVAILABLE_OFFSETS.map((off) => {
-                    const isSelected = selectedOffsets.includes(off.value);
-                    return (
-                      <button
-                        key={off.value}
-                        type="button"
-                        onClick={() => toggleOffset(off.value)}
-                        className={cn(
-                          'px-2.5 py-1 rounded-md text-xs border transition-all cursor-pointer select-none',
-                          isSelected
-                            ? 'bg-accent/20 border-accent text-accent font-semibold shadow-xs'
-                            : 'bg-veyra-card border-veyra-border text-veyra-muted hover:border-accent/40'
-                        )}
-                      >
-                        {off.label}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              <div className="h-px bg-veyra-border/60" />
-
-              {/* 5.3 VINCULAR NOTA DE VEYRA NOTES */}
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <label className="text-xs font-medium text-veyra-muted flex items-center gap-1.5">
-                    <FileText className="w-3.5 h-3.5 text-accent" />
-                    <span>Vincular Nota de Veyra</span>
-                  </label>
-                  {linkedNoteId && (
-                    <button
-                      type="button"
-                      onClick={() => setLinkedNoteId('')}
-                      className="text-[11px] text-red-400 hover:text-red-300 cursor-pointer"
-                    >
-                      Desvincular
-                    </button>
-                  )}
-                </div>
-
-                <select
-                  value={linkedNoteId}
-                  onChange={(e) => setLinkedNoteId(e.target.value)}
-                  className="w-full bg-veyra-card border border-veyra-border text-veyra-text rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:border-accent cursor-pointer"
-                >
-                  <option value="">Sin nota vinculada</option>
-                  {allNotes.map((n) => (
-                    <option key={n.id} value={n.id}>
-                      {n.title || 'Nota sin título'}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="h-px bg-veyra-border/60" />
-
-              {/* 5.4 ETIQUETAS (TAGS) */}
-              <div className="space-y-2">
-                <label className="text-xs font-medium text-veyra-muted flex items-center gap-1.5">
-                  <TagIcon className="w-3.5 h-3.5 text-accent" />
-                  <span>Etiquetas del evento</span>
-                </label>
-
-                <div className="flex items-center gap-2">
-                  <input
-                    type="text"
-                    placeholder="Nueva etiqueta (ej. trabajo, urgente)..."
-                    value={newTagInput}
-                    onChange={(e) => setNewTagInput(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        e.preventDefault();
-                        handleAddTag();
-                      }
-                    }}
-                    className="flex-1 bg-veyra-card border border-veyra-border text-veyra-text placeholder:text-veyra-subtle rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:border-accent"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => handleAddTag()}
-                    disabled={!newTagInput.trim()}
-                    className="p-1.5 rounded-lg bg-veyra-elevated border border-veyra-border hover:border-accent/40 text-veyra-text hover:text-accent disabled:opacity-40 transition-colors cursor-pointer"
-                  >
-                    <Plus className="w-4 h-4" />
-                  </button>
-                </div>
-
-                {tags.length > 0 && (
-                  <div className="flex flex-wrap gap-1.5 pt-1">
-                    {tags.map((tag) => (
-                      <span
-                        key={tag}
-                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-veyra-card border border-veyra-border text-xs text-veyra-text"
-                      >
-                        <span className="text-accent font-semibold">#</span>
-                        <span>{tag}</span>
-                        <button
-                          type="button"
-                          onClick={() => handleRemoveTag(tag)}
-                          className="p-0.5 text-veyra-subtle hover:text-red-400 cursor-pointer"
-                        >
-                          <X className="w-3 h-3" />
-                        </button>
+                    {activeAdvancedCount > 0 && (
+                      <span className="px-1.5 py-0.2 rounded-full bg-accent/20 border border-accent/40 text-accent text-[10px] font-semibold">
+                        {activeAdvancedCount} {activeAdvancedCount === 1 ? 'activa' : 'activas'}
                       </span>
-                    ))}
+                    )}
                   </div>
-                )}
+                  <p className="text-[11px] text-veyra-subtle">
+                    Repetición, alertas previas, nota vinculada, etiquetas...
+                  </p>
+                </div>
               </div>
-            </div>
-          )}
-        </div>
 
-        {/* ─── 6. FOOTER CON ACCIONES (Eliminar + Cancelar + Guardar) ─── */}
-        <div className="flex items-center justify-between gap-3 pt-3 border-t border-veyra-border">
+              <div className="flex items-center gap-1.5 text-xs text-accent font-medium">
+                <span>Desplegar</span>
+                <ChevronDown className="w-4 h-4" />
+              </div>
+            </button>
+          </div>
+        ) : (
+          /* Vista horizontal de 2 columnas cuando opciones avanzadas están desplegadas */
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-5 items-start">
+            {/* Columna Izquierda: Información Principal */}
+            <div className="space-y-3.5">
+              {renderHeroCard()}
+              {renderDateTime()}
+              {renderLocationAndColor()}
+            </div>
+
+            {/* Columna Derecha: Opciones Avanzadas */}
+            {renderAdvancedPanel()}
+          </div>
+        )}
+
+        {/* ─── FOOTER CON ACCIONES (Sticky, siempre accesible) ─── */}
+        <div className="sticky bottom-0 bg-veyra-elevated/95 backdrop-blur-xs pt-3 mt-4 border-t border-veyra-border flex items-center justify-between gap-3 z-10">
           <div>
             {event && onDelete && !showDeleteConfirm && (
               <button

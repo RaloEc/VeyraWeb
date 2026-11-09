@@ -346,13 +346,475 @@ export const ReminderModal: React.FC<ReminderModalProps> = ({
     }
   };
 
+  // Sub-renderers for clean horizontal/vertical responsiveness
+  const renderHeroCard = () => (
+    <div
+      className="rounded-xl border p-3.5 transition-all"
+      style={{
+        borderColor: priorityTheme.border,
+        borderTopWidth: 3,
+        borderTopColor: priorityTheme.color,
+        backgroundColor: 'var(--color-card, rgba(255, 255, 255, 0.03))',
+      }}
+    >
+      {/* Header pill */}
+      <div className="flex items-center justify-between mb-2">
+        <div
+          className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold tracking-wider"
+          style={{
+            backgroundColor: priorityTheme.bg,
+            color: priorityTheme.color,
+          }}
+        >
+          <span
+            className="w-1.5 h-1.5 rounded-full"
+            style={{ backgroundColor: priorityTheme.color }}
+          />
+          <span>RECORDATORIO • {priorityTheme.label}</span>
+        </div>
+
+        {reminder && (
+          <span className="text-[11px] text-veyra-subtle font-mono">
+            ID: {reminder.id.substring(0, 8)}...
+          </span>
+        )}
+      </div>
+
+      {/* Title Input */}
+      <input
+        type="text"
+        required
+        autoFocus
+        placeholder="¿Qué necesitas recordar?"
+        value={title}
+        onChange={(e) => setTitle(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            notesInputRef.current?.focus();
+          }
+        }}
+        className="w-full bg-transparent text-veyra-text text-base font-semibold placeholder:text-veyra-subtle focus:outline-none mb-2 border-none p-0"
+      />
+
+      <div className="h-px bg-veyra-border/60 my-2" />
+
+      {/* Notes description */}
+      <textarea
+        ref={notesInputRef}
+        rows={2}
+        placeholder="Añadir notas o detalles adicionales..."
+        value={description}
+        onChange={(e) => setDescription(e.target.value)}
+        className="w-full bg-transparent text-veyra-text placeholder:text-veyra-subtle text-xs focus:outline-none resize-none border-none p-0 leading-relaxed"
+      />
+    </div>
+  );
+
+  const renderDateTime = () => (
+    <div className="space-y-1.5">
+      <label className="text-xs font-medium text-veyra-muted flex items-center gap-1.5">
+        <CalendarIcon className="w-3.5 h-3.5 text-accent" />
+        <span>Fecha y Hora</span>
+      </label>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+        <div className="relative">
+          <Input
+            type="date"
+            value={dateStr}
+            onChange={(e) => setDateStr(e.target.value)}
+            required
+          />
+        </div>
+        <div className="relative">
+          <Input
+            type="time"
+            value={timeStr}
+            onChange={(e) => setTimeStr(e.target.value)}
+            required
+          />
+        </div>
+      </div>
+    </div>
+  );
+
+  const renderControlLevel = () => (
+    <div className="space-y-1.5">
+      <div className="flex items-center justify-between">
+        <label className="text-xs font-medium text-veyra-muted flex items-center gap-1.5">
+          <Bell className="w-3.5 h-3.5 text-accent" />
+          <span>Nivel de Control & Insistencia</span>
+        </label>
+        <span className="text-[11px] text-veyra-subtle font-medium truncate max-w-[200px]" title={priorityTheme.desc}>
+          {priorityTheme.desc}
+        </span>
+      </div>
+
+      <div className="grid grid-cols-3 gap-2">
+        {[
+          {
+            key: 'normal' as ReminderControlLevel,
+            label: 'Normal',
+            desc: 'Estándar',
+            icon: Bell,
+            color: '#64748B',
+          },
+          {
+            key: 'strict' as ReminderControlLevel,
+            label: 'Estricto',
+            desc: 'Insistente',
+            icon: AlertCircle,
+            color: '#F59E0B',
+          },
+          {
+            key: 'critical' as ReminderControlLevel,
+            label: 'Crítico',
+            desc: 'Alarma Máxima',
+            icon: ShieldAlert,
+            color: '#EF4444',
+          },
+        ].map((opt) => {
+          const isSelected = controlLevel === opt.key;
+          const IconComp = opt.icon;
+          return (
+            <button
+              key={opt.key}
+              type="button"
+              onClick={() => setControlLevel(opt.key)}
+              className={cn(
+                'p-2.5 rounded-lg border text-left transition-all select-none cursor-pointer flex flex-col gap-0.5',
+                isSelected
+                  ? 'border-transparent shadow-sm'
+                  : 'border-veyra-border bg-veyra-card/50 text-veyra-muted hover:border-accent/40'
+              )}
+              style={{
+                backgroundColor: isSelected ? `${opt.color}18` : undefined,
+                borderColor: isSelected ? opt.color : undefined,
+              }}
+            >
+              <div className="flex items-center gap-1.5 text-xs font-semibold">
+                <IconComp
+                  className="w-3.5 h-3.5 shrink-0"
+                  style={{ color: isSelected ? opt.color : 'inherit' }}
+                />
+                <span style={{ color: isSelected ? opt.color : undefined }}>
+                  {opt.label}
+                </span>
+              </div>
+              <span className="text-[10px] text-veyra-subtle leading-tight">
+                {opt.desc}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+
+  const renderAdvancedPanel = () => (
+    <div className="rounded-xl border border-veyra-border bg-veyra-card/30 p-3.5 space-y-3.5">
+      {/* Header con botón para contraer */}
+      <div className="flex items-center justify-between pb-2 border-b border-veyra-border/60">
+        <div className="flex items-center gap-2">
+          <div className="w-6 h-6 rounded-md bg-accent/15 flex items-center justify-center text-accent">
+            <Sliders className="w-3.5 h-3.5" />
+          </div>
+          <span className="text-xs font-semibold text-veyra-text">
+            Opciones avanzadas
+          </span>
+          {activeAdvancedCount > 0 && (
+            <span className="px-1.5 py-0.2 rounded-full bg-accent/20 border border-accent/40 text-accent text-[10px] font-semibold">
+              {activeAdvancedCount} {activeAdvancedCount === 1 ? 'activa' : 'activas'}
+            </span>
+          )}
+        </div>
+        <button
+          type="button"
+          onClick={() => setIsAdvancedOpen(false)}
+          className="text-xs text-veyra-subtle hover:text-veyra-text flex items-center gap-1 px-2 py-0.5 rounded hover:bg-veyra-card transition-colors cursor-pointer"
+        >
+          <span>Contraer</span>
+          <ChevronDown className="w-3.5 h-3.5 rotate-180" />
+        </button>
+      </div>
+
+      {/* 4.1 REPETICIÓN */}
+      <div className="space-y-1.5">
+        <div className="flex items-center justify-between">
+          <label className="text-xs font-medium text-veyra-muted flex items-center gap-1.5">
+            <Repeat className="w-3.5 h-3.5 text-accent" />
+            <span>Repetir recordatorio</span>
+          </label>
+          <span className="text-[11px] text-veyra-subtle">
+            {recurrenceType === 'none'
+              ? 'Evento único'
+              : recurrenceType === 'daily'
+              ? 'Todos los días'
+              : recurrenceType === 'weekly'
+              ? 'Semanal'
+              : recurrenceType === 'weekdays'
+              ? 'Lunes a Viernes'
+              : recurrenceType === 'monthly'
+              ? 'Mensual'
+              : 'Anual'}
+          </span>
+        </div>
+
+        <div className="grid grid-cols-3 gap-1.5">
+          {[
+            { key: 'none' as RecurrenceType, label: 'No repetir' },
+            { key: 'daily' as RecurrenceType, label: 'Diario' },
+            { key: 'weekly' as RecurrenceType, label: 'Semanal' },
+            { key: 'weekdays' as RecurrenceType, label: 'Lun a Vie' },
+            { key: 'monthly' as RecurrenceType, label: 'Mensual' },
+            { key: 'yearly' as RecurrenceType, label: 'Anual' },
+          ].map((rec) => {
+            const isSelected = recurrenceType === rec.key;
+            return (
+              <button
+                key={rec.key}
+                type="button"
+                onClick={() => setRecurrenceType(rec.key)}
+                className={cn(
+                  'py-1.5 px-2 rounded-lg text-xs font-medium border text-center transition-all cursor-pointer',
+                  isSelected
+                    ? 'bg-accent/15 border-accent text-accent font-semibold'
+                    : 'bg-veyra-card border-veyra-border text-veyra-muted hover:border-accent/40'
+                )}
+              >
+                {rec.label}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Weekday selector when 'weekly' is active */}
+        {recurrenceType === 'weekly' && (
+          <div className="pt-1">
+            <div className="text-[11px] text-veyra-subtle mb-1">
+              Días de la semana:
+            </div>
+            <div className="flex items-center gap-1 flex-wrap">
+              {WEEKDAYS.map((wd) => {
+                const isDaySelected = selectedDays.includes(wd.day);
+                return (
+                  <button
+                    key={wd.day}
+                    type="button"
+                    onClick={() => toggleWeekday(wd.day)}
+                    title={wd.name}
+                    className={cn(
+                      'w-7 h-7 rounded-md text-xs font-semibold flex items-center justify-center transition-all cursor-pointer border',
+                      isDaySelected
+                        ? 'bg-accent text-white border-accent'
+                        : 'bg-veyra-card border-veyra-border text-veyra-muted hover:border-accent/50'
+                    )}
+                  >
+                    {wd.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div className="h-px bg-veyra-border/60" />
+
+      {/* 4.2 SUBTAREAS */}
+      <div className="space-y-1.5">
+        <div className="flex items-center justify-between">
+          <label className="text-xs font-medium text-veyra-muted flex items-center gap-1.5">
+            <CheckSquare className="w-3.5 h-3.5 text-accent" />
+            <span>Subtareas</span>
+          </label>
+          {subtasks.length > 0 && (
+            <span className="text-[11px] font-semibold text-accent bg-accent/15 px-2 py-0.5 rounded-full">
+              {subtasks.filter((s) => s.completed).length}/{subtasks.length} completadas
+            </span>
+          )}
+        </div>
+
+        <div className="flex items-center gap-2">
+          <input
+            type="text"
+            placeholder="Desglosa en pasos o subtareas..."
+            value={newSubtaskTitle}
+            onChange={(e) => setNewSubtaskTitle(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                handleAddSubtask();
+              }
+            }}
+            className="flex-1 bg-veyra-card border border-veyra-border text-veyra-text placeholder:text-veyra-subtle rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:border-accent"
+          />
+          <button
+            type="button"
+            onClick={() => handleAddSubtask()}
+            disabled={!newSubtaskTitle.trim()}
+            className="p-1.5 rounded-lg bg-veyra-elevated border border-veyra-border hover:border-accent/40 text-veyra-text hover:text-accent disabled:opacity-40 transition-colors cursor-pointer"
+          >
+            <Plus className="w-4 h-4" />
+          </button>
+        </div>
+
+        {subtasks.length > 0 && (
+          <div className="space-y-1 max-h-28 overflow-y-auto p-1.5 rounded-lg bg-veyra-card/50 border border-veyra-border">
+            {subtasks.map((st) => (
+              <div
+                key={st.id}
+                className="flex items-center justify-between gap-2 px-2.5 py-1 rounded-md bg-veyra-card border border-veyra-border text-xs group"
+              >
+                <div
+                  className="flex items-center gap-2 flex-1 cursor-pointer select-none min-w-0"
+                  onClick={() => handleToggleSubtask(st.id)}
+                >
+                  <div
+                    className={cn(
+                      'w-3.5 h-3.5 rounded border flex items-center justify-center transition-colors shrink-0',
+                      st.completed
+                        ? 'bg-accent border-accent text-white'
+                        : 'border-veyra-border bg-veyra-elevated hover:border-accent'
+                    )}
+                  >
+                    {st.completed && <Check className="w-2.5 h-2.5 stroke-[3]" />}
+                  </div>
+                  <span
+                    className={cn(
+                      'truncate text-[11px]',
+                      st.completed
+                        ? 'line-through text-veyra-subtle'
+                        : 'text-veyra-text font-medium'
+                    )}
+                  >
+                    {st.title}
+                  </span>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => handleRemoveSubtask(st.id)}
+                  className="p-0.5 text-veyra-subtle hover:text-red-400 opacity-70 group-hover:opacity-100 transition-opacity cursor-pointer shrink-0"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="h-px bg-veyra-border/60" />
+
+      {/* 4.3 ARCHIVOS ADJUNTOS Y ENLACES */}
+      <div className="space-y-1.5">
+        <div className="flex items-center justify-between">
+          <label className="text-xs font-medium text-veyra-muted flex items-center gap-1.5">
+            <Paperclip className="w-3.5 h-3.5 text-accent" />
+            <span>Adjuntos y Enlaces</span>
+          </label>
+          <span className="text-[11px] text-veyra-subtle">
+            {attachments.length} {attachments.length === 1 ? 'adjunto' : 'adjuntos'}
+          </span>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <input
+            type="file"
+            ref={fileInputRef}
+            onChange={handleFileUpload}
+            className="hidden"
+            accept="image/*,.pdf,.doc,.docx"
+          />
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={isUploading}
+            className="flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg border border-dashed border-veyra-border hover:border-accent/60 bg-veyra-card/50 text-xs text-veyra-muted hover:text-veyra-text transition-all cursor-pointer"
+          >
+            <Paperclip className="w-3.5 h-3.5 text-accent" />
+            <span>{isUploading ? 'Subiendo...' : 'Adjuntar archivo'}</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setShowAddLinkForm(!showAddLinkForm)}
+            className="flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg border border-veyra-border bg-veyra-card/50 text-xs text-veyra-muted hover:text-veyra-text hover:border-accent/40 transition-all cursor-pointer"
+          >
+            <LinkIcon className="w-3.5 h-3.5 text-accent" />
+            <span>Enlace Web</span>
+          </button>
+        </div>
+
+        {showAddLinkForm && (
+          <div className="flex items-center gap-2 p-2 rounded-lg bg-veyra-card border border-veyra-border">
+            <input
+              type="url"
+              placeholder="https://..."
+              value={linkInput}
+              onChange={(e) => setLinkInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  handleAddLink(e);
+                }
+              }}
+              className="flex-1 bg-veyra-elevated border border-veyra-border text-veyra-text placeholder:text-veyra-subtle rounded-md px-2.5 py-1 text-xs focus:outline-none focus:border-accent"
+            />
+            <button
+              type="button"
+              onClick={handleAddLink}
+              disabled={!linkInput.trim()}
+              className="px-2.5 py-1 rounded-md bg-accent text-white text-xs font-medium hover:opacity-90 disabled:opacity-40 cursor-pointer"
+            >
+              Añadir
+            </button>
+          </div>
+        )}
+
+        {attachments.length > 0 && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 pt-1">
+            {attachments.map((att, idx) => (
+              <div
+                key={idx}
+                className="flex items-center justify-between gap-2 p-1.5 rounded-lg bg-veyra-card border border-veyra-border text-xs group"
+              >
+                <a
+                  href={att.uri}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-1.5 flex-1 min-w-0 hover:text-accent transition-colors"
+                  title={att.name}
+                >
+                  <FileText className="w-3.5 h-3.5 text-accent shrink-0" />
+                  <span className="truncate text-veyra-text font-medium text-[11px]">
+                    {att.name}
+                  </span>
+                  <ExternalLink className="w-3 h-3 text-veyra-subtle shrink-0" />
+                </a>
+                <button
+                  type="button"
+                  onClick={() => handleRemoveAttachment(idx)}
+                  className="p-0.5 text-veyra-subtle hover:text-red-400 opacity-60 group-hover:opacity-100 transition-opacity cursor-pointer shrink-0"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+
   return (
     <Modal
       isOpen={isOpen}
       onClose={onClose}
       title={reminder ? 'Editar Recordatorio' : 'Nuevo Recordatorio'}
       description="Sincronización en tiempo real con tu teléfono móvil"
-      maxWidth="lg"
+      maxWidth={isAdvancedOpen ? '4xl' : 'lg'}
     >
       <form onSubmit={handleSubmit} className="space-y-4">
         {error && (
@@ -368,480 +830,64 @@ export const ReminderModal: React.FC<ReminderModalProps> = ({
           </div>
         )}
 
-        {/* ─── 1. HERO CARD: TIPO, TÍTULO Y NOTAS (Congruencia Android) ─── */}
-        <div
-          className="rounded-xl border p-3.5 transition-all"
-          style={{
-            borderColor: priorityTheme.border,
-            borderTopWidth: 3,
-            borderTopColor: priorityTheme.color,
-            backgroundColor: 'var(--color-card, rgba(255, 255, 255, 0.03))',
-          }}
-        >
-          {/* Header pill */}
-          <div className="flex items-center justify-between mb-2">
-            <div
-              className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold tracking-wider"
-              style={{
-                backgroundColor: priorityTheme.bg,
-                color: priorityTheme.color,
-              }}
+        {/* ─── CONTENIDO: LAYOUT ADAPTATIVO HORIZONTAL ─── */}
+        {!isAdvancedOpen ? (
+          /* Vista compacta cuando opciones avanzadas están contraídas */
+          <div className="space-y-4">
+            {renderHeroCard()}
+            {renderDateTime()}
+            {renderControlLevel()}
+
+            {/* Botón para desplegar opciones avanzadas */}
+            <button
+              type="button"
+              onClick={() => setIsAdvancedOpen(true)}
+              className="w-full flex items-center justify-between p-3 rounded-xl border border-veyra-border bg-veyra-card/30 hover:bg-veyra-card/70 transition-colors cursor-pointer text-left"
             >
-              <span
-                className="w-1.5 h-1.5 rounded-full"
-                style={{ backgroundColor: priorityTheme.color }}
-              />
-              <span>RECORDATORIO • {priorityTheme.label}</span>
-            </div>
-
-            {reminder && (
-              <span className="text-[11px] text-veyra-subtle font-mono">
-                ID: {reminder.id.substring(0, 8)}...
-              </span>
-            )}
-          </div>
-
-          {/* Title Input */}
-          <input
-            type="text"
-            required
-            autoFocus
-            placeholder="¿Qué necesitas recordar?"
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') {
-                e.preventDefault();
-                notesInputRef.current?.focus();
-              }
-            }}
-            className="w-full bg-transparent text-veyra-text text-base font-semibold placeholder:text-veyra-subtle focus:outline-none mb-2 border-none p-0"
-          />
-
-          <div className="h-px bg-veyra-border/60 my-2" />
-
-          {/* Notes description */}
-          <textarea
-            ref={notesInputRef}
-            rows={2}
-            placeholder="Añadir notas o detalles adicionales..."
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            className="w-full bg-transparent text-veyra-text placeholder:text-veyra-subtle text-xs focus:outline-none resize-none border-none p-0 leading-relaxed"
-          />
-        </div>
-
-        {/* ─── 2. SECCIÓN FECHA Y HORA ─── */}
-        <div className="space-y-1.5">
-          <label className="text-xs font-medium text-veyra-muted flex items-center gap-1.5">
-            <CalendarIcon className="w-3.5 h-3.5 text-accent" />
-            <span>Fecha y Hora</span>
-          </label>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-            <div className="relative">
-              <Input
-                type="date"
-                value={dateStr}
-                onChange={(e) => setDateStr(e.target.value)}
-                required
-              />
-            </div>
-            <div className="relative">
-              <Input
-                type="time"
-                value={timeStr}
-                onChange={(e) => setTimeStr(e.target.value)}
-                required
-              />
-            </div>
-          </div>
-        </div>
-
-        {/* ─── 3. SECCIÓN NIVEL DE CONTROL (Segmented Card congruente con Android) ─── */}
-        <div className="space-y-1.5">
-          <div className="flex items-center justify-between">
-            <label className="text-xs font-medium text-veyra-muted flex items-center gap-1.5">
-              <Bell className="w-3.5 h-3.5 text-accent" />
-              <span>Nivel de Control & Insistencia</span>
-            </label>
-            <span className="text-[11px] text-veyra-subtle font-medium">
-              {priorityTheme.desc}
-            </span>
-          </div>
-
-          <div className="grid grid-cols-3 gap-2">
-            {[
-              {
-                key: 'normal' as ReminderControlLevel,
-                label: 'Normal',
-                desc: 'Estándar',
-                icon: Bell,
-                color: '#64748B',
-              },
-              {
-                key: 'strict' as ReminderControlLevel,
-                label: 'Estricto',
-                desc: 'Insistente',
-                icon: AlertCircle,
-                color: '#F59E0B',
-              },
-              {
-                key: 'critical' as ReminderControlLevel,
-                label: 'Crítico',
-                desc: 'Alarma Máxima',
-                icon: ShieldAlert,
-                color: '#EF4444',
-              },
-            ].map((opt) => {
-              const isSelected = controlLevel === opt.key;
-              const IconComp = opt.icon;
-              return (
-                <button
-                  key={opt.key}
-                  type="button"
-                  onClick={() => setControlLevel(opt.key)}
-                  className={cn(
-                    'p-2.5 rounded-lg border text-left transition-all select-none cursor-pointer flex flex-col gap-1',
-                    isSelected
-                      ? 'border-transparent shadow-sm'
-                      : 'border-veyra-border bg-veyra-card/50 text-veyra-muted hover:border-accent/40'
-                  )}
-                  style={{
-                    backgroundColor: isSelected ? `${opt.color}18` : undefined,
-                    borderColor: isSelected ? opt.color : undefined,
-                  }}
-                >
-                  <div className="flex items-center gap-1.5 text-xs font-semibold">
-                    <IconComp
-                      className="w-3.5 h-3.5"
-                      style={{ color: isSelected ? opt.color : 'inherit' }}
-                    />
-                    <span style={{ color: isSelected ? opt.color : undefined }}>
-                      {opt.label}
+              <div className="flex items-center gap-2.5">
+                <div className="w-7 h-7 rounded-lg bg-accent/15 flex items-center justify-center text-accent">
+                  <Sliders className="w-3.5 h-3.5" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-semibold text-veyra-text">
+                      Opciones avanzadas
                     </span>
+                    {activeAdvancedCount > 0 && (
+                      <span className="px-1.5 py-0.2 rounded-full bg-accent/20 border border-accent/40 text-accent text-[10px] font-semibold">
+                        {activeAdvancedCount} {activeAdvancedCount === 1 ? 'activa' : 'activas'}
+                      </span>
+                    )}
                   </div>
-                  <span className="text-[10px] text-veyra-subtle leading-tight">
-                    {opt.desc}
-                  </span>
-                </button>
-              );
-            })}
+                  <p className="text-[11px] text-veyra-subtle">
+                    Repetición, subtareas, archivos adjuntos...
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-1.5 text-xs text-accent font-medium">
+                <span>Desplegar</span>
+                <ChevronDown className="w-4 h-4" />
+              </div>
+            </button>
           </div>
-        </div>
-
-        {/* ─── 4. ACORDEÓN: OPCIONES AVANZADAS (Igual que Android) ─── */}
-        <div className="rounded-xl border border-veyra-border bg-veyra-card/30 overflow-hidden">
-          <button
-            type="button"
-            onClick={() => setIsAdvancedOpen(!isAdvancedOpen)}
-            className="w-full flex items-center justify-between p-3 text-left hover:bg-veyra-card/70 transition-colors cursor-pointer"
-          >
-            <div className="flex items-center gap-2.5">
-              <div className="w-7 h-7 rounded-lg bg-accent/15 flex items-center justify-center text-accent">
-                <Sliders className="w-3.5 h-3.5" />
-              </div>
-              <div>
-                <div className="flex items-center gap-2">
-                  <span className="text-xs font-semibold text-veyra-text">
-                    Opciones avanzadas
-                  </span>
-                  {activeAdvancedCount > 0 && (
-                    <span className="px-1.5 py-0.2 rounded-full bg-accent/20 border border-accent/40 text-accent text-[10px] font-semibold">
-                      {activeAdvancedCount} {activeAdvancedCount === 1 ? 'activa' : 'activas'}
-                    </span>
-                  )}
-                </div>
-                <p className="text-[11px] text-veyra-subtle">
-                  {isAdvancedOpen
-                    ? 'Toca para contraer'
-                    : 'Repetición, subtareas, archivos adjuntos...'}
-                </p>
-              </div>
+        ) : (
+          /* Vista horizontal de 2 columnas cuando opciones avanzadas están desplegadas */
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-5 items-start">
+            {/* Columna Izquierda: Información Principal */}
+            <div className="space-y-3.5">
+              {renderHeroCard()}
+              {renderDateTime()}
+              {renderControlLevel()}
             </div>
 
-            <ChevronDown
-              className={cn(
-                'w-4 h-4 text-veyra-muted transition-transform duration-200',
-                isAdvancedOpen && 'rotate-180'
-              )}
-            />
-          </button>
+            {/* Columna Derecha: Opciones Avanzadas */}
+            {renderAdvancedPanel()}
+          </div>
+        )}
 
-          {isAdvancedOpen && (
-            <div className="p-3.5 pt-1 space-y-4 border-t border-veyra-border/60 bg-veyra-card/20 animate-in fade-in duration-150">
-              {/* 4.1 REPETICIÓN */}
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <label className="text-xs font-medium text-veyra-muted flex items-center gap-1.5">
-                    <Repeat className="w-3.5 h-3.5 text-accent" />
-                    <span>Repetir recordatorio</span>
-                  </label>
-                  <span className="text-[11px] text-veyra-subtle">
-                    {recurrenceType === 'none'
-                      ? 'Evento único'
-                      : recurrenceType === 'daily'
-                      ? 'Todos los días'
-                      : recurrenceType === 'weekly'
-                      ? 'Semanal'
-                      : recurrenceType === 'weekdays'
-                      ? 'Lunes a Viernes'
-                      : recurrenceType === 'monthly'
-                      ? 'Mensual'
-                      : 'Anual'}
-                  </span>
-                </div>
-
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
-                  {[
-                    { key: 'none' as RecurrenceType, label: 'No repetir' },
-                    { key: 'daily' as RecurrenceType, label: 'Diario' },
-                    { key: 'weekly' as RecurrenceType, label: 'Semanal' },
-                    { key: 'weekdays' as RecurrenceType, label: 'Lun a Vie' },
-                    { key: 'monthly' as RecurrenceType, label: 'Mensual' },
-                    { key: 'yearly' as RecurrenceType, label: 'Anual' },
-                  ].map((rec) => {
-                    const isSelected = recurrenceType === rec.key;
-                    return (
-                      <button
-                        key={rec.key}
-                        type="button"
-                        onClick={() => setRecurrenceType(rec.key)}
-                        className={cn(
-                          'py-1.5 px-2 rounded-lg text-xs font-medium border text-center transition-all cursor-pointer',
-                          isSelected
-                            ? 'bg-accent/15 border-accent text-accent font-semibold'
-                            : 'bg-veyra-card border-veyra-border text-veyra-muted hover:border-accent/40'
-                        )}
-                      >
-                        {rec.label}
-                      </button>
-                    );
-                  })}
-                </div>
-
-                {/* Weekday selector when 'weekly' is active */}
-                {recurrenceType === 'weekly' && (
-                  <div className="pt-1.5">
-                    <div className="text-[11px] text-veyra-subtle mb-1.5">
-                      Selecciona los días en que debe sonar:
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                      {WEEKDAYS.map((wd) => {
-                        const isDaySelected = selectedDays.includes(wd.day);
-                        return (
-                          <button
-                            key={wd.day}
-                            type="button"
-                            onClick={() => toggleWeekday(wd.day)}
-                            title={wd.name}
-                            className={cn(
-                              'w-7 h-7 rounded-md text-xs font-semibold flex items-center justify-center transition-all cursor-pointer border',
-                              isDaySelected
-                                ? 'bg-accent text-white border-accent'
-                                : 'bg-veyra-card border-veyra-border text-veyra-muted hover:border-accent/50'
-                            )}
-                          >
-                            {wd.label}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              <div className="h-px bg-veyra-border/60" />
-
-              {/* 4.2 SUBTAREAS (CHECKLIST INTERACTIVO) */}
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <label className="text-xs font-medium text-veyra-muted flex items-center gap-1.5">
-                    <CheckSquare className="w-3.5 h-3.5 text-accent" />
-                    <span>Subtareas</span>
-                  </label>
-                  {subtasks.length > 0 && (
-                    <span className="text-[11px] font-semibold text-accent bg-accent/15 px-2 py-0.5 rounded-full">
-                      {subtasks.filter((s) => s.completed).length}/{subtasks.length} completadas
-                    </span>
-                  )}
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <input
-                    type="text"
-                    placeholder="Desglosa en pasos o subtareas..."
-                    value={newSubtaskTitle}
-                    onChange={(e) => setNewSubtaskTitle(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        e.preventDefault();
-                        handleAddSubtask();
-                      }
-                    }}
-                    className="flex-1 bg-veyra-card border border-veyra-border text-veyra-text placeholder:text-veyra-subtle rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:border-accent"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => handleAddSubtask()}
-                    disabled={!newSubtaskTitle.trim()}
-                    className="p-1.5 rounded-lg bg-veyra-elevated border border-veyra-border hover:border-accent/40 text-veyra-text hover:text-accent disabled:opacity-40 transition-colors cursor-pointer"
-                  >
-                    <Plus className="w-4 h-4" />
-                  </button>
-                </div>
-
-                {subtasks.length > 0 && (
-                  <div className="space-y-1.5 max-h-36 overflow-y-auto p-1.5 rounded-lg bg-veyra-card/50 border border-veyra-border">
-                    {subtasks.map((st) => (
-                      <div
-                        key={st.id}
-                        className="flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-md bg-veyra-card border border-veyra-border text-xs group"
-                      >
-                        <div
-                          className="flex items-center gap-2 flex-1 cursor-pointer select-none"
-                          onClick={() => handleToggleSubtask(st.id)}
-                        >
-                          <div
-                            className={cn(
-                              'w-4 h-4 rounded border flex items-center justify-center transition-colors',
-                              st.completed
-                                ? 'bg-accent border-accent text-white'
-                                : 'border-veyra-border bg-veyra-elevated hover:border-accent'
-                            )}
-                          >
-                            {st.completed && <Check className="w-3 h-3 stroke-[3]" />}
-                          </div>
-                          <span
-                            className={cn(
-                              'truncate',
-                              st.completed
-                                ? 'line-through text-veyra-subtle'
-                                : 'text-veyra-text font-medium'
-                            )}
-                          >
-                            {st.title}
-                          </span>
-                        </div>
-
-                        <button
-                          type="button"
-                          onClick={() => handleRemoveSubtask(st.id)}
-                          className="p-1 text-veyra-subtle hover:text-red-400 opacity-70 group-hover:opacity-100 transition-opacity cursor-pointer"
-                        >
-                          <X className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              <div className="h-px bg-veyra-border/60" />
-
-              {/* 4.3 ARCHIVOS ADJUNTOS Y ENLACES */}
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <label className="text-xs font-medium text-veyra-muted flex items-center gap-1.5">
-                    <Paperclip className="w-3.5 h-3.5 text-accent" />
-                    <span>Adjuntos y Enlaces</span>
-                  </label>
-                  <span className="text-[11px] text-veyra-subtle">
-                    {attachments.length} adjuntos
-                  </span>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <input
-                    type="file"
-                    ref={fileInputRef}
-                    onChange={handleFileUpload}
-                    className="hidden"
-                    accept="image/*,.pdf,.doc,.docx"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => fileInputRef.current?.click()}
-                    disabled={isUploading}
-                    className="flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg border border-dashed border-veyra-border hover:border-accent/60 bg-veyra-card/50 text-xs text-veyra-muted hover:text-veyra-text transition-all cursor-pointer"
-                  >
-                    <Paperclip className="w-3.5 h-3.5 text-accent" />
-                    <span>{isUploading ? 'Subiendo archivo...' : 'Adjuntar foto o archivo'}</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setShowAddLinkForm(!showAddLinkForm)}
-                    className="flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg border border-veyra-border bg-veyra-card/50 text-xs text-veyra-muted hover:text-veyra-text hover:border-accent/40 transition-all cursor-pointer"
-                  >
-                    <LinkIcon className="w-3.5 h-3.5 text-accent" />
-                    <span>Enlace Web</span>
-                  </button>
-                </div>
-
-                {showAddLinkForm && (
-                  <div className="flex items-center gap-2 p-2 rounded-lg bg-veyra-card border border-veyra-border">
-                    <input
-                      type="url"
-                      placeholder="https://..."
-                      value={linkInput}
-                      onChange={(e) => setLinkInput(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
-                          e.preventDefault();
-                          handleAddLink(e);
-                        }
-                      }}
-                      className="flex-1 bg-veyra-elevated border border-veyra-border text-veyra-text placeholder:text-veyra-subtle rounded-md px-2.5 py-1 text-xs focus:outline-none focus:border-accent"
-                    />
-                    <button
-                      type="button"
-                      onClick={handleAddLink}
-                      disabled={!linkInput.trim()}
-                      className="px-2.5 py-1 rounded-md bg-accent text-white text-xs font-medium hover:opacity-90 disabled:opacity-40 cursor-pointer"
-                    >
-                      Añadir
-                    </button>
-                  </div>
-                )}
-
-                {attachments.length > 0 && (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 pt-1">
-                    {attachments.map((att, idx) => (
-                      <div
-                        key={idx}
-                        className="flex items-center justify-between gap-2 p-2 rounded-lg bg-veyra-card border border-veyra-border text-xs group"
-                      >
-                        <a
-                          href={att.uri}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="flex items-center gap-2 flex-1 min-w-0 hover:text-accent transition-colors"
-                          title={att.name}
-                        >
-                          <FileText className="w-3.5 h-3.5 text-accent shrink-0" />
-                          <span className="truncate text-veyra-text font-medium text-[11px]">
-                            {att.name}
-                          </span>
-                          <ExternalLink className="w-3 h-3 text-veyra-subtle shrink-0" />
-                        </a>
-                        <button
-                          type="button"
-                          onClick={() => handleRemoveAttachment(idx)}
-                          className="p-1 text-veyra-subtle hover:text-red-400 opacity-60 group-hover:opacity-100 transition-opacity cursor-pointer shrink-0"
-                        >
-                          <X className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* ─── 5. FOOTER CON ACCIONES (Eliminar + Cancelar + Guardar) ─── */}
-        <div className="flex items-center justify-between gap-3 pt-3 border-t border-veyra-border">
+        {/* ─── FOOTER CON ACCIONES (Sticky, siempre accesible) ─── */}
+        <div className="sticky bottom-0 bg-veyra-elevated/95 backdrop-blur-xs pt-3 mt-4 border-t border-veyra-border flex items-center justify-between gap-3 z-10">
           <div>
             {reminder && onDelete && !showDeleteConfirm && (
               <button
