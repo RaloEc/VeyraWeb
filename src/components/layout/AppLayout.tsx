@@ -3,6 +3,7 @@ import { RemindersModule } from '../../modules/reminders/RemindersModule';
 import { NotesModule } from '../../modules/notes/NotesModule';
 import { useReminders } from '../../hooks/useReminders';
 import { useNotes } from '../../hooks/useNotes';
+import { useEvents } from '../../hooks/useEvents';
 import type { User } from '@supabase/supabase-js';
 import type { Database } from '../../types/database';
 
@@ -83,6 +84,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ user, profile, onSignOut }
 
   const remindersState = useReminders(user.id);
   const notesState = useNotes(user.id, initialRoute.noteId);
+  const eventsState = useEvents(user.id);
 
   // If a folder was requested in query params, select it
   useEffect(() => {
@@ -136,7 +138,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ user, profile, onSignOut }
       {/* Main Workspace (Full width: Note editor and Folders sidebar have full stage) */}
       <main className="flex-1 flex overflow-hidden bg-veyra-canvas h-full">
         {activeModule === 'reminders' ? (
-          <RemindersModule userId={user.id} remindersHook={remindersState} />
+          <RemindersModule userId={user.id} remindersHook={remindersState} eventsHook={eventsState} />
         ) : (
           <NotesModule
             userId={user.id}

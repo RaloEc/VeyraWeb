@@ -19,13 +19,15 @@ import {
   ExternalLink,
   Pencil,
   Check,
+  Paperclip,
+  Loader2,
 } from 'lucide-react';
 import type { CalendarEvent } from '../../hooks/useEvents';
 import type { Note, Folder } from '../../types/notes';
 import type { useReminders } from '../../hooks/useReminders';
 import type { useEvents } from '../../hooks/useEvents';
 import { useTheme } from '../../theme/ThemeProvider';
-import { cn } from '../../lib/utils';
+import { cn, isImageAttachment, parseAttachments } from '../../lib/utils';
 import { ConfirmTooltip } from '../../components/common/ConfirmTooltip';
 
 const COLOR_OPTIONS = [
@@ -88,6 +90,51 @@ export const EventDetailView: React.FC<EventDetailViewProps> = ({
   const [selectedFolderId, setSelectedFolderId] = useState<string>('');
   const [showCreateNoteForm, setShowCreateNoteForm] = useState(false);
   const [togglingNoteId, setTogglingNoteId] = useState<string | null>(null);
+
+  const [showAddReminderForm, setShowAddReminderForm] = useState(false);
+  const [newReminderTitle, setNewReminderTitle] = useState('');
+  const [newReminderDueDate, setNewReminderDueDate] = useState('');
+  const [newReminderDueTime, setNewReminderDueTime] = useState('');
+  const [newReminderPriority, setNewReminderPriority] = useState<1 | 2 | 3>(1);
+  const [isSavingReminder, setIsSavingReminder] = useState(false);
+
+  const handleOpenAddReminder = () => {
+    const s = Number(event.start_time_ms) || Date.now();
+    const d = new Date(s);
+    setNewReminderDueDate(d.toISOString().split('T')[0]);
+    setNewReminderDueTime(d.toTimeString().substring(0, 5));
+    setNewReminderPriority(1);
+    setShowAddReminderForm(true);
+  };
+
+  const handleCreateReminderForEvent = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!newReminderTitle.trim() || !remindersHook?.createReminder) return;
+
+    setIsSavingReminder(true);
+    try {
+      let dueMs = Number(event.start_time_ms) || Date.now();
+      if (newReminderDueDate) {
+        const [y, m, d] = newReminderDueDate.split('-').map(Number);
+        const [h, min] = (newReminderDueTime || '12:00').split(':').map(Number);
+        dueMs = new Date(y, m - 1, d, h || 0, min || 0).getTime();
+      }
+
+      await remindersHook.createReminder({
+        title: newReminderTitle.trim(),
+        due_date_ms: dueMs,
+        priority: newReminderPriority,
+        event_id: event.id,
+      });
+
+      setNewReminderTitle('');
+      setShowAddReminderForm(false);
+    } catch (err) {
+      console.error('[EventDetailView] Error creating reminder for event:', err);
+    } finally {
+      setIsSavingReminder(false);
+    }
+  };
 
   const initDraftState = () => {
     setTitle(event.title || '');
@@ -254,6 +301,10 @@ export const EventDetailView: React.FC<EventDetailViewProps> = ({
       console.error('Error deleting linked note for event:', err);
     }
   };
+
+  const attachmentsList = useMemo(() => {
+    return parseAttachments((event as any).attachments);
+  }, [(event as any).attachments]);
 
   // 1. Linked Notes: Primary note + any note with note.event_id === event.id
   const linkedNotes = useMemo(() => {
@@ -857,6 +908,56 @@ export const EventDetailView: React.FC<EventDetailViewProps> = ({
             </div>
           ) : null}
 
+          {/* Adjuntos y Enlaces */}
+          {attachmentsList.length > 0 && (
+            <div className="space-y-2 pt-1">
+              <div className="flex items-center gap-2">
+                <Paperclip className="w-3.5 h-3.5 text-accent" />
+                <h2 className="text-xs font-bold text-veyra-text uppercase tracking-wider">
+                  Adjuntos ({attachmentsList.length})
+                </h2>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {attachmentsList.map((att, idx) => {
+                  const isImg = isImageAttachment(att.uri) || isImageAttachment(att.name);
+                  return (
+                    <a
+                      key={idx}
+                      href={att.uri}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-2.5 p-2 rounded-lg bg-veyra-card/60 border border-veyra-border hover:border-accent/40 transition-all text-xs group"
+                    >
+                      {isImg ? (
+                        <img
+                          src={att.uri}
+                          alt={att.name}
+                          className="w-10 h-10 rounded object-cover border border-veyra-border/60 shrink-0 bg-black/10 group-hover:scale-105 transition-transform"
+                          onError={(e) => {
+                            (e.target as HTMLElement).style.display = 'none';
+                          }}
+                        />
+                      ) : (
+                        <div className="w-10 h-10 rounded bg-accent/10 border border-accent/20 flex items-center justify-center shrink-0 text-accent">
+                          <FileText className="w-4 h-4" />
+                        </div>
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <div className="truncate text-veyra-text font-medium text-xs group-hover:text-accent transition-colors">
+                          {att.name}
+                        </div>
+                        <div className="text-[10px] text-veyra-subtle flex items-center gap-1">
+                          <span>{isImg ? 'Imagen adjunta' : 'Documento / Enlace'}</span>
+                          <ExternalLink className="w-2.5 h-2.5 opacity-60" />
+                        </div>
+                      </div>
+                    </a>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           {/* Tareas y Recordatorios del Evento */}
           <div className="space-y-2.5 pt-2">
             <div className="flex items-center justify-between">
@@ -864,7 +965,120 @@ export const EventDetailView: React.FC<EventDetailViewProps> = ({
                 <CheckSquare className="w-3.5 h-3.5 text-emerald-400" />
                 <span>Tareas y recordatorios asociados ({linkedReminders.length})</span>
               </div>
+
+              {remindersHook && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (showAddReminderForm) {
+                      setShowAddReminderForm(false);
+                    } else {
+                      handleOpenAddReminder();
+                    }
+                  }}
+                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-accent text-white font-medium text-[11px] hover:opacity-90 transition-opacity cursor-pointer shadow-xs"
+                >
+                  <Plus className="w-3 h-3 stroke-[2.5]" />
+                  <span>Añadir</span>
+                </button>
+              )}
             </div>
+
+            {/* Inline Formulario para Crear Recordatorio Vinculado */}
+            {showAddReminderForm && (
+              <form
+                onSubmit={handleCreateReminderForEvent}
+                className="p-3.5 rounded-lg bg-veyra-card border border-accent/40 shadow-sm space-y-3 animate-in fade-in-50 duration-150"
+              >
+                <div className="text-[11px] font-semibold text-veyra-text flex items-center justify-between">
+                  <span>Nuevo recordatorio para este evento</span>
+                  <button
+                    type="button"
+                    onClick={() => setShowAddReminderForm(false)}
+                    className="text-veyra-subtle hover:text-veyra-text text-xs p-0.5"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+
+                <input
+                  type="text"
+                  placeholder="¿Qué necesitas recordar? (ej. Entregar tarea, llevar documentos, preparar informe...)"
+                  value={newReminderTitle}
+                  onChange={(e) => setNewReminderTitle(e.target.value)}
+                  className="w-full px-2.5 py-1.5 rounded-md bg-veyra-canvas border border-veyra-border text-xs text-veyra-text placeholder:text-veyra-subtle focus:outline-none focus:border-accent"
+                  autoFocus
+                />
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  <div className="space-y-1">
+                    <label className="text-[10px] text-veyra-subtle flex items-center gap-1">
+                      <Calendar className="w-3 h-3 text-accent" />
+                      <span>Fecha límite / entrega</span>
+                    </label>
+                    <input
+                      type="date"
+                      value={newReminderDueDate}
+                      onChange={(e) => setNewReminderDueDate(e.target.value)}
+                      className="w-full px-2 py-1.5 rounded-md bg-veyra-canvas border border-veyra-border text-xs text-veyra-text focus:outline-none focus:border-accent"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[10px] text-veyra-subtle flex items-center gap-1">
+                      <Clock className="w-3 h-3 text-accent" />
+                      <span>Hora</span>
+                    </label>
+                    <input
+                      type="time"
+                      value={newReminderDueTime}
+                      onChange={(e) => setNewReminderDueTime(e.target.value)}
+                      className="w-full px-2 py-1.5 rounded-md bg-veyra-canvas border border-veyra-border text-xs text-veyra-text focus:outline-none focus:border-accent"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between pt-1">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[10.5px] text-veyra-subtle">Prioridad:</span>
+                    <select
+                      value={newReminderPriority}
+                      onChange={(e) => setNewReminderPriority(Number(e.target.value) as 1 | 2 | 3)}
+                      className="px-2 py-1 rounded bg-veyra-canvas border border-veyra-border text-[11px] text-veyra-text focus:outline-none focus:border-accent cursor-pointer"
+                    >
+                      <option value={1}>Normal</option>
+                      <option value={2}>Estricto</option>
+                      <option value={3}>Crítico</option>
+                    </select>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowAddReminderForm(false);
+                        setNewReminderTitle('');
+                      }}
+                      className="px-2.5 py-1 text-xs text-veyra-subtle hover:text-veyra-text cursor-pointer"
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={!newReminderTitle.trim() || isSavingReminder}
+                      className="px-3 py-1 rounded-md bg-accent text-white text-xs font-medium hover:opacity-90 disabled:opacity-40 transition-opacity flex items-center gap-1 cursor-pointer shadow-xs"
+                    >
+                      {isSavingReminder ? (
+                        <Loader2 className="w-3 h-3 animate-spin" />
+                      ) : (
+                        <Check className="w-3 h-3 stroke-[2.5]" />
+                      )}
+                      <span>Guardar</span>
+                    </button>
+                  </div>
+                </div>
+              </form>
+            )}
 
             {linkedReminders.length === 0 ? (
               <div className="p-3.5 rounded-lg border border-dashed border-veyra-border text-xs text-veyra-subtle">
@@ -874,6 +1088,9 @@ export const EventDetailView: React.FC<EventDetailViewProps> = ({
               <div className="divide-y divide-veyra-border/50 border border-veyra-border rounded-lg bg-veyra-card/40 overflow-hidden">
                 {linkedReminders.map((reminder) => {
                   const isDone = reminder.status === 'completed';
+                  const isCritical = reminder.control_level === 'critical' || reminder.priority === 3;
+                  const isStrict = reminder.control_level === 'strict' || reminder.priority === 2;
+
                   return (
                     <div
                       key={reminder.id}
@@ -904,17 +1121,48 @@ export const EventDetailView: React.FC<EventDetailViewProps> = ({
                         >
                           {reminder.title}
                         </span>
+
+                        {isCritical && !isDone && (
+                          <span className="px-1 py-0.2 rounded text-[8px] font-extrabold uppercase tracking-wider bg-rose-500/15 text-rose-400 border border-rose-500/25 shrink-0">
+                            Alta
+                          </span>
+                        )}
+                        {isStrict && !isDone && (
+                          <span className="px-1 py-0.2 rounded text-[8px] font-extrabold uppercase tracking-wider bg-amber-500/15 text-amber-400 border border-amber-500/25 shrink-0">
+                            Media
+                          </span>
+                        )}
                       </div>
 
                       <div className="flex items-center gap-2 text-[11px] text-veyra-subtle shrink-0">
                         {reminder.due_date_ms && (
-                          <span>
+                          <span className="font-mono text-[10.5px]">
                             {new Date(reminder.due_date_ms).toLocaleTimeString([], {
                               hour: '2-digit',
                               minute: '2-digit',
                             })}
                           </span>
                         )}
+
+                        {remindersHook?.deleteReminder && (
+                          <div onClick={(e) => e.stopPropagation()}>
+                            <ConfirmTooltip
+                              title="¿Eliminar recordatorio?"
+                              description={`"${reminder.title}"`}
+                              confirmText="Eliminar"
+                              onConfirm={() => remindersHook.deleteReminder(reminder.id)}
+                            >
+                              <button
+                                type="button"
+                                title="Eliminar recordatorio"
+                                className="p-1 rounded opacity-0 group-hover:opacity-100 hover:text-rose-400 text-veyra-subtle transition-all cursor-pointer"
+                              >
+                                <Trash2 className="w-3 h-3" />
+                              </button>
+                            </ConfirmTooltip>
+                          </div>
+                        )}
+
                         <ArrowRight className="w-3 h-3 opacity-0 group-hover:opacity-100 text-accent transition-opacity" />
                       </div>
                     </div>

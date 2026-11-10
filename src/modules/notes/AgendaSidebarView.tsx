@@ -93,6 +93,9 @@ export const AgendaSidebarView: React.FC<AgendaSidebarViewProps> = ({
     subtasks?: any[];
     repeat_rule?: string | null;
     attachments?: string | null;
+    links?: string | null;
+    event_id?: string | null;
+    offset_minutes?: number | null;
   }) => {
     if (payload.id) {
       await remindersHook?.updateReminder(payload.id, {
@@ -104,6 +107,9 @@ export const AgendaSidebarView: React.FC<AgendaSidebarViewProps> = ({
         subtasks: payload.subtasks,
         repeat_rule: payload.repeat_rule,
         attachments: payload.attachments,
+        links: payload.links,
+        event_id: payload.event_id,
+        offset_minutes: payload.offset_minutes,
       });
     } else {
       await remindersHook?.createReminder({
@@ -115,6 +121,9 @@ export const AgendaSidebarView: React.FC<AgendaSidebarViewProps> = ({
         subtasks: payload.subtasks,
         repeat_rule: payload.repeat_rule,
         attachments: payload.attachments,
+        links: payload.links,
+        event_id: payload.event_id,
+        offset_minutes: payload.offset_minutes,
       });
     }
   };
@@ -137,6 +146,7 @@ export const AgendaSidebarView: React.FC<AgendaSidebarViewProps> = ({
     notification_offset_min?: number | null;
     notification_offsets?: string | null;
     note_id?: string | null;
+    attachments?: string | null;
   }) => {
     if (payload.id) {
       await eventsHook?.updateEvent(payload.id, {
@@ -156,6 +166,7 @@ export const AgendaSidebarView: React.FC<AgendaSidebarViewProps> = ({
         notification_offset_min: payload.notification_offset_min,
         notification_offsets: payload.notification_offsets,
         note_id: payload.note_id,
+        attachments: payload.attachments,
       });
     } else {
       await eventsHook?.createEvent({
@@ -175,6 +186,7 @@ export const AgendaSidebarView: React.FC<AgendaSidebarViewProps> = ({
         notification_offset_min: payload.notification_offset_min,
         notification_offsets: payload.notification_offsets,
         note_id: payload.note_id,
+        attachments: payload.attachments,
       });
     }
   };
@@ -421,6 +433,7 @@ export const AgendaSidebarView: React.FC<AgendaSidebarViewProps> = ({
   // Render a reminder card using the exact mobile Veyra ReminderCard
   const renderReminderItem = (reminder: Reminder) => {
     const linkedNote = getLinkedNote(reminder);
+    const linkedEvent = events.find((e) => e.id === reminder.event_id);
     return (
       <ReminderCard
         key={`${reminder.id}-${reminder.due_date_ms}`}
@@ -438,6 +451,10 @@ export const AgendaSidebarView: React.FC<AgendaSidebarViewProps> = ({
         onSelectNote={onSelectNote}
         linkedNoteTitle={linkedNote?.title || undefined}
         linkedNoteId={linkedNote?.id}
+        linkedEventTitle={linkedEvent?.title}
+        linkedEventColor={linkedEvent?.color || undefined}
+        linkedEventId={linkedEvent?.id}
+        onSelectEvent={onSelectEvent}
         isSelected={selectedReminderId === reminder.id}
       />
     );
@@ -931,6 +948,7 @@ export const AgendaSidebarView: React.FC<AgendaSidebarViewProps> = ({
         isOpen={isReminderModalOpen}
         onClose={() => setIsReminderModalOpen(false)}
         reminder={editingReminder}
+        events={eventsHook?.events}
         onSave={handleSaveReminder}
         onDelete={(id) => remindersHook?.deleteReminder(id)}
       />

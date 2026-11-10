@@ -125,6 +125,7 @@ export function useEvents(userId?: string) {
       is_birthday_like?: boolean;
       notification_offset_min?: number | null;
       notification_offsets?: string | null;
+      attachments?: string | null;
       tags?: string[] | string | null;
     }): Promise<string | undefined> => {
       if (!userId) return;
@@ -164,6 +165,7 @@ export function useEvents(userId?: string) {
         notification_offset_min: payload.notification_offset_min !== undefined ? payload.notification_offset_min : 15,
         notification_offsets: payload.notification_offsets ?? JSON.stringify([15]),
         notification_ids: JSON.stringify([]),
+        attachments: payload.attachments || null,
         created_at_ms: nowMs,
         updated_at_ms: nowMs,
         last_modified_ms: nowMs,
@@ -190,6 +192,7 @@ export function useEvents(userId?: string) {
         notification_offset_min: payload.notification_offset_min !== undefined ? payload.notification_offset_min : 15,
         notification_offsets: payload.notification_offsets ?? JSON.stringify([15]),
         notification_ids: JSON.stringify([]),
+        attachments: payload.attachments || null,
         created_at_ms: nowMs,
         updated_at_ms: nowMs,
         last_modified_ms: nowMs,
@@ -248,6 +251,7 @@ export function useEvents(userId?: string) {
         if (updates.is_birthday_like !== undefined) updateData.is_birthday_like = Boolean(updates.is_birthday_like);
         if (updates.notification_offset_min !== undefined) updateData.notification_offset_min = updates.notification_offset_min;
         if (updates.notification_offsets !== undefined) updateData.notification_offsets = updates.notification_offsets;
+        if (updates.attachments !== undefined) updateData.attachments = updates.attachments;
         if (updates.tags !== undefined) {
           if (Array.isArray(updates.tags)) {
             updateData.tags = updates.tags;

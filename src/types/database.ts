@@ -139,6 +139,7 @@ export interface Database {
           notification_offsets?: string | null;
           notification_ids?: string | null;
           category_id?: string | null;
+          attachments?: string | null;
           created_at_ms: number;
           updated_at_ms: number;
           last_modified_ms: number;
@@ -167,6 +168,7 @@ export interface Database {
           notification_offsets?: string | null;
           notification_ids?: string | null;
           category_id?: string | null;
+          attachments?: string | null;
           created_at_ms?: number;
           updated_at_ms?: number;
           last_modified_ms?: number;
@@ -195,6 +197,7 @@ export interface Database {
           notification_offsets?: string | null;
           notification_ids?: string | null;
           category_id?: string | null;
+          attachments?: string | null;
           created_at_ms?: number;
           updated_at_ms?: number;
           last_modified_ms?: number;

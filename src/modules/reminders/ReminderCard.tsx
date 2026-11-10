@@ -7,6 +7,7 @@ import {
   Paperclip,
   Users,
   FileText,
+  Calendar,
   CalendarPlus,
   Trash2,
   ChevronDown,
@@ -28,6 +29,10 @@ export interface ReminderCardProps {
   onSelectNote?: (noteId: string) => void;
   linkedNoteTitle?: string;
   linkedNoteId?: string;
+  linkedEventTitle?: string;
+  linkedEventColor?: string;
+  linkedEventId?: string;
+  onSelectEvent?: (eventId: string) => void;
   isSelected?: boolean;
 }
 
@@ -96,6 +101,10 @@ export const ReminderCard: React.FC<ReminderCardProps> = ({
   onSelectNote,
   linkedNoteTitle,
   linkedNoteId,
+  linkedEventTitle,
+  linkedEventColor,
+  linkedEventId,
+  onSelectEvent,
   isSelected,
 }) => {
   const { palette } = useTheme();
@@ -135,7 +144,13 @@ export const ReminderCard: React.FC<ReminderCardProps> = ({
 
   const timeStatus = getTimeStatus(reminder.due_date_ms, isCompleted);
   const hasChips = Boolean(
-    hasSubtasks || reminder.repeat_rule || attachmentsCount > 0 || linkedNoteTitle || linkedNoteId
+    hasSubtasks ||
+      reminder.repeat_rule ||
+      attachmentsCount > 0 ||
+      linkedNoteTitle ||
+      linkedNoteId ||
+      linkedEventTitle ||
+      linkedEventId
   );
 
   return (
@@ -323,6 +338,32 @@ export const ReminderCard: React.FC<ReminderCardProps> = ({
               >
                 <FileText className="w-2.5 h-2.5 text-accent shrink-0" />
                 <span className="truncate">{linkedNoteTitle || 'Nota vinculada'}</span>
+              </button>
+            )}
+
+            {(linkedEventTitle || linkedEventId) && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (linkedEventId) {
+                    if (onSelectEvent) {
+                      onSelectEvent(linkedEventId);
+                    } else {
+                      window.history.pushState({ type: 'event', id: linkedEventId }, '', `/events/${linkedEventId}`);
+                      window.dispatchEvent(new PopStateEvent('popstate'));
+                    }
+                  }
+                }}
+                title={linkedEventTitle ? `Evento: ${linkedEventTitle}` : 'Abrir evento vinculado'}
+                className="inline-flex items-center gap-1.5 px-1.5 py-0.5 rounded text-[9.5px] font-sans text-slate-600 dark:text-zinc-300 bg-black/5 dark:bg-white/[0.06] border border-black/5 dark:border-white/[0.08] hover:border-accent hover:text-accent transition-colors max-w-full truncate cursor-pointer"
+              >
+                <span
+                  className="w-1.5 h-1.5 rounded-full shrink-0"
+                  style={{ backgroundColor: linkedEventColor || palette.primary || '#3B82F6' }}
+                />
+                <Calendar className="w-2.5 h-2.5 text-accent shrink-0" />
+                <span className="truncate">{linkedEventTitle || 'Evento asociado'}</span>
               </button>
             )}
           </div>

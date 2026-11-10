@@ -17,11 +17,16 @@ import {
   ChevronDown,
   FileText,
   Cake,
+  Paperclip,
+  Link as LinkIcon,
+  ExternalLink,
+  Loader2,
 } from 'lucide-react';
 import type { CalendarEvent } from '../../hooks/useEvents';
 import type { Note } from '../../types/notes';
-import { cn } from '../../lib/utils';
+import { cn, isImageAttachment, type AttachmentItem } from '../../lib/utils';
 import { getDeviceTimezone } from '../../services/recurrence/recurrenceEngine';
+import { uploadNoteImage } from '../../lib/storage-upload';
 
 export interface EventModalProps {
   isOpen: boolean;
@@ -46,6 +51,7 @@ export interface EventModalProps {
     notification_offset_min?: number | null;
     notification_offsets?: string | null;
     note_id?: string | null;
+    attachments?: string | null;
   }) => Promise<void>;
   onDelete?: (id: string) => Promise<void> | void;
 }
@@ -123,12 +129,18 @@ export const EventModal: React.FC<EventModalProps> = ({
   const [isBirthdayLike, setIsBirthdayLike] = useState(false);
   const [tags, setTags] = useState<string[]>([]);
   const [newTagInput, setNewTagInput] = useState('');
+  const [attachments, setAttachments] = useState<AttachmentItem[]>([]);
+  const [linkInput, setLinkInput] = useState('');
+  const [showAddLinkForm, setShowAddLinkForm] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
 
   const [loading, setLoading] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const notesInputRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
@@ -202,12 +214,26 @@ export const EventModal: React.FC<EventModalProps> = ({
         setSelectedOffsets([15]);
       }
 
+      // Parse attachments
+      const rawAtt = (event as any)?.attachments;
+      if (rawAtt) {
+        try {
+          const parsed = JSON.parse(rawAtt);
+          setAttachments(Array.isArray(parsed) ? parsed : []);
+        } catch {
+          setAttachments([]);
+        }
+      } else {
+        setAttachments([]);
+      }
+
       // Auto expand advanced if event has active advanced options
       const hasAdvanced =
         parsedRec !== 'none' ||
         Boolean(event.note_id) ||
         (Array.isArray(event.tags) && event.tags.length > 0) ||
-        Boolean((event as any).notification_offsets);
+        Boolean((event as any).notification_offsets) ||
+        Boolean((event as any).attachments);
       setIsAdvancedOpen(Boolean(hasAdvanced));
     } else {
       const now = new Date();
@@ -229,9 +255,12 @@ export const EventModal: React.FC<EventModalProps> = ({
       setLinkedNoteId('');
       setIsBirthdayLike(false);
       setTags([]);
+      setAttachments([]);
       setIsAdvancedOpen(false);
     }
     setNewTagInput('');
+    setLinkInput('');
+    setShowAddLinkForm(false);
     setShowDeleteConfirm(false);
     setError(null);
   }, [event, isOpen]);
@@ -258,8 +287,114 @@ export const EventModal: React.FC<EventModalProps> = ({
     if (selectedOffsets.length > 0 && !(selectedOffsets.length === 1 && selectedOffsets[0] === 15)) count++;
     if (linkedNoteId) count++;
     if (tags.length > 0) count++;
+    if (attachments.length > 0) count++;
     return count;
-  }, [recurrence, selectedOffsets, linkedNoteId, tags]);
+  }, [recurrence, selectedOffsets, linkedNoteId, tags, attachments]);
+
+  // Attachments & Clipboard Image Pasting Handlers
+  const handleUploadFiles = async (files: (File | Blob)[]) => {
+    if (!files || files.length === 0) return;
+
+    try {
+      setIsUploading(true);
+      setError(null);
+      setIsAdvancedOpen(true);
+
+      const uploaded: AttachmentItem[] = [];
+
+      for (const file of files) {
+        let fileName = 'imagen.png';
+        if ('name' in file && file.name) {
+          fileName = file.name;
+        } else {
+          const ext = file.type ? file.type.split('/')[1] || 'png' : 'png';
+          fileName = `captura_${Date.now()}.${ext}`;
+        }
+
+        if (fileName === 'image.png') {
+          const ext = file.type ? file.type.split('/')[1] || 'png' : 'png';
+          fileName = `captura_${Date.now()}.${ext}`;
+        }
+
+        const namedFile =
+          'name' in file && file.name === fileName
+            ? (file as File)
+            : new File([file], fileName, { type: file.type || 'image/png' });
+
+        let uri = '';
+        try {
+          uri = await uploadNoteImage(namedFile);
+        } catch (uploadErr) {
+          console.warn('[EventModal] uploadNoteImage failed, using fallback Object URL:', uploadErr);
+          uri = URL.createObjectURL(namedFile);
+        }
+        uploaded.push({ uri, name: fileName });
+      }
+
+      setAttachments((prev) => [...prev, ...uploaded]);
+    } catch (err: unknown) {
+      console.error('[EventModal] Error uploading files:', err);
+      setError((err as Error).message || 'Error cargando imagen');
+    } finally {
+      setIsUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
+  const handleFileInputChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const fileList = e.target.files;
+    if (!fileList || fileList.length === 0) return;
+    await handleUploadFiles(Array.from(fileList));
+  };
+
+  const handleAddLink = (e: React.FormEvent) => {
+    e.preventDefault();
+    const raw = linkInput.trim();
+    if (!raw) return;
+    const cleanUrl = raw.startsWith('http://') || raw.startsWith('https://') ? raw : `https://${raw}`;
+    setAttachments((prev) => [
+      ...prev,
+      { uri: cleanUrl, name: cleanUrl.replace(/^https?:\/\//, '') },
+    ]);
+    setLinkInput('');
+    setShowAddLinkForm(false);
+  };
+
+  const handleRemoveAttachment = (idx: number) => {
+    setAttachments(attachments.filter((_, i) => i !== idx));
+  };
+
+  // Listen for Clipboard Paste (Ctrl+V) anywhere while Modal is Open
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const handleWindowPaste = (e: ClipboardEvent) => {
+      const items = e.clipboardData?.items;
+      if (!items || items.length === 0) return;
+
+      const imageFiles: File[] = [];
+      for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+        if (item.type.startsWith('image/')) {
+          const file = item.getAsFile();
+          if (file) {
+            imageFiles.push(file);
+          }
+        }
+      }
+
+      if (imageFiles.length > 0) {
+        e.preventDefault();
+        e.stopPropagation();
+        handleUploadFiles(imageFiles);
+      }
+    };
+
+    window.addEventListener('paste', handleWindowPaste);
+    return () => {
+      window.removeEventListener('paste', handleWindowPaste);
+    };
+  }, [isOpen]);
 
   // Tag actions
   const handleAddTag = (e?: React.FormEvent) => {
@@ -402,6 +537,7 @@ export const EventModal: React.FC<EventModalProps> = ({
         notification_offset_min: primaryOffset,
         notification_offsets: notificationOffsetsJson,
         note_id: linkedNoteId || null,
+        attachments: attachments.length > 0 ? JSON.stringify(attachments) : null,
       });
 
       onClose();
@@ -843,6 +979,164 @@ export const EventModal: React.FC<EventModalProps> = ({
                 </button>
               </span>
             ))}
+          </div>
+        )}
+      </div>
+
+      <div className="h-px bg-veyra-border/60" />
+
+      {/* 5.5 ARCHIVOS ADJUNTOS Y ENLACES */}
+      <div className="space-y-1.5">
+        <div className="flex items-center justify-between">
+          <label className="text-xs font-medium text-veyra-muted flex items-center gap-1.5">
+            <Paperclip className="w-3.5 h-3.5 text-accent" />
+            <span>Adjuntos y Enlaces</span>
+          </label>
+          <span className="text-[11px] text-veyra-subtle">
+            {attachments.length} {attachments.length === 1 ? 'adjunto' : 'adjuntos'}
+          </span>
+        </div>
+
+        <div
+          onDragOver={(e) => {
+            if (e.dataTransfer.types.includes('Files')) {
+              e.preventDefault();
+              setIsDragging(true);
+            }
+          }}
+          onDragLeave={() => setIsDragging(false)}
+          onDrop={(e) => {
+            e.preventDefault();
+            setIsDragging(false);
+            if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+              handleUploadFiles(Array.from(e.dataTransfer.files));
+            }
+          }}
+          className={cn(
+            'p-2 rounded-lg border transition-all',
+            isDragging
+              ? 'border-accent bg-accent/10'
+              : 'border-dashed border-veyra-border/80 bg-veyra-card/30'
+          )}
+        >
+          <div className="flex items-center gap-2">
+            <input
+              type="file"
+              ref={fileInputRef}
+              onChange={handleFileInputChange}
+              className="hidden"
+              multiple
+              accept="image/*,.pdf,.doc,.docx"
+            />
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={isUploading}
+              className="flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg border border-veyra-border hover:border-accent/60 bg-veyra-elevated text-xs text-veyra-muted hover:text-veyra-text transition-all cursor-pointer disabled:opacity-50"
+              title="Haz clic para seleccionar archivo o pega imágenes directamente con Ctrl+V"
+            >
+              {isUploading ? (
+                <>
+                  <Loader2 className="w-3.5 h-3.5 text-accent animate-spin" />
+                  <span className="text-accent font-medium">Subiendo imagen...</span>
+                </>
+              ) : (
+                <>
+                  <Paperclip className="w-3.5 h-3.5 text-accent" />
+                  <span>Adjuntar archivo</span>
+                  <span className="text-[10px] text-accent/80 font-medium bg-accent/10 px-1.5 py-0.5 rounded">
+                    o pegar con Ctrl+V
+                  </span>
+                </>
+              )}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setShowAddLinkForm(!showAddLinkForm)}
+              className="flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg border border-veyra-border bg-veyra-elevated text-xs text-veyra-muted hover:text-veyra-text hover:border-accent/40 transition-all cursor-pointer"
+            >
+              <LinkIcon className="w-3.5 h-3.5 text-accent" />
+              <span>Enlace Web</span>
+            </button>
+          </div>
+          {isDragging && (
+            <div className="text-center text-xs text-accent font-medium pt-2 animate-pulse">
+              Suelta las imágenes o archivos aquí para adjuntarlos
+            </div>
+          )}
+        </div>
+
+        {showAddLinkForm && (
+          <div className="flex items-center gap-2 p-2 rounded-lg bg-veyra-card border border-veyra-border">
+            <input
+              type="url"
+              placeholder="https://..."
+              value={linkInput}
+              onChange={(e) => setLinkInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  handleAddLink(e);
+                }
+              }}
+              className="flex-1 bg-veyra-elevated border border-veyra-border text-veyra-text placeholder:text-veyra-subtle rounded-md px-2.5 py-1 text-xs focus:outline-none focus:border-accent"
+            />
+            <button
+              type="button"
+              onClick={handleAddLink}
+              disabled={!linkInput.trim()}
+              className="px-2.5 py-1 rounded-md bg-accent text-white text-xs font-medium hover:opacity-90 disabled:opacity-40 cursor-pointer"
+            >
+              Añadir
+            </button>
+          </div>
+        )}
+
+        {attachments.length > 0 && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 pt-1">
+            {attachments.map((att, idx) => {
+              const isImg = isImageAttachment(att.uri) || isImageAttachment(att.name);
+              return (
+                <div
+                  key={idx}
+                  className="flex items-center justify-between gap-2 p-1.5 rounded-lg bg-veyra-card border border-veyra-border text-xs group hover:border-accent/40 transition-colors"
+                >
+                  <a
+                    href={att.uri}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-2 flex-1 min-w-0 hover:text-accent transition-colors"
+                    title={att.name}
+                  >
+                    {isImg ? (
+                      <img
+                        src={att.uri}
+                        alt={att.name}
+                        className="w-8 h-8 rounded object-cover border border-veyra-border/60 shrink-0 bg-black/10"
+                        onError={(e) => {
+                          (e.target as HTMLElement).style.display = 'none';
+                        }}
+                      />
+                    ) : (
+                      <FileText className="w-3.5 h-3.5 text-accent shrink-0" />
+                    )}
+                    <span className="truncate text-veyra-text font-medium text-[11px]">
+                      {att.name}
+                    </span>
+                    <ExternalLink className="w-3 h-3 text-veyra-subtle shrink-0 opacity-0 group-hover:opacity-100 transition-opacity" />
+                  </a>
+                  <button
+                    type="button"
+                    onClick={() => handleRemoveAttachment(idx)}
+                    className="p-1 text-veyra-subtle hover:text-red-400 opacity-60 group-hover:opacity-100 transition-opacity cursor-pointer shrink-0"
+                    title="Eliminar adjunto"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              );
+            })}
           </div>
         )}
       </div>

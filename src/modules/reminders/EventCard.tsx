@@ -8,6 +8,7 @@ import {
   CalendarPlus,
   Trash2,
   ExternalLink,
+  Paperclip,
 } from 'lucide-react';
 import type { CalendarEvent } from '../../hooks/useEvents';
 import { cn } from '../../lib/utils';
@@ -96,7 +97,18 @@ export const EventCard: React.FC<EventCardProps> = ({
   const containerBg = isHappeningNow ? `${eventColor}1c` : `${eventColor}0c`;
   const containerBorder = isHappeningNow ? `${eventColor}60` : `${eventColor}30`;
 
-  const hasChips = Boolean(event.location || event.repeat_rule || event.note_id || linkedNoteTitle);
+  const attachmentsCount = (() => {
+    const raw = (event as any).attachments;
+    if (!raw) return 0;
+    try {
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed.length : 0;
+    } catch {
+      return 0;
+    }
+  })();
+
+  const hasChips = Boolean(event.location || event.repeat_rule || event.note_id || linkedNoteTitle || attachmentsCount > 0);
 
   return (
     <div
@@ -270,6 +282,16 @@ export const EventCard: React.FC<EventCardProps> = ({
                 <FileText style={{ color: eventColor }} className="w-2.5 h-2.5 shrink-0" />
                 <span className="truncate">{linkedNoteTitle || 'Nota vinculada'}</span>
               </button>
+            )}
+
+            {attachmentsCount > 0 && (
+              <span
+                title={`Adjuntos: ${attachmentsCount}`}
+                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9.5px] font-sans text-slate-600 dark:text-zinc-300 bg-black/5 dark:bg-white/[0.06] border border-black/5 dark:border-white/[0.08] shrink-0"
+              >
+                <Paperclip style={{ color: eventColor }} className="w-2.5 h-2.5 shrink-0" />
+                <span>{attachmentsCount}</span>
+              </span>
             )}
           </div>
         )}

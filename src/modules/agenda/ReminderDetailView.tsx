@@ -15,6 +15,8 @@ import {
   ChevronDown,
   Pencil,
   Check,
+  Paperclip,
+  ExternalLink,
 } from 'lucide-react';
 import type { Reminder, Subtask, ReminderControlLevel } from '../../types/reminders';
 import type { CalendarEvent } from '../../hooks/useEvents';
@@ -22,7 +24,7 @@ import type { Note } from '../../types/notes';
 import type { useReminders } from '../../hooks/useReminders';
 import type { useEvents } from '../../hooks/useEvents';
 import { useTheme } from '../../theme/ThemeProvider';
-import { cn, isDateToday, isDateOverdue, parseSubtasks } from '../../lib/utils';
+import { cn, isDateToday, isDateOverdue, parseSubtasks, isImageAttachment, parseAttachments } from '../../lib/utils';
 import { ConfirmTooltip } from '../../components/common/ConfirmTooltip';
 
 export interface ReminderDetailViewProps {
@@ -55,12 +57,14 @@ export const ReminderDetailView: React.FC<ReminderDetailViewProps> = ({
   const [dateVal, setDateVal] = useState('');
   const [timeVal, setTimeVal] = useState('12:00');
   const [controlLevel, setControlLevel] = useState<ReminderControlLevel>('normal');
+  const [selectedEventId, setSelectedEventId] = useState<string>(reminder.event_id || '');
   const [newSubtaskTitle, setNewSubtaskTitle] = useState('');
   const [isAddingSubtask, setIsAddingSubtask] = useState(false);
 
   const initDraftState = () => {
     setTitle(reminder.title || '');
     setDescription(reminder.description || '');
+    setSelectedEventId(reminder.event_id || '');
     setControlLevel(
       reminder.control_level ||
         (reminder.priority === 3 ? 'critical' : reminder.priority === 2 ? 'strict' : 'normal')
@@ -117,6 +121,7 @@ export const ReminderDetailView: React.FC<ReminderDetailViewProps> = ({
       due_date_ms: updatedDue,
       control_level: controlLevel,
       priority: priorityNum,
+      event_id: selectedEventId || null,
     });
     setIsEditing(false);
   };
@@ -139,6 +144,10 @@ export const ReminderDetailView: React.FC<ReminderDetailViewProps> = ({
   const subtasksList: Subtask[] = useMemo(() => {
     return parseSubtasks(reminder.subtasks);
   }, [reminder.subtasks]);
+
+  const attachmentsList = useMemo(() => {
+    return parseAttachments(reminder.attachments);
+  }, [reminder.attachments]);
 
   const completedSubtasksCount = useMemo(() => {
     return subtasksList.filter((s) => s.completed).length;
@@ -519,7 +528,22 @@ export const ReminderDetailView: React.FC<ReminderDetailViewProps> = ({
           {/* Evento Asociado */}
           <div className="flex items-center gap-2.5 py-1 px-1.5 text-veyra-muted">
             <Calendar className="w-3.5 h-3.5 text-veyra-subtle shrink-0" />
-            {linkedEvent ? (
+            {isEditing ? (
+              <div className="flex-1 min-w-0">
+                <select
+                  value={selectedEventId}
+                  onChange={(e) => setSelectedEventId(e.target.value)}
+                  className="w-full px-2 py-1 rounded bg-veyra-elevated border border-veyra-border text-xs text-veyra-text focus:outline-none focus:border-accent"
+                >
+                  <option value="">Sin evento asociado</option>
+                  {eventsHook?.events?.map((ev) => (
+                    <option key={ev.id} value={ev.id}>
+                      {ev.title} ({new Date(ev.start_time_ms).toLocaleDateString([], { day: 'numeric', month: 'short' })})
+                    </option>
+                  ))}
+                </select>
+              </div>
+            ) : linkedEvent ? (
               <button
                 type="button"
                 onClick={() => onSelectEvent?.(linkedEvent.id)}
@@ -577,6 +601,56 @@ export const ReminderDetailView: React.FC<ReminderDetailViewProps> = ({
             />
           </div>
         ) : null}
+
+        {/* 2.5. Section: Adjuntos y Enlaces */}
+        {attachmentsList.length > 0 && (
+          <div className="space-y-2 pt-1">
+            <div className="flex items-center gap-2">
+              <Paperclip className="w-3.5 h-3.5 text-accent" />
+              <h2 className="text-xs font-bold text-veyra-text uppercase tracking-wider">
+                Adjuntos ({attachmentsList.length})
+              </h2>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              {attachmentsList.map((att, idx) => {
+                const isImg = isImageAttachment(att.uri) || isImageAttachment(att.name);
+                return (
+                  <a
+                    key={idx}
+                    href={att.uri}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-2.5 p-2 rounded-lg bg-veyra-card/60 border border-veyra-border hover:border-accent/40 transition-all text-xs group"
+                  >
+                    {isImg ? (
+                      <img
+                        src={att.uri}
+                        alt={att.name}
+                        className="w-10 h-10 rounded object-cover border border-veyra-border/60 shrink-0 bg-black/10 group-hover:scale-105 transition-transform"
+                        onError={(e) => {
+                          (e.target as HTMLElement).style.display = 'none';
+                        }}
+                      />
+                    ) : (
+                      <div className="w-10 h-10 rounded bg-accent/10 border border-accent/20 flex items-center justify-center shrink-0 text-accent">
+                        <FileText className="w-4 h-4" />
+                      </div>
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <div className="truncate text-veyra-text font-medium text-xs group-hover:text-accent transition-colors">
+                        {att.name}
+                      </div>
+                      <div className="text-[10px] text-veyra-subtle flex items-center gap-1">
+                        <span>{isImg ? 'Imagen adjunta' : 'Documento / Enlace'}</span>
+                        <ExternalLink className="w-2.5 h-2.5 opacity-60" />
+                      </div>
+                    </div>
+                  </a>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         {/* 3. Section: Subtareas y Pasos (Ultra Compact & Flat) */}
         <div className="space-y-2.5 pt-1">

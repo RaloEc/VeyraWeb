@@ -98,3 +98,38 @@ export function parseSubtasks(rawSubtasks: string | null | undefined): Subtask[]
     return [];
   }
 }
+
+export interface AttachmentItem {
+  uri: string;
+  name: string;
+}
+
+export function isImageAttachment(uriOrName?: string | null): boolean {
+  if (!uriOrName) return false;
+  const clean = uriOrName.split('?')[0].toLowerCase();
+  return (
+    clean.endsWith('.png') ||
+    clean.endsWith('.jpg') ||
+    clean.endsWith('.jpeg') ||
+    clean.endsWith('.webp') ||
+    clean.endsWith('.gif') ||
+    clean.endsWith('.svg') ||
+    clean.endsWith('.bmp') ||
+    clean.startsWith('data:image/') ||
+    clean.includes('/attachments/')
+  );
+}
+
+export function parseAttachments(raw: string | null | undefined): AttachmentItem[] {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) {
+      return parsed.filter((item) => item && typeof item.uri === 'string');
+    }
+    return [];
+  } catch {
+    return [];
+  }
+}
+

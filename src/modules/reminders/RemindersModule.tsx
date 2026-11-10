@@ -5,15 +5,23 @@ import { ReminderCard } from './ReminderCard';
 import { ReminderFilters } from './ReminderFilters';
 import { ReminderModal } from './ReminderModal';
 import { useReminders } from '../../hooks/useReminders';
+import { useEvents } from '../../hooks/useEvents';
 import type { Reminder, ReminderFilterTab, ReminderPriority, ReminderControlLevel, Subtask } from '../../types/reminders';
 
 export interface RemindersModuleProps {
   userId: string;
   remindersHook?: ReturnType<typeof useReminders>;
+  eventsHook?: ReturnType<typeof useEvents>;
 }
 
-export const RemindersModule: React.FC<RemindersModuleProps> = ({ userId, remindersHook }) => {
+export const RemindersModule: React.FC<RemindersModuleProps> = ({
+  userId,
+  remindersHook,
+  eventsHook,
+}) => {
   const localHook = useReminders(remindersHook ? undefined : userId);
+  const localEventsHook = useEvents(eventsHook ? undefined : userId);
+  const currentEventsHook = eventsHook || localEventsHook;
   const {
     reminders,
     todayReminders,
@@ -96,6 +104,9 @@ export const RemindersModule: React.FC<RemindersModuleProps> = ({ userId, remind
     subtasks?: Subtask[];
     repeat_rule?: string | null;
     attachments?: string | null;
+    links?: string | null;
+    event_id?: string | null;
+    offset_minutes?: number | null;
   }) => {
     if (payload.id) {
       await updateReminder(payload.id, {
@@ -107,6 +118,9 @@ export const RemindersModule: React.FC<RemindersModuleProps> = ({ userId, remind
         subtasks: payload.subtasks,
         repeat_rule: payload.repeat_rule,
         attachments: payload.attachments,
+        links: payload.links,
+        event_id: payload.event_id,
+        offset_minutes: payload.offset_minutes,
       });
     } else {
       await createReminder({
@@ -118,6 +132,9 @@ export const RemindersModule: React.FC<RemindersModuleProps> = ({ userId, remind
         subtasks: payload.subtasks,
         repeat_rule: payload.repeat_rule,
         attachments: payload.attachments,
+        links: payload.links,
+        event_id: payload.event_id,
+        offset_minutes: payload.offset_minutes,
       });
     }
   };
@@ -221,16 +238,22 @@ export const RemindersModule: React.FC<RemindersModuleProps> = ({ userId, remind
         </div>
       ) : (
         <div className="flex-1 space-y-0 border-t border-veyra-border">
-          {displayedReminders.map((reminder) => (
-            <ReminderCard
-              key={reminder.id}
-              reminder={reminder}
-              onToggle={toggleReminder}
-              onToggleSubtask={toggleSubtask}
-              onEdit={handleOpenEditModal}
-              onDelete={deleteReminder}
-            />
-          ))}
+          {displayedReminders.map((reminder) => {
+            const linkedEvent = currentEventsHook?.events?.find((e) => e.id === reminder.event_id);
+            return (
+              <ReminderCard
+                key={reminder.id}
+                reminder={reminder}
+                onToggle={toggleReminder}
+                onToggleSubtask={toggleSubtask}
+                onEdit={handleOpenEditModal}
+                onDelete={deleteReminder}
+                linkedEventTitle={linkedEvent?.title}
+                linkedEventColor={linkedEvent?.color || undefined}
+                linkedEventId={linkedEvent?.id}
+              />
+            );
+          })}
         </div>
       )}
 
@@ -239,6 +262,7 @@ export const RemindersModule: React.FC<RemindersModuleProps> = ({ userId, remind
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
         reminder={editingReminder}
+        events={currentEventsHook?.events}
         onSave={handleSaveModal}
         onDelete={deleteReminder}
       />

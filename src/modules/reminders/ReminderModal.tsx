@@ -20,20 +20,21 @@ import {
   Link as LinkIcon,
   FileText,
   ExternalLink,
+  Loader2,
 } from 'lucide-react';
 import type { Reminder, ReminderPriority, ReminderControlLevel, Subtask } from '../../types/reminders';
-import { parseSubtasks, cn } from '../../lib/utils';
+import type { CalendarEvent } from '../../hooks/useEvents';
+import { parseSubtasks, cn, isImageAttachment, type AttachmentItem } from '../../lib/utils';
 import { uploadNoteImage } from '../../lib/storage-upload';
 
-export interface ReminderAttachment {
-  uri: string;
-  name: string;
-}
+export type ReminderAttachment = AttachmentItem;
 
 export interface ReminderModalProps {
   isOpen: boolean;
   onClose: () => void;
   reminder?: Reminder | null;
+  events?: CalendarEvent[];
+  defaultEventId?: string | null;
   onSave: (payload: {
     id?: string;
     title: string;
@@ -45,6 +46,8 @@ export interface ReminderModalProps {
     repeat_rule?: string | null;
     attachments?: string | null;
     links?: string | null;
+    event_id?: string | null;
+    offset_minutes?: number | null;
   }) => Promise<void>;
   onDelete?: (id: string) => Promise<void> | void;
 }
@@ -65,6 +68,8 @@ export const ReminderModal: React.FC<ReminderModalProps> = ({
   isOpen,
   onClose,
   reminder,
+  events,
+  defaultEventId,
   onSave,
   onDelete,
 }) => {
@@ -73,6 +78,9 @@ export const ReminderModal: React.FC<ReminderModalProps> = ({
   const [dateStr, setDateStr] = useState('');
   const [timeStr, setTimeStr] = useState('12:00');
   const [controlLevel, setControlLevel] = useState<ReminderControlLevel>('normal');
+  const [selectedEventId, setSelectedEventId] = useState<string | null>(
+    reminder?.event_id ?? defaultEventId ?? null
+  );
 
   // Advanced options state
   const [isAdvancedOpen, setIsAdvancedOpen] = useState(false);
@@ -83,6 +91,7 @@ export const ReminderModal: React.FC<ReminderModalProps> = ({
   const [attachments, setAttachments] = useState<ReminderAttachment[]>([]);
   const [linkInput, setLinkInput] = useState('');
   const [showAddLinkForm, setShowAddLinkForm] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
 
   const [isUploading, setIsUploading] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -97,6 +106,7 @@ export const ReminderModal: React.FC<ReminderModalProps> = ({
     if (reminder) {
       setTitle(reminder.title || '');
       setDescription(reminder.description || '');
+      setSelectedEventId(reminder.event_id || defaultEventId || null);
       const d = new Date(reminder.due_date_ms);
       setDateStr(d.toISOString().split('T')[0]);
       setTimeStr(d.toTimeString().substring(0, 5));
@@ -151,6 +161,7 @@ export const ReminderModal: React.FC<ReminderModalProps> = ({
       setTimeStr(now.toTimeString().substring(0, 5));
       setTitle('');
       setDescription('');
+      setSelectedEventId(defaultEventId || null);
       setControlLevel('normal');
       setSubtasks([]);
       setAttachments([]);
@@ -242,30 +253,93 @@ export const ReminderModal: React.FC<ReminderModalProps> = ({
     }
   };
 
-  // Attachments handlers
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  // Attachments & Clipboard Image Pasting Handlers
+  const handleUploadFiles = async (files: (File | Blob)[]) => {
+    if (!files || files.length === 0) return;
 
     try {
       setIsUploading(true);
       setError(null);
-      let uri = '';
-      try {
-        uri = await uploadNoteImage(file);
-      } catch {
-        // Fallback to local Object URL / base64 for preview
-        uri = URL.createObjectURL(file);
+      setIsAdvancedOpen(true);
+
+      const uploaded: ReminderAttachment[] = [];
+
+      for (const file of files) {
+        let fileName = 'imagen.png';
+        if ('name' in file && file.name) {
+          fileName = file.name;
+        } else {
+          const ext = file.type ? file.type.split('/')[1] || 'png' : 'png';
+          fileName = `captura_${Date.now()}.${ext}`;
+        }
+
+        if (fileName === 'image.png') {
+          const ext = file.type ? file.type.split('/')[1] || 'png' : 'png';
+          fileName = `captura_${Date.now()}.${ext}`;
+        }
+
+        const namedFile =
+          'name' in file && file.name === fileName
+            ? (file as File)
+            : new File([file], fileName, { type: file.type || 'image/png' });
+
+        let uri = '';
+        try {
+          uri = await uploadNoteImage(namedFile);
+        } catch (uploadErr) {
+          console.warn('[ReminderModal] uploadNoteImage failed, using fallback Object URL:', uploadErr);
+          uri = URL.createObjectURL(namedFile);
+        }
+        uploaded.push({ uri, name: fileName });
       }
-      setAttachments((prev) => [...prev, { uri, name: file.name }]);
+
+      setAttachments((prev) => [...prev, ...uploaded]);
     } catch (err: unknown) {
-      console.error('[ReminderModal] Error uploading file:', err);
-      setError((err as Error).message || 'Error cargando archivo adjunto');
+      console.error('[ReminderModal] Error uploading files:', err);
+      setError((err as Error).message || 'Error cargando imagen');
     } finally {
       setIsUploading(false);
       if (fileInputRef.current) fileInputRef.current.value = '';
     }
   };
+
+  const handleFileInputChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const fileList = e.target.files;
+    if (!fileList || fileList.length === 0) return;
+    await handleUploadFiles(Array.from(fileList));
+  };
+
+  // Listen for Clipboard Paste (Ctrl+V) anywhere while Modal is Open
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const handleWindowPaste = (e: ClipboardEvent) => {
+      const items = e.clipboardData?.items;
+      if (!items || items.length === 0) return;
+
+      const imageFiles: File[] = [];
+      for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+        if (item.type.startsWith('image/')) {
+          const file = item.getAsFile();
+          if (file) {
+            imageFiles.push(file);
+          }
+        }
+      }
+
+      if (imageFiles.length > 0) {
+        e.preventDefault();
+        e.stopPropagation();
+        handleUploadFiles(imageFiles);
+      }
+    };
+
+    window.addEventListener('paste', handleWindowPaste);
+    return () => {
+      window.removeEventListener('paste', handleWindowPaste);
+    };
+  }, [isOpen]);
 
   const handleAddLink = (e: React.FormEvent) => {
     e.preventDefault();
@@ -321,6 +395,7 @@ export const ReminderModal: React.FC<ReminderModalProps> = ({
         subtasks: subtasks.length > 0 ? subtasks : undefined,
         repeat_rule: repeatRule,
         attachments: attachments.length > 0 ? JSON.stringify(attachments) : null,
+        event_id: selectedEventId || null,
       });
 
       onClose();
@@ -439,6 +514,53 @@ export const ReminderModal: React.FC<ReminderModalProps> = ({
       </div>
     </div>
   );
+
+  const renderEventSelector = () => {
+    if (!events || events.length === 0) return null;
+    return (
+      <div className="space-y-1.5">
+        <div className="flex items-center justify-between">
+          <label className="text-xs font-medium text-veyra-muted flex items-center gap-1.5">
+            <CalendarIcon className="w-3.5 h-3.5 text-accent" />
+            <span>Evento asociado (opcional)</span>
+          </label>
+          {selectedEventId && (
+            <button
+              type="button"
+              onClick={() => setSelectedEventId(null)}
+              className="text-[10.5px] text-accent hover:underline cursor-pointer"
+            >
+              Desvincular
+            </button>
+          )}
+        </div>
+        <select
+          value={selectedEventId || ''}
+          onChange={(e) => setSelectedEventId(e.target.value || null)}
+          className="w-full px-2.5 py-1.5 rounded-lg bg-veyra-elevated border border-veyra-border text-xs text-veyra-text focus:outline-none focus:border-accent cursor-pointer transition-colors"
+        >
+          <option value="">Ninguno (Recordatorio independiente)</option>
+          {events.map((ev) => {
+            const d = new Date(ev.start_time_ms);
+            const dateStr = d.toLocaleDateString([], {
+              weekday: 'short',
+              day: 'numeric',
+              month: 'short',
+            });
+            const timeStr = d.toLocaleTimeString([], {
+              hour: '2-digit',
+              minute: '2-digit',
+            });
+            return (
+              <option key={ev.id} value={ev.id}>
+                {ev.title} ({dateStr} {timeStr})
+              </option>
+            );
+          })}
+        </select>
+      </div>
+    );
+  };
 
   const renderControlLevel = () => (
     <div className="space-y-1.5">
@@ -721,32 +843,74 @@ export const ReminderModal: React.FC<ReminderModalProps> = ({
           </span>
         </div>
 
-        <div className="flex items-center gap-2">
-          <input
-            type="file"
-            ref={fileInputRef}
-            onChange={handleFileUpload}
-            className="hidden"
-            accept="image/*,.pdf,.doc,.docx"
-          />
-          <button
-            type="button"
-            onClick={() => fileInputRef.current?.click()}
-            disabled={isUploading}
-            className="flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg border border-dashed border-veyra-border hover:border-accent/60 bg-veyra-card/50 text-xs text-veyra-muted hover:text-veyra-text transition-all cursor-pointer"
-          >
-            <Paperclip className="w-3.5 h-3.5 text-accent" />
-            <span>{isUploading ? 'Subiendo...' : 'Adjuntar archivo'}</span>
-          </button>
+        <div
+          onDragOver={(e) => {
+            if (e.dataTransfer.types.includes('Files')) {
+              e.preventDefault();
+              setIsDragging(true);
+            }
+          }}
+          onDragLeave={() => setIsDragging(false)}
+          onDrop={(e) => {
+            e.preventDefault();
+            setIsDragging(false);
+            if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+              handleUploadFiles(Array.from(e.dataTransfer.files));
+            }
+          }}
+          className={cn(
+            'p-2 rounded-lg border transition-all',
+            isDragging
+              ? 'border-accent bg-accent/10'
+              : 'border-dashed border-veyra-border/80 bg-veyra-card/30'
+          )}
+        >
+          <div className="flex items-center gap-2">
+            <input
+              type="file"
+              ref={fileInputRef}
+              onChange={handleFileInputChange}
+              className="hidden"
+              multiple
+              accept="image/*,.pdf,.doc,.docx"
+            />
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={isUploading}
+              className="flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg border border-veyra-border hover:border-accent/60 bg-veyra-elevated text-xs text-veyra-muted hover:text-veyra-text transition-all cursor-pointer disabled:opacity-50"
+              title="Haz clic para seleccionar archivo o pega imágenes directamente con Ctrl+V"
+            >
+              {isUploading ? (
+                <>
+                  <Loader2 className="w-3.5 h-3.5 text-accent animate-spin" />
+                  <span className="text-accent font-medium">Subiendo imagen...</span>
+                </>
+              ) : (
+                <>
+                  <Paperclip className="w-3.5 h-3.5 text-accent" />
+                  <span>Adjuntar archivo</span>
+                  <span className="text-[10px] text-accent/80 font-medium bg-accent/10 px-1.5 py-0.5 rounded">
+                    o pegar con Ctrl+V
+                  </span>
+                </>
+              )}
+            </button>
 
-          <button
-            type="button"
-            onClick={() => setShowAddLinkForm(!showAddLinkForm)}
-            className="flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg border border-veyra-border bg-veyra-card/50 text-xs text-veyra-muted hover:text-veyra-text hover:border-accent/40 transition-all cursor-pointer"
-          >
-            <LinkIcon className="w-3.5 h-3.5 text-accent" />
-            <span>Enlace Web</span>
-          </button>
+            <button
+              type="button"
+              onClick={() => setShowAddLinkForm(!showAddLinkForm)}
+              className="flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg border border-veyra-border bg-veyra-elevated text-xs text-veyra-muted hover:text-veyra-text hover:border-accent/40 transition-all cursor-pointer"
+            >
+              <LinkIcon className="w-3.5 h-3.5 text-accent" />
+              <span>Enlace Web</span>
+            </button>
+          </div>
+          {isDragging && (
+            <div className="text-center text-xs text-accent font-medium pt-2 animate-pulse">
+              Suelta las imágenes o archivos aquí para adjuntarlos
+            </div>
+          )}
         </div>
 
         {showAddLinkForm && (
@@ -777,33 +941,48 @@ export const ReminderModal: React.FC<ReminderModalProps> = ({
 
         {attachments.length > 0 && (
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 pt-1">
-            {attachments.map((att, idx) => (
-              <div
-                key={idx}
-                className="flex items-center justify-between gap-2 p-1.5 rounded-lg bg-veyra-card border border-veyra-border text-xs group"
-              >
-                <a
-                  href={att.uri}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex items-center gap-1.5 flex-1 min-w-0 hover:text-accent transition-colors"
-                  title={att.name}
+            {attachments.map((att, idx) => {
+              const isImg = isImageAttachment(att.uri) || isImageAttachment(att.name);
+              return (
+                <div
+                  key={idx}
+                  className="flex items-center justify-between gap-2 p-1.5 rounded-lg bg-veyra-card border border-veyra-border text-xs group hover:border-accent/40 transition-colors"
                 >
-                  <FileText className="w-3.5 h-3.5 text-accent shrink-0" />
-                  <span className="truncate text-veyra-text font-medium text-[11px]">
-                    {att.name}
-                  </span>
-                  <ExternalLink className="w-3 h-3 text-veyra-subtle shrink-0" />
-                </a>
-                <button
-                  type="button"
-                  onClick={() => handleRemoveAttachment(idx)}
-                  className="p-0.5 text-veyra-subtle hover:text-red-400 opacity-60 group-hover:opacity-100 transition-opacity cursor-pointer shrink-0"
-                >
-                  <X className="w-3 h-3" />
-                </button>
-              </div>
-            ))}
+                  <a
+                    href={att.uri}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-2 flex-1 min-w-0 hover:text-accent transition-colors"
+                    title={att.name}
+                  >
+                    {isImg ? (
+                      <img
+                        src={att.uri}
+                        alt={att.name}
+                        className="w-8 h-8 rounded object-cover border border-veyra-border/60 shrink-0 bg-black/10"
+                        onError={(e) => {
+                          (e.target as HTMLElement).style.display = 'none';
+                        }}
+                      />
+                    ) : (
+                      <FileText className="w-3.5 h-3.5 text-accent shrink-0" />
+                    )}
+                    <span className="truncate text-veyra-text font-medium text-[11px]">
+                      {att.name}
+                    </span>
+                    <ExternalLink className="w-3 h-3 text-veyra-subtle shrink-0 opacity-0 group-hover:opacity-100 transition-opacity" />
+                  </a>
+                  <button
+                    type="button"
+                    onClick={() => handleRemoveAttachment(idx)}
+                    className="p-1 text-veyra-subtle hover:text-red-400 opacity-60 group-hover:opacity-100 transition-opacity cursor-pointer shrink-0"
+                    title="Eliminar adjunto"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              );
+            })}
           </div>
         )}
       </div>
@@ -838,6 +1017,7 @@ export const ReminderModal: React.FC<ReminderModalProps> = ({
           <div className="space-y-4">
             {renderHeroCard()}
             {renderDateTime()}
+            {renderEventSelector()}
             {renderControlLevel()}
 
             {/* Botón para desplegar opciones avanzadas */}
@@ -880,6 +1060,7 @@ export const ReminderModal: React.FC<ReminderModalProps> = ({
             <div className="space-y-3.5">
               {renderHeroCard()}
               {renderDateTime()}
+              {renderEventSelector()}
               {renderControlLevel()}
             </div>
 
