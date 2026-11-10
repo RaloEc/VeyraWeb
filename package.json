@@ -26,6 +26,7 @@
     "@tiptap/starter-kit": "^3.32.2",
     "canvas-confetti": "^1.9.4",
     "clsx": "^2.1.1",
+    "katex": "^0.19.1",
     "lucide": "^1.66.0",
     "lucide-react": "^1.65.0",
     "morphicons": "^2.0.2",
@@ -39,6 +40,7 @@
   },
   "devDependencies": {
     "@types/canvas-confetti": "^1.9.0",
+    "@types/katex": "^0.16.8",
     "@types/node": "^24.19.2",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",

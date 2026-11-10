@@ -8,6 +8,9 @@ import TaskItem from '@tiptap/extension-task-item';
 import Highlight from '@tiptap/extension-highlight';
 import Placeholder from '@tiptap/extension-placeholder';
 import { ImageNode } from './extensions/ImageNode';
+import { FontFamily } from './extensions/FontFamily';
+import { MathBlock, MathInline } from './extensions/MathNode';
+import { hasMathContent, convertMarkdownWithMathToHtml } from './extensions/mathUtils';
 import { YoutubeNode } from '../../lib/tiptap-youtube-node';
 import TextAlign from '@tiptap/extension-text-align';
 import { TextStyle } from '@tiptap/extension-text-style';
@@ -37,6 +40,7 @@ import { Loader2, Plus, ChevronLeft, ChevronRight, PanelLeft, X, Layers, Graduat
 import { useTheme } from '../../theme/ThemeProvider';
 import { PagesSidebar } from './PagesSidebar';
 import { ExportPdfModal } from './pdf/ExportPdfModal';
+import { HashtagInput } from '../../components/common/HashtagInput';
 
 export interface NoteEditorProps {
   note: Note | null;
@@ -567,6 +571,9 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
         }),
         TextStyle,
         Color,
+        FontFamily,
+        MathBlock,
+        MathInline,
       ],
       editorProps: {
         attributes: {
@@ -658,6 +665,19 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
               }
             }
           }
+
+          // Detección y transformación automática de fórmulas matemáticas LaTeX ($$ y $)
+          const plainText = event.clipboardData?.getData('text/plain') || '';
+          if (hasMathContent(plainText)) {
+            event.preventDefault();
+            const mathHtml = convertMarkdownWithMathToHtml(plainText);
+            const currentEditor = (_view as any).editor || editorRef.current;
+            if (currentEditor && !currentEditor.isDestroyed) {
+              currentEditor.commands.insertContent(mathHtml);
+            }
+            return true;
+          }
+
           return false;
         },
         handleDrop: (_view, event) => {
@@ -1139,13 +1159,20 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
         >
           {/* Note Document Sheet (Documento central: gris carbón oscuro y sobrio) */}
           <div className="max-w-[760px] mx-auto w-full bg-white dark:bg-[#161619] border border-slate-300/80 dark:border-white/8 rounded-2xl p-6 sm:p-12 shadow-2xl min-h-[calc(100vh-140px)] flex flex-col transition-colors">
-            {/* Note Title: 28px semibold, zero border, perfectly aligned */}
-            <input
-              type="text"
+            {/* Note Title: autocompletado de #, multilínea con salto de línea automático y fuente discreta */}
+            <HashtagInput
               value={title}
-              onChange={(e) => handleTitleChange(e.target.value)}
+              onChange={(newTitle) => handleTitleChange(newTitle)}
+              availableTags={['clase', 'apuntes', 'deberes', 'taller', 'examen', 'universidad', 'trabajo', 'proyecto']}
               placeholder="Sin título"
-              className="w-full bg-transparent text-[28px] font-semibold tracking-tight text-veyra-text placeholder:text-slate-400 dark:placeholder:text-veyra-subtle/40 focus:outline-none mb-6 border-0 p-0 leading-tight transition-colors"
+              multiline={true}
+              onEnterPress={() => {
+                if (editor) {
+                  editor.commands.focus('start');
+                }
+              }}
+              containerClassName="mb-6"
+              inputClassName="w-full bg-transparent text-lg sm:text-xl font-medium tracking-tight text-veyra-text/90 placeholder:text-slate-400/60 dark:placeholder:text-veyra-subtle/30 focus:outline-none border-0 p-0 leading-snug transition-colors resize-none overflow-hidden"
             />
 
             {/* Tiptap Native DOM Editor + BubbleMenu + SlashMenu */}

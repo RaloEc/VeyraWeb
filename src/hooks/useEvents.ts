@@ -131,11 +131,43 @@ export function useEvents(userId?: string) {
       const newId = crypto.randomUUID();
       const nowMs = Date.now();
 
-      const tagsFormatted = Array.isArray(payload.tags)
-        ? JSON.stringify(payload.tags)
-        : typeof payload.tags === 'string'
-        ? payload.tags
-        : null;
+      let parsedTags: string[] = [];
+      if (Array.isArray(payload.tags)) {
+        parsedTags = payload.tags;
+      } else if (typeof payload.tags === 'string' && payload.tags.trim()) {
+        try {
+          const parsed = JSON.parse(payload.tags);
+          parsedTags = Array.isArray(parsed) ? parsed : [payload.tags.trim()];
+        } catch {
+          parsedTags = [payload.tags.trim()];
+        }
+      }
+
+      const insertData: Database['public']['Tables']['events']['Insert'] = {
+        id: newId,
+        user_id: userId,
+        title: payload.title.trim(),
+        description: payload.description?.trim() || null,
+        start_time_ms: payload.start_time_ms,
+        end_time_ms: payload.end_time_ms,
+        repeat_rule: payload.repeat_rule || null,
+        recurrence_rule: payload.recurrence_rule || null,
+        location: payload.location?.trim() || null,
+        color: payload.color || '#3B82F6',
+        note_id: payload.note_id || null,
+        deleted: 0,
+        tags: parsedTags,
+        is_all_day: Boolean(payload.is_all_day),
+        all_day_date: payload.all_day_date || null,
+        timezone: payload.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
+        is_birthday_like: Boolean(payload.is_birthday_like),
+        notification_offset_min: payload.notification_offset_min !== undefined ? payload.notification_offset_min : 15,
+        notification_offsets: payload.notification_offsets ?? JSON.stringify([15]),
+        notification_ids: JSON.stringify([]),
+        created_at_ms: nowMs,
+        updated_at_ms: nowMs,
+        last_modified_ms: nowMs,
+      };
 
       const newEvent: CalendarEvent = {
         id: newId,
@@ -149,12 +181,15 @@ export function useEvents(userId?: string) {
         location: payload.location?.trim() || null,
         color: payload.color || '#3B82F6',
         note_id: payload.note_id || null,
-        folder_id: payload.folder_id || null,
         deleted: 0,
-        tags: tagsFormatted,
+        tags: parsedTags,
         is_all_day: Boolean(payload.is_all_day),
         all_day_date: payload.all_day_date || null,
         timezone: payload.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
+        is_birthday_like: Boolean(payload.is_birthday_like),
+        notification_offset_min: payload.notification_offset_min !== undefined ? payload.notification_offset_min : 15,
+        notification_offsets: payload.notification_offsets ?? JSON.stringify([15]),
+        notification_ids: JSON.stringify([]),
         created_at_ms: nowMs,
         updated_at_ms: nowMs,
         last_modified_ms: nowMs,
@@ -163,12 +198,7 @@ export function useEvents(userId?: string) {
       setEvents((prev) => [...prev, newEvent].sort((a, b) => a.start_time_ms - b.start_time_ms));
 
       try {
-        const { error } = await supabase.from('events').insert({
-          ...newEvent,
-          is_birthday_like: payload.is_birthday_like ? 1 : 0,
-          notification_offset_min: payload.notification_offset_min ?? null,
-          notification_offsets: payload.notification_offsets ?? null,
-        });
+        const { error } = await supabase.from('events').insert(insertData);
         if (error) {
           console.error('[useEvents] Insert error:', error);
           setEvents((prev) => prev.filter((e) => e.id !== newId));
@@ -197,13 +227,44 @@ export function useEvents(userId?: string) {
       );
 
       try {
+        const updateData: Database['public']['Tables']['events']['Update'] = {
+          updated_at_ms: nowMs,
+          last_modified_ms: nowMs,
+        };
+
+        if (updates.title !== undefined) updateData.title = updates.title.trim();
+        if (updates.description !== undefined) updateData.description = updates.description?.trim() || null;
+        if (updates.start_time_ms !== undefined) updateData.start_time_ms = updates.start_time_ms;
+        if (updates.end_time_ms !== undefined) updateData.end_time_ms = updates.end_time_ms;
+        if (updates.repeat_rule !== undefined) updateData.repeat_rule = updates.repeat_rule;
+        if (updates.recurrence_rule !== undefined) updateData.recurrence_rule = updates.recurrence_rule;
+        if (updates.location !== undefined) updateData.location = updates.location?.trim() || null;
+        if (updates.color !== undefined) updateData.color = updates.color;
+        if (updates.note_id !== undefined) updateData.note_id = updates.note_id;
+        if (updates.deleted !== undefined) updateData.deleted = updates.deleted;
+        if (updates.is_all_day !== undefined) updateData.is_all_day = Boolean(updates.is_all_day);
+        if (updates.all_day_date !== undefined) updateData.all_day_date = updates.all_day_date;
+        if (updates.timezone !== undefined) updateData.timezone = updates.timezone;
+        if (updates.is_birthday_like !== undefined) updateData.is_birthday_like = Boolean(updates.is_birthday_like);
+        if (updates.notification_offset_min !== undefined) updateData.notification_offset_min = updates.notification_offset_min;
+        if (updates.notification_offsets !== undefined) updateData.notification_offsets = updates.notification_offsets;
+        if (updates.tags !== undefined) {
+          if (Array.isArray(updates.tags)) {
+            updateData.tags = updates.tags;
+          } else if (typeof updates.tags === 'string' && updates.tags.trim()) {
+            try {
+              updateData.tags = JSON.parse(updates.tags);
+            } catch {
+              updateData.tags = [updates.tags.trim()];
+            }
+          } else {
+            updateData.tags = (updates.tags as any) || [];
+          }
+        }
+
         const { error } = await supabase
           .from('events')
-          .update({
-            ...updates,
-            updated_at_ms: nowMs,
-            last_modified_ms: nowMs,
-          })
+          .update(updateData)
           .eq('id', id);
 
         if (error) {
@@ -212,6 +273,7 @@ export function useEvents(userId?: string) {
         }
       } catch (err) {
         console.error('[useEvents] Exception updating:', err);
+        throw err;
       }
     },
     []

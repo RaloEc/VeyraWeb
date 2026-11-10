@@ -134,9 +134,11 @@ export interface Database {
           is_all_day: boolean | null;
           all_day_date: string | null;
           timezone: string | null;
-          is_birthday_like?: number | boolean | null;
+          is_birthday_like?: boolean | null;
           notification_offset_min?: number | null;
           notification_offsets?: string | null;
+          notification_ids?: string | null;
+          category_id?: string | null;
           created_at_ms: number;
           updated_at_ms: number;
           last_modified_ms: number;
@@ -160,9 +162,11 @@ export interface Database {
           is_all_day?: boolean | null;
           all_day_date?: string | null;
           timezone?: string | null;
-          is_birthday_like?: number | boolean | null;
+          is_birthday_like?: boolean | null;
           notification_offset_min?: number | null;
           notification_offsets?: string | null;
+          notification_ids?: string | null;
+          category_id?: string | null;
           created_at_ms?: number;
           updated_at_ms?: number;
           last_modified_ms?: number;
@@ -186,9 +190,11 @@ export interface Database {
           is_all_day?: boolean | null;
           all_day_date?: string | null;
           timezone?: string | null;
-          is_birthday_like?: number | boolean | null;
+          is_birthday_like?: boolean | null;
           notification_offset_min?: number | null;
           notification_offsets?: string | null;
+          notification_ids?: string | null;
+          category_id?: string | null;
           created_at_ms?: number;
           updated_at_ms?: number;
           last_modified_ms?: number;

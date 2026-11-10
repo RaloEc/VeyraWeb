@@ -152,7 +152,7 @@ export const AgendaSidebarView: React.FC<AgendaSidebarViewProps> = ({
         tags: payload.tags,
         repeat_rule: payload.repeat_rule,
         recurrence_rule: payload.recurrence_rule,
-        is_birthday_like: payload.is_birthday_like ? 1 : 0,
+        is_birthday_like: Boolean(payload.is_birthday_like),
         notification_offset_min: payload.notification_offset_min,
         notification_offsets: payload.notification_offsets,
         note_id: payload.note_id,

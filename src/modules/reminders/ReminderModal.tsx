@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Modal } from '../../components/common/Modal';
 import { Input } from '../../components/common/Input';
 import { Button } from '../../components/common/Button';
+import { HashtagInput } from '../../components/common/HashtagInput';
 import {
   Bell,
   AlertCircle,
@@ -380,21 +381,22 @@ export const ReminderModal: React.FC<ReminderModalProps> = ({
         )}
       </div>
 
-      {/* Title Input */}
-      <input
-        type="text"
+      {/* Title Input con autocompletado de # */}
+      <HashtagInput
         required
         autoFocus
         placeholder="¿Qué necesitas recordar?"
         value={title}
-        onChange={(e) => setTitle(e.target.value)}
+        onChange={(val) => setTitle(val)}
+        availableTags={['deberes', 'taller', 'apuntes', 'examen', 'urgente', 'trabajo']}
+        containerClassName="mb-2"
+        inputClassName="w-full bg-transparent text-veyra-text text-base font-semibold placeholder:text-veyra-subtle focus:outline-none border-none p-0"
         onKeyDown={(e) => {
           if (e.key === 'Enter') {
             e.preventDefault();
             notesInputRef.current?.focus();
           }
         }}
-        className="w-full bg-transparent text-veyra-text text-base font-semibold placeholder:text-veyra-subtle focus:outline-none mb-2 border-none p-0"
       />
 
       <div className="h-px bg-veyra-border/60 my-2" />

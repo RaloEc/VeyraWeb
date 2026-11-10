@@ -18,6 +18,8 @@ import {
   X,
   Check,
   GraduationCap,
+  Briefcase,
+  BookOpen,
   ExternalLink,
   ArrowDownAZ,
   Pencil,
@@ -120,24 +122,47 @@ export function getEventCategoryTag(event: CalendarEvent): string {
         tags = parsed.map(String).map((t) => t.replace(/^#/, '').trim().toLowerCase());
       }
     } catch {
-      tags = rawTags.split(',').map((t) => t.replace(/^#/, '').trim().toLowerCase()).filter(Boolean);
+      tags = rawTags.split(/[,;\s]+/).map((t) => t.replace(/^#/, '').trim().toLowerCase()).filter(Boolean);
     }
   }
 
+  // Also inspect hashtags in title if tags array is empty
+  if (tags.length === 0 && event.title) {
+    const fromTitle = extractHashtags(event.title);
+    tags = fromTitle.map((t) => t.replace(/^#/, '').trim().toLowerCase());
+  }
+
   // Priority to academic / university tags
-  if (tags.some((t) => t === 'universidad' || t === 'universidades' || t === 'uni' || t === 'facultad')) {
+  if (tags.some((t) => t === 'universidad' || t === 'universidades' || t === 'uni' || t === 'facultad' || t === 'campus' || t === 'carrera' || t === 'semestre')) {
     return 'Universidad';
   }
-  if (tags.some((t) => t === 'clase' || t === 'clases' || t === 'materia' || t === 'asignatura' || t === 'curso')) {
+  if (tags.some((t) => t === 'clase' || t === 'clases' || t === 'materia' || t === 'materias' || t === 'asignatura' || t === 'asignaturas' || t === 'curso' || t === 'cursos' || t === 'aula' || t === 'catedra' || t === 'estudio')) {
     return 'Clases';
   }
-  if (tags.some((t) => t === 'trabajo' || t === 'work' || t === 'laboral')) {
+  if (tags.some((t) => t === 'trabajo' || t === 'travajo' || t === 'work' || t === 'laboral' || t === 'laborales' || t === 'oficina' || t === 'empleo' || t === 'job' || t === 'reunion' || t === 'meeting')) {
     return 'Trabajo';
   }
   if (tags.length > 0) {
     return tags[0].charAt(0).toUpperCase() + tags[0].slice(1);
   }
   return 'Eventos';
+}
+
+export function getCategoryIcon(categoryName: string): React.ComponentType<{ className?: string }> {
+  const lower = categoryName.toLowerCase();
+  if (lower === 'universidad' || lower.includes('facultad') || lower === 'uni' || lower.includes('campus') || lower.includes('carrera')) {
+    return GraduationCap;
+  }
+  if (lower === 'clases' || lower.includes('clase') || lower.includes('materia') || lower.includes('curso') || lower.includes('asignatura') || lower.includes('catedra')) {
+    return BookOpen;
+  }
+  if (lower === 'trabajo' || lower === 'travajo' || lower.includes('work') || lower.includes('laboral') || lower.includes('oficina') || lower.includes('empleo') || lower.includes('reunion') || lower.includes('meeting')) {
+    return Briefcase;
+  }
+  if (lower.includes('proyecto') || lower.includes('tarea')) {
+    return Layers;
+  }
+  return FolderIcon;
 }
 
 export const NotesSidebar: React.FC<NotesSidebarProps> = ({
@@ -1616,7 +1641,9 @@ export const NotesSidebar: React.FC<NotesSidebarProps> = ({
                           />
                         </span>
 
-                        <GraduationCap className="w-3.5 h-3.5 text-accent shrink-0" />
+                        {React.createElement(getCategoryIcon(category.name), {
+                          className: 'w-3.5 h-3.5 text-accent shrink-0',
+                        })}
                         <span className="truncate text-xs font-semibold text-veyra-text">
                           {category.name}
                         </span>

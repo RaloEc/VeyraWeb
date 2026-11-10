@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Modal } from '../../components/common/Modal';
 import { Input } from '../../components/common/Input';
 import { Button } from '../../components/common/Button';
+import { HashtagInput } from '../../components/common/HashtagInput';
 import {
   Calendar as CalendarIcon,
   MapPin,
@@ -463,22 +464,23 @@ export const EventModal: React.FC<EventModalProps> = ({
         )}
       </div>
 
-      {/* Title Input */}
-      <input
-        type="text"
+      {/* Title Input con autocompletado de # */}
+      <HashtagInput
         required
         autoFocus
         placeholder="¿Cuál es el nombre del evento o reunión?"
         value={title}
-        onChange={(e) => setTitle(e.target.value)}
+        onChange={(val) => setTitle(val)}
         onBlur={handleTitleBlur}
+        availableTags={['clase', 'trabajo', 'universidad', 'reunion', 'proyecto']}
+        containerClassName="mb-2"
+        inputClassName="w-full bg-transparent text-veyra-text text-base font-semibold placeholder:text-veyra-subtle focus:outline-none border-none p-0"
         onKeyDown={(e) => {
           if (e.key === 'Enter') {
             e.preventDefault();
             notesInputRef.current?.focus();
           }
         }}
-        className="w-full bg-transparent text-veyra-text text-base font-semibold placeholder:text-veyra-subtle focus:outline-none mb-2 border-none p-0"
       />
 
       <div className="h-px bg-veyra-border/60 my-2" />

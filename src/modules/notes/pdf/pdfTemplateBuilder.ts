@@ -219,6 +219,7 @@ export function buildPdfDocumentHtml(
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>${escapeHtml(cleanTitle)}</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css" />
   <style id="pdf-static-styles">
     ${GOOGLE_FONTS_IMPORT}
 

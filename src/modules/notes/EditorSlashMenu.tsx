@@ -10,6 +10,9 @@ import {
   Quote,
   AlignJustify,
   Video,
+  Minus,
+  Eraser,
+  Sigma,
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { YT_REGEX } from '../../lib/tiptap-youtube-node';
@@ -136,6 +139,53 @@ const SLASH_ITEMS: SlashItem[] = [
         .focus()
         .deleteRange(range)
         .setTextAlign('justify')
+        .run();
+    },
+  },
+  {
+    id: 'divider',
+    title: 'Línea divisoria',
+    description: 'Separador horizontal visual',
+    icon: <Minus className="w-4 h-4" />,
+    action: (editor, range) => {
+      editor
+        .chain()
+        .focus()
+        .deleteRange(range)
+        .setHorizontalRule()
+        .run();
+    },
+  },
+  {
+    id: 'clear-format',
+    title: 'Borrar formato',
+    description: 'Restablecer párrafo a texto limpio',
+    icon: <Eraser className="w-4 h-4" />,
+    action: (editor, range) => {
+      editor
+        .chain()
+        .focus()
+        .deleteRange(range)
+        .unsetAllMarks()
+        .clearNodes()
+        .setTextAlign('left')
+        .unsetColor()
+        .unsetHighlight()
+        .unsetFontFamily()
+        .run();
+    },
+  },
+  {
+    id: 'math',
+    title: 'Fórmula matemática',
+    description: 'Ecuación o cálculo en formato LaTeX',
+    icon: <Sigma className="w-4 h-4 text-accent" />,
+    action: (editor, range) => {
+      editor
+        .chain()
+        .focus()
+        .deleteRange(range)
+        .insertContent({ type: 'mathBlock', attrs: { latex: '' } })
         .run();
     },
   },

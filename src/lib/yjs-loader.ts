@@ -1,5 +1,6 @@
 import * as Y from 'yjs';
 import * as awarenessProtocol from 'y-protocols/awareness';
+import katex from 'katex';
 import { supabase } from './supabase';
 import { uint8ArrayToBase64, computeSha256 } from './crypto-utils';
 import { activateNoteYjsMode } from './yjs-activation';
@@ -337,7 +338,19 @@ export function insertHtmlIntoFragment(fragment: Y.XmlFragment, htmlOrText: stri
           }
         }
 
-        // 9. Standard paragraph / div
+        // 9. Math block
+        if (
+          (tag === 'div' && el.getAttribute('data-type') === 'math-block') ||
+          el.classList.contains('veyra-math-block')
+        ) {
+          const latex = el.getAttribute('data-latex') || el.textContent || '';
+          const yMath = new Y.XmlElement('mathBlock');
+          yMath.setAttribute('latex', latex);
+          fragment.push([yMath]);
+          continue;
+        }
+
+        // 10. Standard paragraph / div
         const p = new Y.XmlElement('paragraph');
         const align = el.style.textAlign;
         if (align) p.setAttribute('textAlign', align);
@@ -647,6 +660,24 @@ export function yElementToHtml(el: Y.XmlElement | Y.XmlText): string {
       return embed
         ? `<div data-youtube-video data-video-id="${id}" data-embed="true"><iframe loading="lazy" src="https://www.youtube.com/embed/${id}" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe></div>`
         : `<div data-youtube-video data-video-id="${id}" data-embed="false"><a href="https://www.youtube.com/watch?v=${id}">https://www.youtube.com/watch?v=${id}</a></div>`;
+    }
+    if (nodeName === 'mathblock') {
+      const latex = el.getAttribute('latex') || '';
+      try {
+        const katexHtml = katex.renderToString(latex, { displayMode: true, throwOnError: false });
+        return `<div class="veyra-math-block" data-type="math-block" data-latex="${latex.replace(/"/g, '&quot;')}">${katexHtml}</div>`;
+      } catch {
+        return `<div class="veyra-math-block" data-type="math-block">${latex}</div>`;
+      }
+    }
+    if (nodeName === 'mathinline') {
+      const latex = el.getAttribute('latex') || '';
+      try {
+        const katexHtml = katex.renderToString(latex, { displayMode: false, throwOnError: false });
+        return `<span class="veyra-math-inline" data-type="math-inline" data-latex="${latex.replace(/"/g, '&quot;')}">${katexHtml}</span>`;
+      } catch {
+        return `<span class="veyra-math-inline" data-type="math-inline">${latex}</span>`;
+      }
     }
     return `<div>${childrenHtml}</div>`;
   }
