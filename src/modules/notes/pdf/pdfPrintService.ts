@@ -11,8 +11,8 @@ export async function printHtmlDocument(html: string): Promise<void> {
       iframe.style.position = 'fixed';
       iframe.style.top = '-10000px';
       iframe.style.left = '-10000px';
-      iframe.style.width = '1000px';
-      iframe.style.height = '1000px';
+      iframe.style.width = '1400px';
+      iframe.style.height = '1800px';
       iframe.style.border = 'none';
       iframe.style.opacity = '0';
       iframe.style.pointerEvents = 'none';
@@ -62,13 +62,13 @@ export async function printHtmlDocument(html: string): Promise<void> {
             )
           );
 
-          // Esperar a que el motor de paginación genere las hojas físicas
+          // Esperar a que el motor de paginación genere las hojas físicas y termine
           let attempts = 0;
           while (
-            iframeDoc.querySelectorAll('.pdf-page-sheet').length === 0 &&
-            attempts < 30
+            !(iframe.contentWindow as any)?.__veyra_pagination_ready &&
+            attempts < 60
           ) {
-            await new Promise((r) => setTimeout(r, 60));
+            await new Promise((r) => setTimeout(r, 50));
             attempts++;
           }
 

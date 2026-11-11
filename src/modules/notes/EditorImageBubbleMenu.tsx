@@ -16,12 +16,15 @@ import {
   FlipHorizontal,
   Loader2,
   AlertCircle,
+  Copy,
+  Scissors,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '../../lib/utils';
 import { compressImage, isGif } from '../../lib/image-pipeline';
 import { uploadNoteImage } from '../../lib/storage-upload';
 import { deleteNoteImage } from '../../lib/storage-delete';
+import { copyImageToClipboard } from './utils/clipboardImageUtils';
 
 export interface EditorImageBubbleMenuProps {
   editor: Editor | null;
@@ -146,6 +149,29 @@ export const EditorImageBubbleMenu: React.FC<EditorImageBubbleMenuProps> = ({
     }
   };
 
+  // Copiar imagen al portapapeles
+  const handleCopyImage = async () => {
+    if (!currentSrc) return;
+    const ok = await copyImageToClipboard(currentSrc);
+    if (ok) {
+      toast.success('Imagen copiada al portapapeles');
+    } else {
+      toast.error('No se pudo copiar la imagen');
+    }
+  };
+
+  // Cortar imagen (copiar y eliminar del editor)
+  const handleCutImage = async () => {
+    if (!currentSrc) return;
+    const ok = await copyImageToClipboard(currentSrc);
+    if (ok) {
+      editor.chain().focus().deleteSelection().run();
+      toast.success('Imagen cortada al portapapeles');
+    } else {
+      toast.error('No se pudo cortar la imagen');
+    }
+  };
+
   // Eliminar imagen con confirmación de 2 segundos
   const handleDelete = () => {
     if (!confirmDelete) {
@@ -176,7 +202,7 @@ export const EditorImageBubbleMenu: React.FC<EditorImageBubbleMenuProps> = ({
     <BubbleMenu
       editor={editor}
       shouldShow={({ editor }) => editor.isActive('image')}
-      className="flex items-center gap-0.5 p-1 rounded-lg bg-veyra-card border border-veyra-border shadow-elevated z-50 backdrop-blur-md text-xs select-none"
+      className="flex items-center gap-0.5 p-1 rounded-lg bg-white dark:bg-[#18181b] border border-slate-200 dark:border-zinc-800 shadow-lg z-50 text-slate-700 dark:text-zinc-200 text-xs select-none"
     >
       <input
         ref={fileInputRef}
@@ -196,7 +222,7 @@ export const EditorImageBubbleMenu: React.FC<EditorImageBubbleMenuProps> = ({
           'p-1.5 rounded transition-colors cursor-pointer flex items-center justify-center',
           currentAlign === 'left'
             ? 'text-accent bg-accent/15 font-semibold'
-            : 'text-veyra-muted hover:text-veyra-text hover:bg-white/5'
+            : 'text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-zinc-100 hover:bg-slate-100 dark:hover:bg-zinc-800'
         )}
       >
         <AlignLeft className="w-3.5 h-3.5" />
@@ -211,7 +237,7 @@ export const EditorImageBubbleMenu: React.FC<EditorImageBubbleMenuProps> = ({
           'p-1.5 rounded transition-colors cursor-pointer flex items-center justify-center',
           currentAlign === 'center'
             ? 'text-accent bg-accent/15 font-semibold'
-            : 'text-veyra-muted hover:text-veyra-text hover:bg-white/5'
+            : 'text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-zinc-100 hover:bg-slate-100 dark:hover:bg-zinc-800'
         )}
       >
         <AlignCenter className="w-3.5 h-3.5" />
@@ -226,13 +252,13 @@ export const EditorImageBubbleMenu: React.FC<EditorImageBubbleMenuProps> = ({
           'p-1.5 rounded transition-colors cursor-pointer flex items-center justify-center',
           currentAlign === 'right'
             ? 'text-accent bg-accent/15 font-semibold'
-            : 'text-veyra-muted hover:text-veyra-text hover:bg-white/5'
+            : 'text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-zinc-100 hover:bg-slate-100 dark:hover:bg-zinc-800'
         )}
       >
         <AlignRight className="w-3.5 h-3.5" />
       </button>
 
-      <div className="w-[1px] h-3.5 bg-veyra-border mx-1" />
+      <div className="w-[1px] h-3.5 bg-slate-200 dark:bg-zinc-800 mx-1" />
 
       {/* Presets de tamaño */}
       {presets.map((pct) => {
@@ -248,7 +274,7 @@ export const EditorImageBubbleMenu: React.FC<EditorImageBubbleMenuProps> = ({
               'px-1.5 py-1 rounded text-[11px] font-medium transition-colors cursor-pointer',
               isSelected
                 ? 'text-accent bg-accent/15 font-semibold'
-                : 'text-veyra-muted hover:text-veyra-text hover:bg-white/5'
+                : 'text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-zinc-100 hover:bg-slate-100 dark:hover:bg-zinc-800'
             )}
             title={`Ajustar a ${pct}%`}
           >
@@ -257,7 +283,7 @@ export const EditorImageBubbleMenu: React.FC<EditorImageBubbleMenuProps> = ({
         );
       })}
 
-      <div className="w-[1px] h-3.5 bg-veyra-border mx-1" />
+      <div className="w-[1px] h-3.5 bg-slate-200 dark:bg-zinc-800 mx-1" />
 
       {/* Pie de foto */}
       <button
@@ -268,8 +294,8 @@ export const EditorImageBubbleMenu: React.FC<EditorImageBubbleMenuProps> = ({
         className={cn(
           'p-1.5 rounded transition-colors cursor-pointer flex items-center justify-center',
           isCaptionActive
-            ? 'text-accent bg-accent/15'
-            : 'text-veyra-muted hover:text-veyra-text hover:bg-white/5'
+            ? 'text-accent bg-accent/15 font-semibold'
+            : 'text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-zinc-100 hover:bg-slate-100 dark:hover:bg-zinc-800'
         )}
       >
         <Subtitles className="w-3.5 h-3.5" />
@@ -282,7 +308,7 @@ export const EditorImageBubbleMenu: React.FC<EditorImageBubbleMenuProps> = ({
         disabled={isUploading}
         onClick={handleReplaceClick}
         title="Reemplazar imagen"
-        className="p-1.5 rounded text-veyra-muted hover:text-veyra-text hover:bg-white/5 transition-colors cursor-pointer flex items-center justify-center disabled:opacity-50"
+        className="p-1.5 rounded text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-zinc-100 hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer flex items-center justify-center disabled:opacity-50"
       >
         {isUploading ? (
           <Loader2 className="w-3.5 h-3.5 animate-spin text-accent" />
@@ -297,12 +323,34 @@ export const EditorImageBubbleMenu: React.FC<EditorImageBubbleMenuProps> = ({
         onMouseDown={(e) => e.preventDefault()}
         onClick={handleDownload}
         title="Descargar imagen"
-        className="p-1.5 rounded text-veyra-muted hover:text-veyra-text hover:bg-white/5 transition-colors cursor-pointer flex items-center justify-center"
+        className="p-1.5 rounded text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-zinc-100 hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer flex items-center justify-center"
       >
         <Download className="w-3.5 h-3.5" />
       </button>
 
-      <div className="w-[1px] h-3.5 bg-veyra-border mx-1" />
+      {/* Copiar imagen */}
+      <button
+        type="button"
+        onMouseDown={(e) => e.preventDefault()}
+        onClick={handleCopyImage}
+        title="Copiar imagen (Ctrl+C)"
+        className="p-1.5 rounded text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-zinc-100 hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer flex items-center justify-center"
+      >
+        <Copy className="w-3.5 h-3.5" />
+      </button>
+
+      {/* Cortar imagen */}
+      <button
+        type="button"
+        onMouseDown={(e) => e.preventDefault()}
+        onClick={handleCutImage}
+        title="Cortar imagen (Ctrl+X)"
+        className="p-1.5 rounded text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-zinc-100 hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer flex items-center justify-center"
+      >
+        <Scissors className="w-3.5 h-3.5" />
+      </button>
+
+      <div className="w-[1px] h-3.5 bg-slate-200 dark:bg-zinc-800 mx-1" />
 
       {/* Controles avanzados de transformación (Fase 2) */}
       <button

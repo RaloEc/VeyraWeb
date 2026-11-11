@@ -29,6 +29,13 @@ export const MathBlock = Node.create({
           'data-latex': attributes.latex,
         }),
       },
+      size: {
+        default: 'normal',
+        parseHTML: (element) => element.getAttribute('data-size') || 'normal',
+        renderHTML: (attributes) => ({
+          'data-size': attributes.size || 'normal',
+        }),
+      },
     };
   },
 
@@ -102,6 +109,13 @@ export const MathInline = Node.create({
         parseHTML: (element) => element.getAttribute('data-latex') || '',
         renderHTML: (attributes) => ({
           'data-latex': attributes.latex,
+        }),
+      },
+      size: {
+        default: 'normal',
+        parseHTML: (element) => element.getAttribute('data-size') || 'normal',
+        renderHTML: (attributes) => ({
+          'data-size': attributes.size || 'normal',
         }),
       },
     };

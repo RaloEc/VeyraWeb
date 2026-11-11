@@ -122,8 +122,15 @@ function parseInlineNodesToDelta(
         currentMarks.link = { href };
       } else if (tag === 'span') {
         const color = el.style?.color;
-        if (color) {
-          currentMarks.textStyle = { color };
+        const fontSize = el.style?.fontSize;
+        const fontFamily = el.style?.fontFamily;
+        const existingTs = currentMarks.textStyle || {};
+        const newTs: Record<string, any> = { ...existingTs };
+        if (color) newTs.color = color;
+        if (fontSize) newTs.fontSize = fontSize;
+        if (fontFamily) newTs.fontFamily = fontFamily.replace(/['"]/g, '');
+        if (Object.keys(newTs).length > 0) {
+          currentMarks.textStyle = newTs;
         }
       }
 
@@ -235,6 +242,18 @@ export function insertHtmlIntoFragment(fragment: Y.XmlFragment, htmlOrText: stri
         // 4. Ordered list
         if (tag === 'ol') {
           const yList = new Y.XmlElement('orderedList');
+          if (el.hasAttribute('start')) {
+            const startVal = parseInt(el.getAttribute('start') || '1', 10);
+            if (!isNaN(startVal) && startVal > 1) {
+              yList.setAttribute('start', String(startVal));
+            }
+          }
+          if (el.hasAttribute('data-list-style')) {
+            const styleVal = el.getAttribute('data-list-style');
+            if (styleVal && styleVal !== 'decimal') {
+              yList.setAttribute('listStyle', styleVal);
+            }
+          }
           fragment.push([yList]);
           for (const li of Array.from(el.children)) {
             if (li.tagName.toLowerCase() === 'li') {
@@ -581,8 +600,14 @@ export function yTextToHtml(yText: Y.XmlText): string {
           : '';
         chunk = `<mark${color}>${chunk}</mark>`;
       }
-      if (attrs.textStyle && attrs.textStyle.color) {
-        chunk = `<span style="color: ${attrs.textStyle.color};">${chunk}</span>`;
+      if (attrs.textStyle) {
+        const styles: string[] = [];
+        if (attrs.textStyle.color) styles.push(`color: ${attrs.textStyle.color}`);
+        if (attrs.textStyle.fontSize) styles.push(`font-size: ${attrs.textStyle.fontSize}`);
+        if (attrs.textStyle.fontFamily) styles.push(`font-family: ${attrs.textStyle.fontFamily}`);
+        if (styles.length > 0) {
+          chunk = `<span style="${styles.join('; ')}">${chunk}</span>`;
+        }
       }
       if (attrs.link && attrs.link.href) {
         chunk = `<a href="${attrs.link.href}">${chunk}</a>`;
@@ -628,7 +653,11 @@ export function yElementToHtml(el: Y.XmlElement | Y.XmlText): string {
       return `<ul>${childrenHtml}</ul>`;
     }
     if (nodeName === 'orderedlist' || nodeName === 'ol') {
-      return `<ol>${childrenHtml}</ol>`;
+      const start = el.getAttribute('start');
+      const startAttr = start && String(start) !== '1' ? ` start="${start}"` : '';
+      const listStyle = el.getAttribute('listStyle') || el.getAttribute('data-list-style');
+      const styleAttr = listStyle && listStyle !== 'decimal' ? ` data-list-style="${listStyle}"` : '';
+      return `<ol${startAttr}${styleAttr}>${childrenHtml}</ol>`;
     }
     if (nodeName === 'listitem' || nodeName === 'li') {
       return `<li>${childrenHtml}</li>`;

@@ -13,6 +13,7 @@ import {
   Minus,
   Eraser,
   Sigma,
+  Table,
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { YT_REGEX } from '../../lib/tiptap-youtube-node';
@@ -25,8 +26,16 @@ interface SlashItem {
   id: string;
   title: string;
   description: string;
+  aliases?: string[];
   icon: React.ReactNode;
   action: (editor: Editor, range: { from: number; to: number }) => void;
+}
+
+function normalizeSearchText(text: string): string {
+  return text
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
 }
 
 const SLASH_ITEMS: SlashItem[] = [
@@ -34,6 +43,7 @@ const SLASH_ITEMS: SlashItem[] = [
     id: 'h1',
     title: 'Título 1',
     description: 'Encabezado de sección grande',
+    aliases: ['titulo', 'encabezado', 'heading', 'seccion', 'h1'],
     icon: <Heading1 className="w-4 h-4" />,
     action: (editor, range) => {
       editor
@@ -48,6 +58,7 @@ const SLASH_ITEMS: SlashItem[] = [
     id: 'h2',
     title: 'Título 2',
     description: 'Encabezado de subsección mediano',
+    aliases: ['titulo', 'subtitulo', 'heading', 'subseccion', 'h2'],
     icon: <Heading2 className="w-4 h-4" />,
     action: (editor, range) => {
       editor
@@ -62,6 +73,7 @@ const SLASH_ITEMS: SlashItem[] = [
     id: 'h3',
     title: 'Título 3',
     description: 'Encabezado pequeño',
+    aliases: ['titulo', 'heading', 'pequeno', 'h3'],
     icon: <Heading3 className="w-4 h-4" />,
     action: (editor, range) => {
       editor
@@ -76,6 +88,7 @@ const SLASH_ITEMS: SlashItem[] = [
     id: 'bullet-list',
     title: 'Lista con viñetas',
     description: 'Lista simple con viñetas',
+    aliases: ['vineta', 'puntos', 'bullet', 'lista'],
     icon: <List className="w-4 h-4" />,
     action: (editor, range) => {
       editor
@@ -90,6 +103,7 @@ const SLASH_ITEMS: SlashItem[] = [
     id: 'ordered-list',
     title: 'Lista numerada',
     description: 'Lista con números ordenados',
+    aliases: ['numerada', 'ordenada', 'numeros', 'correlativa', '1.'],
     icon: <ListOrdered className="w-4 h-4" />,
     action: (editor, range) => {
       editor
@@ -104,6 +118,7 @@ const SLASH_ITEMS: SlashItem[] = [
     id: 'task-list',
     title: 'Lista de tareas',
     description: 'Checklist interactivo de tareas',
+    aliases: ['tarea', 'checklist', 'checkbox', 'pendiente', 'todo'],
     icon: <CheckSquare className="w-4 h-4" />,
     action: (editor, range) => {
       editor
@@ -118,6 +133,7 @@ const SLASH_ITEMS: SlashItem[] = [
     id: 'blockquote',
     title: 'Cita',
     description: 'Bloque de texto para destacar',
+    aliases: ['cita', 'frase', 'quote', 'destacado', 'bloque'],
     icon: <Quote className="w-4 h-4" />,
     action: (editor, range) => {
       editor
@@ -132,6 +148,7 @@ const SLASH_ITEMS: SlashItem[] = [
     id: 'align-justify',
     title: 'Justificar texto',
     description: 'Alinear párrafo a ambos márgenes',
+    aliases: ['justificar', 'alinear', 'alineacion', 'margenes', 'justify'],
     icon: <AlignJustify className="w-4 h-4" />,
     action: (editor, range) => {
       editor
@@ -146,6 +163,7 @@ const SLASH_ITEMS: SlashItem[] = [
     id: 'divider',
     title: 'Línea divisoria',
     description: 'Separador horizontal visual',
+    aliases: ['linea', 'separador', 'regla', 'horizontal', 'divider', 'hr'],
     icon: <Minus className="w-4 h-4" />,
     action: (editor, range) => {
       editor
@@ -160,6 +178,7 @@ const SLASH_ITEMS: SlashItem[] = [
     id: 'clear-format',
     title: 'Borrar formato',
     description: 'Restablecer párrafo a texto limpio',
+    aliases: ['limpiar', 'borrar', 'reset', 'sin formato', 'normal'],
     icon: <Eraser className="w-4 h-4" />,
     action: (editor, range) => {
       editor
@@ -176,9 +195,25 @@ const SLASH_ITEMS: SlashItem[] = [
     },
   },
   {
+    id: 'table',
+    title: 'Tabla',
+    description: 'Insertar tabla de datos estructurada',
+    aliases: ['tabla', 'cuadricula', 'filas', 'columnas', 'celdas', 'grid', 'table'],
+    icon: <Table className="w-4 h-4" />,
+    action: (editor, range) => {
+      editor
+        .chain()
+        .focus()
+        .deleteRange(range)
+        .insertTable({ rows: 3, cols: 3, withHeaderRow: true })
+        .run();
+    },
+  },
+  {
     id: 'math',
     title: 'Fórmula matemática',
     description: 'Ecuación o cálculo en formato LaTeX',
+    aliases: ['formula', 'matematica', 'ecuacion', 'latex', 'katex', 'calculo', 'simbolo'],
     icon: <Sigma className="w-4 h-4 text-accent" />,
     action: (editor, range) => {
       editor
@@ -193,6 +228,7 @@ const SLASH_ITEMS: SlashItem[] = [
     id: 'youtube',
     title: 'Video de YouTube',
     description: 'Insertar un video embebido de YouTube',
+    aliases: ['video', 'youtube', 'yt', 'embebido', 'reproductor'],
     icon: <Video className="w-4 h-4" />,
     action: (editor, range) => {
       const url = window.prompt('Introduce el enlace de YouTube:');
@@ -224,12 +260,18 @@ export const EditorSlashMenu: React.FC<EditorSlashMenuProps> = ({ editor }) => {
   const [query, setQuery] = useState('');
   const menuRef = useRef<HTMLDivElement>(null);
 
-  const filteredItems = SLASH_ITEMS.filter(
-    (item) =>
-      item.title.toLowerCase().includes(query) ||
-      item.description.toLowerCase().includes(query) ||
-      item.id.toLowerCase().includes(query)
-  );
+  const normalizedQuery = normalizeSearchText(query);
+
+  const filteredItems = SLASH_ITEMS.filter((item) => {
+    if (!normalizedQuery) return true;
+    const matchTitle = normalizeSearchText(item.title).includes(normalizedQuery);
+    const matchDesc = normalizeSearchText(item.description).includes(normalizedQuery);
+    const matchId = normalizeSearchText(item.id).includes(normalizedQuery);
+    const matchAlias = item.aliases?.some((alias) =>
+      normalizeSearchText(alias).includes(normalizedQuery)
+    );
+    return matchTitle || matchDesc || matchId || matchAlias;
+  });
 
   const checkSlashCommand = useCallback(() => {
     if (!editor || !editor.isFocused) {

@@ -205,7 +205,7 @@ export const ImageNodeView: React.FC<NodeViewProps> = ({
       as="figure"
       ref={containerRef}
       className={cn(
-        'veyra-image-node relative block w-full select-none clear-both',
+        'veyra-image-node relative block w-full clear-both',
         selected && 'is-selected',
         isResizing && 'is-resizing'
       )}

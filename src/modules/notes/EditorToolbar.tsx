@@ -29,17 +29,44 @@ import {
   ChevronDown,
   RotateCcw,
   Sigma,
+  Table,
+  AArrowUp,
+  AArrowDown,
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import {
   NOTE_FONTS,
   areColorsEqual,
 } from './constants/noteFonts';
+import {
+  FONT_SIZES,
+  getNextLargerFontSize,
+  getNextSmallerFontSize,
+  DEFAULT_FONT_SIZE,
+} from './extensions/FontSize';
 import { useRecentEditorColors } from './hooks/useRecentEditorColors';
 import {
   TextColorPopover,
   HighlightColorPopover,
 } from './components/EditorColorPopovers';
+import type { NumberingStyle } from './extensions/CustomOrderedList';
+
+interface NumberingOption {
+  id: NumberingStyle | 'none';
+  label: string;
+  items?: [string, string, string];
+}
+
+const NUMBERING_OPTIONS: NumberingOption[] = [
+  { id: 'none', label: 'Ninguna' },
+  { id: 'decimal', label: '1. 2. 3.', items: ['1.', '2.', '3.'] },
+  { id: 'decimal-paren', label: '1) 2) 3)', items: ['1)', '2)', '3)'] },
+  { id: 'upper-roman', label: 'I. II. III.', items: ['I.', 'II.', 'III.'] },
+  { id: 'upper-alpha', label: 'A. B. C.', items: ['A.', 'B.', 'C.'] },
+  { id: 'lower-alpha-paren', label: 'a) b) c)', items: ['a)', 'b)', 'c)'] },
+  { id: 'lower-alpha', label: 'a. b. c.', items: ['a.', 'b.', 'c.'] },
+  { id: 'lower-roman', label: 'i. ii. iii.', items: ['i.', 'ii.', 'iii.'] },
+];
 
 export interface EditorToolbarProps {
   editor: Editor | null;
@@ -56,14 +83,23 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({ editor, onUploadIm
   const highlightMenuRef = useRef<HTMLDivElement>(null);
   const fontBtnRef = useRef<HTMLButtonElement>(null);
   const fontMenuRef = useRef<HTMLDivElement>(null);
+  const fontSizeBtnRef = useRef<HTMLButtonElement>(null);
+  const fontSizeMenuRef = useRef<HTMLDivElement>(null);
+  const orderedListBtnRef = useRef<HTMLButtonElement>(null);
+  const orderedListMenuRef = useRef<HTMLDivElement>(null);
 
   const [isTextColorMenuOpen, setIsTextColorMenuOpen] = useState(false);
   const [isHighlightMenuOpen, setIsHighlightMenuOpen] = useState(false);
   const [isFontMenuOpen, setIsFontMenuOpen] = useState(false);
+  const [isFontSizeMenuOpen, setIsFontSizeMenuOpen] = useState(false);
+  const [isOrderedListMenuOpen, setIsOrderedListMenuOpen] = useState(false);
 
   const [textColorCoords, setTextColorCoords] = useState<{ top: number; left: number }>({ top: 0, left: 0 });
   const [highlightCoords, setHighlightCoords] = useState<{ top: number; left: number }>({ top: 0, left: 0 });
   const [fontCoords, setFontCoords] = useState<{ top: number; left: number }>({ top: 0, left: 0 });
+  const [fontSizeCoords, setFontSizeCoords] = useState<{ top: number; left: number }>({ top: 0, left: 0 });
+  const [orderedListCoords, setOrderedListCoords] = useState<{ top: number; left: number }>({ top: 0, left: 0 });
+  const [customStartInput, setCustomStartInput] = useState<string>('2');
 
   // Hook de colores recientes y persistencia
   const {
@@ -127,11 +163,83 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({ editor, onUploadIm
     });
   }, []);
 
+  const updateFontSizePosition = useCallback(() => {
+    if (!fontSizeBtnRef.current) return;
+    const rect = fontSizeBtnRef.current.getBoundingClientRect();
+    const popoverWidth = 190;
+    const margin = 10;
+    let left = rect.left;
+    if (left + popoverWidth > window.innerWidth - margin) {
+      left = window.innerWidth - popoverWidth - margin;
+    }
+    if (left < margin) left = margin;
+
+    setFontSizeCoords({
+      top: rect.bottom + 4,
+      left,
+    });
+  }, []);
+
+  const updateOrderedListPosition = useCallback(() => {
+    if (!orderedListBtnRef.current) return;
+    const rect = orderedListBtnRef.current.getBoundingClientRect();
+    const popoverWidth = 268;
+    const margin = 10;
+    let left = rect.left;
+    if (left + popoverWidth > window.innerWidth - margin) {
+      left = window.innerWidth - popoverWidth - margin;
+    }
+    if (left < margin) left = margin;
+
+    setOrderedListCoords({
+      top: rect.bottom + 4,
+      left,
+    });
+  }, []);
+
+  const getPreviousListContinuation = useCallback((): number | null => {
+    if (!editor) return null;
+    const { state } = editor;
+    const { $from } = state.selection;
+
+    let currentListPos: number | null = null;
+    for (let d = $from.depth; d > 0; d--) {
+      if ($from.node(d).type.name === 'orderedList') {
+        currentListPos = $from.before(d);
+        break;
+      }
+    }
+
+    const searchBeforePos = currentListPos !== null ? currentListPos : $from.pos;
+    let previousList: { start: number; count: number } | null = null;
+
+    state.doc.nodesBetween(0, searchBeforePos, (node, pos) => {
+      if (node.type.name === 'orderedList' && pos < searchBeforePos) {
+        const start = (node.attrs.start as number) || 1;
+        const count = node.childCount;
+        previousList = { start, count };
+      }
+    });
+
+    if (!previousList) return null;
+    return (previousList as { start: number; count: number }).start + (previousList as { start: number; count: number }).count;
+  }, [editor]);
+
   // Forzar actualización inmediata de la barra cuando cambia la selección o contenido del editor
   const [, setTick] = useState(0);
+  const lastSelectionRef = useRef<{ from: number; to: number } | null>(null);
+
   useEffect(() => {
     if (!editor) return;
-    const handleUpdate = () => setTick((t) => t + 1);
+    const handleUpdate = () => {
+      setTick((t) => t + 1);
+      if (editor.state && editor.state.selection && !editor.state.selection.empty) {
+        lastSelectionRef.current = {
+          from: editor.state.selection.from,
+          to: editor.state.selection.to,
+        };
+      }
+    };
     editor.on('transaction', handleUpdate);
     editor.on('selectionUpdate', handleUpdate);
     return () => {
@@ -168,12 +276,30 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({ editor, onUploadIm
       ) {
         setIsFontMenuOpen(false);
       }
+      if (
+        fontSizeMenuRef.current &&
+        !fontSizeMenuRef.current.contains(target) &&
+        fontSizeBtnRef.current &&
+        !fontSizeBtnRef.current.contains(target)
+      ) {
+        setIsFontSizeMenuOpen(false);
+      }
+      if (
+        orderedListMenuRef.current &&
+        !orderedListMenuRef.current.contains(target) &&
+        orderedListBtnRef.current &&
+        !orderedListBtnRef.current.contains(target)
+      ) {
+        setIsOrderedListMenuOpen(false);
+      }
     };
 
     const handleWindowChange = () => {
       if (isTextColorMenuOpen) updateTextColorPosition();
       if (isHighlightMenuOpen) updateHighlightPosition();
       if (isFontMenuOpen) updateFontPosition();
+      if (isFontSizeMenuOpen) updateFontSizePosition();
+      if (isOrderedListMenuOpen) updateOrderedListPosition();
     };
 
     document.addEventListener('mousedown', handleClickOutside);
@@ -185,7 +311,18 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({ editor, onUploadIm
       window.removeEventListener('resize', handleWindowChange);
       window.removeEventListener('scroll', handleWindowChange, true);
     };
-  }, [isTextColorMenuOpen, isHighlightMenuOpen, isFontMenuOpen, updateTextColorPosition, updateHighlightPosition, updateFontPosition]);
+  }, [
+    isTextColorMenuOpen,
+    isHighlightMenuOpen,
+    isFontMenuOpen,
+    isFontSizeMenuOpen,
+    isOrderedListMenuOpen,
+    updateTextColorPosition,
+    updateHighlightPosition,
+    updateFontPosition,
+    updateFontSizePosition,
+    updateOrderedListPosition,
+  ]);
 
   if (!editor) return null;
 
@@ -194,6 +331,39 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({ editor, onUploadIm
   const currentHighlightColor = (editor.getAttributes('highlight').color as string | undefined) || null;
   const isHighlightActive = editor.isActive('highlight');
   const currentFontFamily = (editor.getAttributes('textStyle').fontFamily as string | undefined) || null;
+  const currentFontSize = (editor.getAttributes('textStyle').fontSize as string | undefined) || null;
+
+  const isOrderedListActive = editor.isActive('orderedList');
+  const currentListStyle = (editor.getAttributes('orderedList')?.listStyle as NumberingStyle) || 'decimal';
+  const currentListStart = (editor.getAttributes('orderedList')?.start as number) || 1;
+  const previousContinuation = isOrderedListActive ? getPreviousListContinuation() : null;
+
+  const handleSelectNumberingStyle = (styleId: NumberingStyle | 'none') => {
+    if (!editor) return;
+
+    if (styleId === 'none') {
+      if (editor.isActive('orderedList')) {
+        editor.chain().focus().toggleOrderedList().run();
+      }
+      setIsOrderedListMenuOpen(false);
+      return;
+    }
+
+    if (editor.isActive('orderedList')) {
+      editor.chain().focus().updateAttributes('orderedList', { listStyle: styleId }).run();
+    } else {
+      editor
+        .chain()
+        .focus()
+        .toggleOrderedList()
+        .updateAttributes('orderedList', { listStyle: styleId })
+        .run();
+    }
+    setIsOrderedListMenuOpen(false);
+  };
+
+  // Encontrar opción de tamaño actual
+  const activeFontSizeOption = FONT_SIZES.find((s) => s.value === currentFontSize);
 
   // Encontrar opción de fuente actual
   const activeFontOption = NOTE_FONTS.find(
@@ -230,10 +400,60 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({ editor, onUploadIm
       updateFontPosition();
       setIsTextColorMenuOpen(false);
       setIsHighlightMenuOpen(false);
+      setIsFontSizeMenuOpen(false);
       setIsFontMenuOpen(true);
     } else {
       setIsFontMenuOpen(false);
     }
+  };
+
+  const handleToggleFontSizeMenu = () => {
+    if (!isFontSizeMenuOpen) {
+      if (editor.state && editor.state.selection && !editor.state.selection.empty) {
+        lastSelectionRef.current = {
+          from: editor.state.selection.from,
+          to: editor.state.selection.to,
+        };
+      }
+      updateFontSizePosition();
+      setIsTextColorMenuOpen(false);
+      setIsHighlightMenuOpen(false);
+      setIsFontMenuOpen(false);
+      setIsFontSizeMenuOpen(true);
+    } else {
+      setIsFontSizeMenuOpen(false);
+    }
+  };
+
+  const applyFontSize = (size: string | null) => {
+    if (!editor) return;
+    let chain = editor.chain().focus();
+    if (editor.state.selection.empty && lastSelectionRef.current) {
+      chain = chain.setTextSelection(lastSelectionRef.current);
+    }
+    if (!size || size === 'default' || size === DEFAULT_FONT_SIZE) {
+      chain.unsetFontSize().run();
+    } else {
+      chain.setFontSize(size).run();
+    }
+    if (editor.state.selection && !editor.state.selection.empty) {
+      lastSelectionRef.current = {
+        from: editor.state.selection.from,
+        to: editor.state.selection.to,
+      };
+    }
+  };
+
+  const handleIncreaseFontSize = () => {
+    if (!editor) return;
+    const nextSize = getNextLargerFontSize(currentFontSize);
+    applyFontSize(nextSize);
+  };
+
+  const handleDecreaseFontSize = () => {
+    if (!editor) return;
+    const prevSize = getNextSmallerFontSize(currentFontSize);
+    applyFontSize(prevSize === DEFAULT_FONT_SIZE ? null : prevSize);
   };
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -295,6 +515,7 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({ editor, onUploadIm
       .unsetColor()
       .unsetHighlight()
       .unsetFontFamily()
+      .unsetFontSize()
       .run();
   };
 
@@ -303,9 +524,73 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({ editor, onUploadIm
     if (!editor) return;
     if (editor.isActive('heading', { level })) {
       editor.chain().focus().setParagraph().run();
-    } else {
-      editor.chain().focus().setHeading({ level }).run();
+      return;
     }
+
+    const { state } = editor;
+    const { selection } = state;
+    const { from, to, $from } = selection;
+
+    // 1. Si la selección contiene o está dentro de un bloque con saltos de línea duros (<br>),
+    // convertirlos primero a párrafos reales para que no convierta todo el texto en un encabezado gigante.
+    const blocksToProcess: Array<{ pos: number; node: any }> = [];
+    state.doc.nodesBetween(from, to, (node, pos) => {
+      if (node.isBlock && (node.type.name === 'paragraph' || node.type.name === 'heading')) {
+        let hasBr = false;
+        node.forEach((child: any) => {
+          if (child.type.name === 'hardBreak') hasBr = true;
+        });
+        if (hasBr) {
+          blocksToProcess.push({ pos, node });
+        }
+      }
+    });
+
+    if (blocksToProcess.length > 0) {
+      let tr = editor.state.tr;
+      for (let b = blocksToProcess.length - 1; b >= 0; b--) {
+        const { pos, node } = blocksToProcess[b];
+        const start = pos + 1;
+        const brOffsets: number[] = [];
+        node.forEach((child: any, offset: number) => {
+          if (child.type.name === 'hardBreak') brOffsets.push(offset);
+        });
+        for (let i = brOffsets.length - 1; i >= 0; i--) {
+          const brPos = start + brOffsets[i];
+          tr = tr.delete(brPos, brPos + 1).split(brPos);
+        }
+      }
+      editor.view.dispatch(tr);
+      editor.chain().focus().setHeading({ level }).run();
+      return;
+    }
+
+    // 2. Si el usuario seleccionó solo una porción de texto dentro de un mismo párrafo (y no el párrafo entero),
+    // separar la selección en su propio bloque antes de convertirlo a encabezado para no afectar el resto del texto.
+    const blockStart = $from.start();
+    const blockEnd = $from.end();
+    const isPartial = from > blockStart || to < blockEnd;
+
+    if (!selection.empty && isPartial && $from.sameParent($from.doc.resolve(to))) {
+      let tr = editor.state.tr;
+      let middleStart = from;
+      let middleEnd = to;
+
+      if (to < blockEnd) {
+        tr = tr.split(to);
+      }
+      if (from > blockStart) {
+        tr = tr.split(from);
+        middleStart += 2;
+        middleEnd += 2;
+      }
+      editor.view.dispatch(tr);
+      editor.commands.setTextSelection({ from: middleStart, to: middleEnd });
+      editor.chain().focus().setHeading({ level }).run();
+      return;
+    }
+
+    editor.chain().focus().setHeading({ level }).run();
   };
 
   const toolBtn = (
@@ -500,7 +785,48 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({ editor, onUploadIm
           </button>
         </div>
 
-        {/* 6. Borrador de Formato Completo */}
+        {/* 6. Control Tamaño de Texto Seleccionado (Aumentar / Disminuir / Selector) */}
+        <div className="inline-flex items-center h-7 rounded-md p-0.5 transition-colors border border-transparent hover:border-black/10 dark:hover:border-white/10 hover:bg-black/5 dark:hover:bg-white/5 shrink-0">
+          <button
+            type="button"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={handleIncreaseFontSize}
+            title={`Aumentar tamaño de texto (${currentFontSize || '14px'} → ${getNextLargerFontSize(currentFontSize)})`}
+            className="h-6 px-1.5 rounded flex items-center justify-center cursor-pointer transition-colors text-veyra-muted hover:text-veyra-text hover:bg-black/10 dark:hover:bg-white/10"
+          >
+            <AArrowUp className="w-3.5 h-3.5" />
+          </button>
+          <button
+            type="button"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={handleDecreaseFontSize}
+            title={`Disminuir tamaño de texto (${currentFontSize || '14px'} → ${getNextSmallerFontSize(currentFontSize)})`}
+            className="h-6 px-1.5 rounded flex items-center justify-center cursor-pointer transition-colors text-veyra-muted hover:text-veyra-text hover:bg-black/10 dark:hover:bg-white/10"
+          >
+            <AArrowDown className="w-3.5 h-3.5" />
+          </button>
+          <button
+            ref={fontSizeBtnRef}
+            type="button"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={handleToggleFontSizeMenu}
+            title="Elegir tamaño de texto seleccionado"
+            className={cn(
+              'h-6 px-1.5 rounded flex items-center justify-center gap-0.5 cursor-pointer transition-colors text-[11px] font-medium text-veyra-muted hover:text-veyra-text hover:bg-black/10 dark:hover:bg-white/10',
+              isFontSizeMenuOpen && 'bg-black/10 dark:bg-white/10 text-veyra-text'
+            )}
+          >
+            <span>{activeFontSizeOption ? activeFontSizeOption.size : (currentFontSize ? parseInt(currentFontSize, 10) : 14)}</span>
+            <ChevronDown
+              className={cn(
+                'w-2.5 h-2.5 transition-transform duration-150',
+                isFontSizeMenuOpen && 'rotate-180'
+              )}
+            />
+          </button>
+        </div>
+
+        {/* 7. Borrador de Formato Completo */}
         {toolBtn(
           false,
           handleClearFormatting,
@@ -519,6 +845,19 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({ editor, onUploadIm
               .run(),
           <Sigma className="w-3.5 h-3.5" />,
           'Insertar fórmula matemática (LaTeX / KaTeX)'
+        )}
+
+        {/* 8. Insertar Tabla */}
+        {toolBtn(
+          editor.isActive('table'),
+          () =>
+            editor
+              .chain()
+              .focus()
+              .insertTable({ rows: 3, cols: 3, withHeaderRow: true })
+              .run(),
+          <Table className="w-3.5 h-3.5" />,
+          'Insertar tabla (o escribe /tabla)'
         )}
 
         <div className="w-[1px] h-3.5 bg-veyra-border mx-1 shrink-0" />
@@ -560,12 +899,51 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({ editor, onUploadIm
           <List className="w-3.5 h-3.5" />,
           'Lista con viñetas'
         )}
-        {toolBtn(
-          editor.isActive('orderedList'),
-          () => editor.chain().focus().toggleOrderedList().run(),
-          <ListOrdered className="w-3.5 h-3.5" />,
-          'Lista numerada'
-        )}
+        {/* Lista numerada con selector de biblioteca de numeración */}
+        <div className="relative inline-flex items-center">
+          <button
+            type="button"
+            onMouseDown={(e) => {
+              e.preventDefault();
+              editor.chain().focus().toggleOrderedList().run();
+            }}
+            title="Lista numerada"
+            className={cn(
+              'h-7 px-1.5 rounded-l-md transition-colors flex items-center justify-center cursor-pointer shrink-0',
+              isOrderedListActive
+                ? 'bg-accent/15 text-accent font-semibold'
+                : 'text-veyra-muted hover:text-veyra-text hover:bg-black/5 dark:hover:bg-white/5'
+            )}
+          >
+            <ListOrdered className="w-3.5 h-3.5" />
+          </button>
+          <button
+            ref={orderedListBtnRef}
+            type="button"
+            onMouseDown={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              if (!isOrderedListMenuOpen) {
+                updateOrderedListPosition();
+                setCustomStartInput(String(currentListStart));
+                setIsOrderedListMenuOpen(true);
+              } else {
+                setIsOrderedListMenuOpen(false);
+              }
+            }}
+            title="Biblioteca de numeración"
+            className={cn(
+              'h-7 px-1 rounded-r-md transition-colors flex items-center justify-center cursor-pointer',
+              isOrderedListActive
+                ? 'bg-accent/15 text-accent hover:bg-accent/25 border-l border-accent/20'
+                : isOrderedListMenuOpen
+                ? 'bg-black/10 dark:bg-white/10 text-veyra-text'
+                : 'text-veyra-muted hover:text-veyra-text hover:bg-black/5 dark:hover:bg-white/5'
+            )}
+          >
+            <ChevronDown className="w-2.5 h-2.5" />
+          </button>
+        </div>
 
         <div className="w-[1px] h-3.5 bg-veyra-border mx-1 shrink-0" />
 
@@ -759,6 +1137,239 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({ editor, onUploadIm
                 </button>
               );
             })}
+          </div>,
+          document.body
+        )}
+
+      {/* 4. Popover flotante del Selector de Tamaño de Texto */}
+      {isFontSizeMenuOpen &&
+        typeof document !== 'undefined' &&
+        createPortal(
+          <div
+            ref={fontSizeMenuRef}
+            style={{
+              position: 'fixed',
+              top: fontSizeCoords.top,
+              left: fontSizeCoords.left,
+              zIndex: 9999,
+            }}
+            className="p-1.5 rounded-xl bg-white dark:bg-[#18181B] border border-slate-200 dark:border-zinc-800 shadow-xl w-52 max-h-80 overflow-y-auto animate-in fade-in zoom-in-95 duration-100 scrollbar-thin select-none text-xs"
+          >
+            {/* Cabecera / Opción para restablecer */}
+            <button
+              type="button"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => {
+                applyFontSize(null);
+                setIsFontSizeMenuOpen(false);
+              }}
+              className={cn(
+                'w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs transition-colors cursor-pointer mb-1',
+                !currentFontSize || currentFontSize === DEFAULT_FONT_SIZE
+                  ? 'bg-accent/10 dark:bg-accent/15 text-accent font-semibold'
+                  : 'text-slate-700 dark:text-zinc-300 hover:bg-slate-100 dark:hover:bg-zinc-800'
+              )}
+            >
+              <span className="flex items-center gap-2">
+                <RotateCcw className="w-3.5 h-3.5 text-accent" />
+                <span className="font-medium">Normal (14px - Por defecto)</span>
+              </span>
+              {(!currentFontSize || currentFontSize === DEFAULT_FONT_SIZE) && (
+                <Check className="w-3.5 h-3.5 text-accent" />
+              )}
+            </button>
+
+            <div className="h-[1px] bg-slate-200 dark:bg-zinc-800 my-1.5" />
+
+            <div className="px-2.5 pt-0.5 pb-1 text-[10px] font-bold text-accent uppercase tracking-wider">
+              Tamaño de texto
+            </div>
+
+            {FONT_SIZES.map((size) => {
+              const isSelected =
+                currentFontSize === size.value ||
+                (!currentFontSize && size.value === DEFAULT_FONT_SIZE);
+              return (
+                <button
+                  key={size.value}
+                  type="button"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => {
+                    applyFontSize(size.value);
+                    setIsFontSizeMenuOpen(false);
+                  }}
+                  className={cn(
+                    'w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs transition-colors cursor-pointer my-0.5',
+                    isSelected
+                      ? 'bg-accent/10 dark:bg-accent/15 text-accent font-semibold'
+                      : 'text-slate-800 dark:text-zinc-200 hover:bg-slate-100 dark:hover:bg-zinc-800'
+                  )}
+                >
+                  <span className="flex items-center gap-2">
+                    <span className="w-7 text-[11px] font-mono text-slate-500 dark:text-zinc-400">
+                      {size.size}px
+                    </span>
+                    <span style={{ fontSize: `${Math.min(size.size, 17)}px` }}>
+                      {size.label}
+                    </span>
+                  </span>
+                  {isSelected && <Check className="w-3.5 h-3.5 text-accent shrink-0 ml-2" />}
+                </button>
+              );
+            })}
+          </div>,
+          document.body
+        )}
+
+      {/* Popover Biblioteca de numeración */}
+      {isOrderedListMenuOpen &&
+        createPortal(
+          <div
+            ref={orderedListMenuRef}
+            style={{
+              position: 'fixed',
+              top: `${orderedListCoords.top}px`,
+              left: `${orderedListCoords.left}px`,
+              zIndex: 9999,
+            }}
+            className="p-3 w-[268px] rounded-xl bg-[#202024] dark:bg-[#18181B] border border-slate-700/60 dark:border-zinc-800 shadow-2xl text-xs space-y-2.5 text-slate-100 select-none animate-in fade-in zoom-in-95 duration-100"
+          >
+            {/* Título Biblioteca de numeración */}
+            <div className="px-1 text-[13px] font-semibold text-white tracking-tight">
+              Biblioteca de numeración
+            </div>
+
+            {/* Grid 3x3 de estilos idéntico a Word */}
+            <div className="grid grid-cols-3 gap-2">
+              {NUMBERING_OPTIONS.map((opt) => {
+                const isSelected = isOrderedListActive
+                  ? currentListStyle === opt.id
+                  : opt.id === 'none';
+
+                return (
+                  <button
+                    key={opt.id}
+                    type="button"
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => handleSelectNumberingStyle(opt.id)}
+                    className={cn(
+                      'w-[74px] h-[74px] p-2 bg-white rounded-lg border transition-all cursor-pointer relative flex flex-col justify-center text-left group',
+                      isSelected
+                        ? 'border-accent ring-2 ring-accent shadow-md'
+                        : 'border-slate-300 hover:border-accent hover:shadow-md'
+                    )}
+                    title={opt.label}
+                  >
+                    {opt.id === 'none' ? (
+                      <div className="w-full h-full flex items-center justify-center text-[12px] font-medium text-slate-900">
+                        {opt.label}
+                      </div>
+                    ) : (
+                      <div className="w-full h-full flex flex-col justify-between py-1">
+                        {opt.items?.map((itemText, idx) => (
+                          <div key={idx} className="flex items-center gap-1.5 w-full">
+                            <span className="text-[11px] font-sans font-medium text-slate-900 leading-none shrink-0 min-w-[15px] text-right">
+                              {itemText}
+                            </span>
+                            <div className="h-[2px] bg-slate-400 rounded-full flex-1" />
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Opciones de secuencia si la lista está activa */}
+            {isOrderedListActive && (
+              <div className="pt-2 border-t border-zinc-700/70 space-y-2">
+                <div className="px-1 text-[10px] font-bold text-accent uppercase tracking-wider">
+                  Configuración de inicio
+                </div>
+
+                {/* Continuar numeración anterior */}
+                {previousContinuation !== null && previousContinuation !== currentListStart && (
+                  <button
+                    type="button"
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => {
+                      editor.chain().focus().updateAttributes('orderedList', { start: previousContinuation }).run();
+                      setIsOrderedListMenuOpen(false);
+                    }}
+                    className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-accent/20 hover:bg-accent/30 text-accent font-medium transition-colors cursor-pointer text-left"
+                  >
+                    <span>Continuar lista anterior</span>
+                    <span className="font-mono font-bold bg-accent text-white px-1.5 py-0.5 rounded text-[10px]">
+                      {previousContinuation}.
+                    </span>
+                  </button>
+                )}
+
+                {/* Reiniciar en 1 */}
+                <button
+                  type="button"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => {
+                    editor.chain().focus().updateAttributes('orderedList', { start: 1 }).run();
+                    setIsOrderedListMenuOpen(false);
+                  }}
+                  className={cn(
+                    'w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg transition-colors cursor-pointer text-left',
+                    currentListStart === 1
+                      ? 'bg-zinc-800 text-white font-semibold'
+                      : 'hover:bg-zinc-800/70 text-zinc-300'
+                  )}
+                >
+                  <span className="flex items-center gap-1.5">
+                    <RotateCcw className="w-3.5 h-3.5 text-zinc-400" />
+                    <span>Reiniciar en 1</span>
+                  </span>
+                  {currentListStart === 1 && <Check className="w-3.5 h-3.5 text-accent" />}
+                </button>
+
+                {/* Iniciar en número personalizado */}
+                <div className="px-1 pt-0.5 space-y-1">
+                  <span className="text-[10px] text-zinc-400 font-medium">
+                    Iniciar en número:
+                  </span>
+                  <div className="flex items-center gap-1.5">
+                    <input
+                      type="number"
+                      min="1"
+                      max="9999"
+                      value={customStartInput}
+                      onChange={(e) => setCustomStartInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          const val = parseInt(customStartInput, 10);
+                          if (!isNaN(val) && val >= 1) {
+                            editor.chain().focus().updateAttributes('orderedList', { start: val }).run();
+                            setIsOrderedListMenuOpen(false);
+                          }
+                        }
+                      }}
+                      className="w-16 px-2 py-1 rounded-md bg-zinc-900 border border-zinc-700 text-xs font-mono text-center focus:outline-none focus:border-accent text-zinc-100"
+                    />
+                    <button
+                      type="button"
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => {
+                        const val = parseInt(customStartInput, 10);
+                        if (!isNaN(val) && val >= 1) {
+                          editor.chain().focus().updateAttributes('orderedList', { start: val }).run();
+                          setIsOrderedListMenuOpen(false);
+                        }
+                      }}
+                      className="flex-1 py-1 px-2.5 rounded-md bg-accent text-white font-medium hover:bg-accent/90 transition-colors text-xs text-center cursor-pointer"
+                    >
+                      Aplicar
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>,
           document.body
         )}

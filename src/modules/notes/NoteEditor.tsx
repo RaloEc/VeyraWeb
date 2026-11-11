@@ -9,18 +9,35 @@ import Highlight from '@tiptap/extension-highlight';
 import Placeholder from '@tiptap/extension-placeholder';
 import { ImageNode } from './extensions/ImageNode';
 import { FontFamily } from './extensions/FontFamily';
+import { FontSize } from './extensions/FontSize';
+import { CustomOrderedList } from './extensions/CustomOrderedList';
 import { MathBlock, MathInline } from './extensions/MathNode';
-import { hasMathContent, convertMarkdownWithMathToHtml } from './extensions/mathUtils';
+import {
+  hasMathContent,
+  hasMarkdownContent,
+  convertMarkdownWithMathToHtml,
+  cleanAiClipboardArtifacts,
+  hydrateMathInHtml,
+} from './extensions/mathUtils';
 import { YoutubeNode } from '../../lib/tiptap-youtube-node';
 import TextAlign from '@tiptap/extension-text-align';
 import { TextStyle } from '@tiptap/extension-text-style';
 import { Color } from '@tiptap/extension-color';
+import { KeyboardClipboard } from './extensions/KeyboardClipboard';
 import { toast } from 'sonner';
 import * as Y from 'yjs';
 import * as awarenessProtocol from 'y-protocols/awareness';
 import { EditorBubbleMenu } from './EditorBubbleMenu';
 import { EditorImageBubbleMenu } from './EditorImageBubbleMenu';
+import { EditorTableBubbleMenu } from './EditorTableBubbleMenu';
 import { EditorSlashMenu } from './EditorSlashMenu';
+import { EditorListNumberTooltip } from './components/EditorListNumberTooltip';
+import {
+  CustomTable,
+  CustomTableRow,
+  CustomTableHeader,
+  CustomTableCell,
+} from './extensions/TableExtensions';
 import { EditorToolbar } from './EditorToolbar';
 import { CollabPresence } from './CollabPresence';
 import { uploadNoteImage } from '../../lib/storage-upload';
@@ -250,7 +267,7 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
       }
       return {
         id: pid,
-        content: pageHtml || '<p></p>',
+        content: hydrateMathInHtml(pageHtml || '<p></p>'),
       };
     });
 
@@ -312,7 +329,7 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
       }
       return {
         id: pid,
-        content: pageHtml || '<p></p>',
+        content: hydrateMathInHtml(pageHtml || '<p></p>'),
       };
     });
 
@@ -540,7 +557,9 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
         StarterKit.configure({
           undoRedo: false, // Collaboration extension handles collaborative history
           heading: { levels: [1, 2, 3] },
+          orderedList: false,
         }),
+        CustomOrderedList,
         Collaboration.configure({
           document: ydoc,
           field: fragmentName,
@@ -565,15 +584,21 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
         }),
         ImageNode,
         YoutubeNode,
+        CustomTable,
+        CustomTableRow,
+        CustomTableHeader,
+        CustomTableCell,
         TextAlign.configure({
-          types: ['heading', 'paragraph', 'image'],
+          types: ['heading', 'paragraph', 'image', 'tableCell', 'tableHeader'],
           alignments: ['left', 'center', 'right', 'justify'],
         }),
         TextStyle,
         Color,
         FontFamily,
+        FontSize,
         MathBlock,
         MathInline,
+        KeyboardClipboard,
       ],
       editorProps: {
         attributes: {
@@ -582,6 +607,7 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
         },
         handlePaste: (_view, event) => {
           const html = event.clipboardData?.getData('text/html') || '';
+          const plainText = event.clipboardData?.getData('text/plain') || '';
           const gifMatch = html.match(/<img[^>]+src=["']([^"']+\.gif(?:\?[^"']*)?)["']/i);
           const items = Array.from(event.clipboardData?.items || []);
           const fallbackImageFile = items.find((i) => i.type.startsWith('image/'))?.getAsFile();
@@ -636,44 +662,78 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
             return true;
           }
 
-          for (const item of items) {
-            if (item.type.startsWith('image/')) {
-              const file = item.getAsFile();
-              if (file) {
-                event.preventDefault();
-                const mime = file.type.toLowerCase();
-                if (!['image/jpeg', 'image/png', 'image/webp', 'image/gif'].includes(mime)) {
-                  toast.error('Formato no soportado. Usa JPG, PNG, WebP o GIF.');
+          // Si el portapapeles contiene una imagen única en HTML (ej. copiada dentro de Veyra)
+          const singleImageMatch = html.trim().match(/^<img[^>]+src=["'](https?:\/\/[^"']+)["'][^>]*\/?>(?:<\/img>)?$/i);
+          if (singleImageMatch && singleImageMatch[1]) {
+            const src = singleImageMatch[1];
+            event.preventDefault();
+            const currentEditor = (_view as any).editor || editorRef.current;
+            if (currentEditor && !currentEditor.isDestroyed) {
+              currentEditor
+                .chain()
+                .focus()
+                .setImage({ src, textAlign: 'center' } as any)
+                .updateAttributes('image', { textAlign: 'center' })
+                .run();
+              toast.success('Imagen pegada');
+            }
+            return true;
+          }
+
+          // Solo procesar como imagen pura si NO hay texto plano relevante en el portapapeles.
+          // Esto evita interceptar textos copiados desde Word, Excel, Teams, Slack o navegadores
+          // que adjuntan miniaturas/snapshots de imagen además del texto regular.
+          const hasSignificantText = plainText.trim().length > 0;
+          if (!hasSignificantText) {
+            for (const item of items) {
+              if (item.type.startsWith('image/')) {
+                const file = item.getAsFile();
+                if (file) {
+                  event.preventDefault();
+                  const mime = file.type.toLowerCase();
+                  if (!['image/jpeg', 'image/png', 'image/webp', 'image/gif'].includes(mime)) {
+                    toast.error('Formato no soportado. Usa JPG, PNG, WebP o GIF.');
+                    return true;
+                  }
+                  uploadNoteImage(file, currentUserIdRef.current)
+                    .then((url) => {
+                      if (editorRef.current && !editorRef.current.isDestroyed) {
+                        editorRef.current
+                          .chain()
+                          .focus()
+                          .setImage({ src: url, textAlign: 'center' } as any)
+                          .updateAttributes('image', { textAlign: 'center' })
+                          .run();
+                      }
+                    })
+                    .catch((err: any) => {
+                      console.warn('[NoteEditor] Error subiendo imagen pegada:', err);
+                      toast.error(humanizeUploadError(err));
+                    });
                   return true;
                 }
-                uploadNoteImage(file, currentUserIdRef.current)
-                  .then((url) => {
-                    if (editorRef.current && !editorRef.current.isDestroyed) {
-                      editorRef.current
-                        .chain()
-                        .focus()
-                        .setImage({ src: url, textAlign: 'center' } as any)
-                        .updateAttributes('image', { textAlign: 'center' })
-                        .run();
-                    }
-                  })
-                  .catch((err: any) => {
-                    console.warn('[NoteEditor] Error subiendo imagen pegada:', err);
-                    toast.error(humanizeUploadError(err));
-                  });
-                return true;
               }
             }
           }
 
-          // Detección y transformación automática de fórmulas matemáticas LaTeX ($$ y $)
-          const plainText = event.clipboardData?.getData('text/plain') || '';
-          if (hasMathContent(plainText)) {
+          // Detección y transformación automática de Markdown y fórmulas matemáticas LaTeX ($$ y $)
+          const cleanedText = cleanAiClipboardArtifacts(plainText);
+          const isMath = hasMathContent(cleanedText);
+          const isMarkdown = hasMarkdownContent(cleanedText);
+
+          // Si contiene estructuras Markdown explícitas (títulos #, listas, tareas, bloques de código, etc.)
+          // o fórmulas matemáticas, priorizamos la conversión limpia de Markdown para respetar los saltos
+          // de línea y títulos en bloques independientes.
+          const hasExplicitMarkdownBlocks = /^(?:#{1,6}\s*\S+|[-*+]\s+\[[ xX]\]|[-*+]\s+\S+|\d+\.\s+\S+|>+\s+\S+|```)/m.test(cleanedText);
+          const hasRichHtmlBlocks = /<(?:table|thead|tbody|tr|td)[^>]*>/i.test(html);
+          const shouldProcessMarkdownOrMath = isMath || hasExplicitMarkdownBlocks || (isMarkdown && (!html || !hasRichHtmlBlocks));
+
+          if (shouldProcessMarkdownOrMath) {
             event.preventDefault();
-            const mathHtml = convertMarkdownWithMathToHtml(plainText);
+            const formattedHtml = convertMarkdownWithMathToHtml(cleanedText);
             const currentEditor = (_view as any).editor || editorRef.current;
             if (currentEditor && !currentEditor.isDestroyed) {
-              currentEditor.commands.insertContent(mathHtml);
+              currentEditor.commands.insertContent(formattedHtml);
             }
             return true;
           }
@@ -1187,7 +1247,9 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
               <EditorContent editor={editor} className="flex-1" />
               <EditorBubbleMenu editor={editor} />
               <EditorImageBubbleMenu editor={editor} currentUserId={currentUserIdRef.current} />
+              <EditorTableBubbleMenu editor={editor} />
               <EditorSlashMenu editor={editor} />
+              <EditorListNumberTooltip editor={editor} />
             </div>
           </div>
         </div>

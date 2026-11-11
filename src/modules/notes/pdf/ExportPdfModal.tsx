@@ -188,7 +188,7 @@ export const ExportPdfModal: React.FC<ExportPdfModalProps> = ({
       setIsExporting(true);
       const printHtml = buildPdfDocumentHtml(title, pages, config, { isForPrint: true });
       await printHtmlDocument(printHtml);
-      toast.success('Documento listo para imprimir o guardar como PDF');
+      toast.success('Documento preparado en alta definición vectorial');
       onClose();
     } catch (err: any) {
       console.error('[ExportPdfModal] Error exportando PDF:', err);
@@ -761,7 +761,7 @@ export const ExportPdfModal: React.FC<ExportPdfModalProps> = ({
               type="button"
               onClick={onClose}
               disabled={isExporting}
-              className="px-4 py-1.5 rounded-lg border border-slate-300 dark:border-zinc-700 hover:bg-slate-100 dark:hover:bg-zinc-800 text-slate-700 dark:text-zinc-300 transition-colors text-xs font-medium cursor-pointer"
+              className="px-4 py-1.5 rounded-lg border border-slate-300 dark:border-zinc-700 hover:bg-slate-100 dark:hover:bg-zinc-800 text-slate-700 dark:text-zinc-300 transition-colors text-xs font-medium cursor-pointer disabled:opacity-50"
             >
               Cancelar
             </button>
@@ -770,10 +770,15 @@ export const ExportPdfModal: React.FC<ExportPdfModalProps> = ({
               type="button"
               onClick={handleExecuteExport}
               disabled={isExporting}
+              title="Exporta el documento a PDF vectorial nativo (texto 100% seleccionable y fórmulas nítidas)"
               className="px-4 py-1.5 rounded-lg bg-accent hover:opacity-90 text-white transition-opacity text-xs font-medium flex items-center gap-2 cursor-pointer shadow-sm disabled:opacity-50"
             >
               <Printer className="w-3.5 h-3.5" />
-              <span>{isExporting ? 'Preparando...' : `Imprimir / Guardar como PDF (${totalPagesCount} ${totalPagesCount === 1 ? 'pág' : 'págs'})`}</span>
+              <span>
+                {isExporting
+                  ? 'Preparando documento...'
+                  : `Guardar como PDF (${totalPagesCount} ${totalPagesCount === 1 ? 'pág' : 'págs'})`}
+              </span>
             </button>
           </div>
         </div>

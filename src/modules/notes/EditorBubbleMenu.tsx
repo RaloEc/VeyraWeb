@@ -14,11 +14,15 @@ import {
   ClipboardPaste,
   Check,
   Eraser,
+  Scissors,
+  AArrowUp,
+  AArrowDown,
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { YT_REGEX } from '../../lib/tiptap-youtube-node';
 import { areColorsEqual } from './constants/noteFonts';
 import { useRecentEditorColors } from './hooks/useRecentEditorColors';
+import { getNextLargerFontSize, getNextSmallerFontSize } from './extensions/FontSize';
 import {
   TextColorPopover,
   HighlightColorPopover,
@@ -54,7 +58,59 @@ export const EditorBubbleMenu: React.FC<EditorBubbleMenuProps> = ({ editor }) =>
 
   const currentTextColor = (editor?.getAttributes('textStyle')?.color as string | undefined) || null;
   const currentHighlightColor = (editor?.getAttributes('highlight')?.color as string | undefined) || null;
+  const currentFontSize = (editor?.getAttributes('textStyle')?.fontSize as string | undefined) || null;
   const isHighlightActive = editor ? editor.isActive('highlight') : false;
+
+  const lastSelectionRef = useRef<{ from: number; to: number } | null>(null);
+
+  useEffect(() => {
+    if (!editor) return;
+    const handleUpdate = () => {
+      if (editor.state && editor.state.selection && !editor.state.selection.empty) {
+        lastSelectionRef.current = {
+          from: editor.state.selection.from,
+          to: editor.state.selection.to,
+        };
+      }
+    };
+    editor.on('transaction', handleUpdate);
+    editor.on('selectionUpdate', handleUpdate);
+    return () => {
+      editor.off('transaction', handleUpdate);
+      editor.off('selectionUpdate', handleUpdate);
+    };
+  }, [editor]);
+
+  const applyFontSize = (size: string | null) => {
+    if (!editor) return;
+    let chain = editor.chain().focus();
+    if (editor.state.selection.empty && lastSelectionRef.current) {
+      chain = chain.setTextSelection(lastSelectionRef.current);
+    }
+    if (!size || size === 'default' || size === '14px') {
+      chain.unsetFontSize().run();
+    } else {
+      chain.setFontSize(size).run();
+    }
+    if (editor.state.selection && !editor.state.selection.empty) {
+      lastSelectionRef.current = {
+        from: editor.state.selection.from,
+        to: editor.state.selection.to,
+      };
+    }
+  };
+
+  const handleIncreaseFontSize = () => {
+    if (!editor) return;
+    const nextSize = getNextLargerFontSize(currentFontSize);
+    applyFontSize(nextSize);
+  };
+
+  const handleDecreaseFontSize = () => {
+    if (!editor) return;
+    const prevSize = getNextSmallerFontSize(currentFontSize);
+    applyFontSize(prevSize === '14px' ? null : prevSize);
+  };
 
   const updateTextColorPosition = useCallback(() => {
     if (!textColorBtnRef.current) return;
@@ -208,14 +264,27 @@ export const EditorBubbleMenu: React.FC<EditorBubbleMenuProps> = ({ editor }) =>
     }
   };
 
+  const handleCut = () => {
+    if (!editor) return;
+    const { from, to } = editor.state.selection;
+    if (from === to) return;
+    const text = editor.state.doc.textBetween(from, to, ' ');
+    if (text) {
+      navigator.clipboard?.writeText(text).catch(() => {});
+    }
+    editor.chain().focus().deleteRange({ from, to }).run();
+  };
+
   const handleCopy = () => {
     if (!editor) return;
     const { from, to } = editor.state.selection;
+    if (from === to) return;
     const text = editor.state.doc.textBetween(from, to, ' ');
-    if (!text) return;
-    navigator.clipboard.writeText(text);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1500);
+    if (text) {
+      navigator.clipboard?.writeText(text).catch(() => {});
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    }
   };
 
   const handlePaste = async () => {
@@ -247,10 +316,10 @@ export const EditorBubbleMenu: React.FC<EditorBubbleMenuProps> = ({ editor }) =>
       onClick={onClick}
       title={title}
       className={cn(
-        'p-1.5 rounded text-xs transition-colors cursor-pointer flex items-center justify-center',
+        'p-1.5 rounded-md text-xs transition-colors cursor-pointer flex items-center justify-center',
         isActive
           ? 'text-accent bg-accent/15 font-semibold'
-          : 'text-veyra-muted hover:text-veyra-text hover:bg-white/5'
+          : 'text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-zinc-100 hover:bg-slate-100 dark:hover:bg-zinc-800'
       )}
     >
       {icon}
@@ -263,9 +332,16 @@ export const EditorBubbleMenu: React.FC<EditorBubbleMenuProps> = ({ editor }) =>
         editor={editor}
         shouldShow={({ editor }) => {
           if (isTextColorMenuOpen || isHighlightMenuOpen) return true;
-          return !editor.view.state.selection.empty && !editor.isActive('image');
+          const isCellSelection = editor.state.selection?.constructor?.name === 'CellSelection';
+          if (isCellSelection) return false;
+          return (
+            !editor.view.state.selection.empty &&
+            !editor.isActive('image') &&
+            !editor.isActive('mathBlock') &&
+            !editor.isActive('mathInline')
+          );
         }}
-        className="flex items-center gap-0.5 p-1 rounded-md bg-veyra-surface border border-veyra-border shadow-elevated z-50 backdrop-blur-md"
+        className="flex items-center gap-0.5 p-1 rounded-lg bg-white dark:bg-[#18181b] border border-slate-200 dark:border-zinc-800 shadow-lg z-50 text-slate-700 dark:text-zinc-200 select-none"
       >
         {btn(
           editor.isActive('bold'),
@@ -292,10 +368,26 @@ export const EditorBubbleMenu: React.FC<EditorBubbleMenuProps> = ({ editor }) =>
           'Tachado'
         )}
 
-        <div className="w-[1px] h-3.5 bg-veyra-border mx-0.5 shrink-0" />
+        <div className="w-[1px] h-3.5 bg-slate-200 dark:bg-zinc-800 mx-0.5 shrink-0" />
+
+        {/* Tamaño de texto seleccionado */}
+        {btn(
+          false,
+          handleIncreaseFontSize,
+          <AArrowUp className="w-3.5 h-3.5" />,
+          `Aumentar tamaño de texto (${currentFontSize || '14px'} → ${getNextLargerFontSize(currentFontSize)})`
+        )}
+        {btn(
+          Boolean(currentFontSize && currentFontSize !== '14px'),
+          handleDecreaseFontSize,
+          <AArrowDown className="w-3.5 h-3.5" />,
+          `Disminuir tamaño de texto (${currentFontSize || '14px'} → ${getNextSmallerFontSize(currentFontSize)})`
+        )}
+
+        <div className="w-[1px] h-3.5 bg-slate-200 dark:bg-zinc-800 mx-0.5 shrink-0" />
 
         {/* Control Color de Texto (Acción Rápida + Chevron) */}
-        <div className="inline-flex items-center h-6.5 rounded p-0.5 transition-colors hover:bg-black/5 dark:hover:bg-white/5 shrink-0">
+        <div className="inline-flex items-center h-6.5 rounded p-0.5 transition-colors hover:bg-slate-100 dark:hover:bg-zinc-800 shrink-0">
           <button
             type="button"
             onMouseDown={(e) => e.preventDefault()}
@@ -305,7 +397,7 @@ export const EditorBubbleMenu: React.FC<EditorBubbleMenuProps> = ({ editor }) =>
               'h-5.5 px-1 rounded flex flex-col items-center justify-center gap-0.5 cursor-pointer transition-colors',
               currentTextColor
                 ? 'text-accent font-semibold'
-                : 'text-veyra-muted hover:text-veyra-text'
+                : 'text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-zinc-100'
             )}
           >
             <Palette className="w-3 h-3" />
@@ -321,8 +413,8 @@ export const EditorBubbleMenu: React.FC<EditorBubbleMenuProps> = ({ editor }) =>
             onClick={handleToggleTextColorMenu}
             title="Elegir otro color de texto"
             className={cn(
-              'h-5.5 w-3 rounded flex items-center justify-center cursor-pointer transition-colors text-veyra-muted hover:text-veyra-text hover:bg-black/10 dark:hover:bg-white/10',
-              isTextColorMenuOpen && 'bg-black/10 dark:bg-white/10 text-veyra-text'
+              'h-5.5 w-3 rounded flex items-center justify-center cursor-pointer transition-colors text-slate-500 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-zinc-100 hover:bg-slate-200/60 dark:hover:bg-zinc-700/60',
+              isTextColorMenuOpen && 'bg-slate-200/60 dark:bg-zinc-700/60 text-slate-900 dark:text-zinc-100'
             )}
           >
             <ChevronDown
@@ -335,7 +427,7 @@ export const EditorBubbleMenu: React.FC<EditorBubbleMenuProps> = ({ editor }) =>
         </div>
 
         {/* Control Marcatextos / Resaltado (Acción Rápida + Chevron) */}
-        <div className="inline-flex items-center h-6.5 rounded p-0.5 transition-colors hover:bg-black/5 dark:hover:bg-white/5 shrink-0">
+        <div className="inline-flex items-center h-6.5 rounded p-0.5 transition-colors hover:bg-slate-100 dark:hover:bg-zinc-800 shrink-0">
           <button
             type="button"
             onMouseDown={(e) => e.preventDefault()}
@@ -345,7 +437,7 @@ export const EditorBubbleMenu: React.FC<EditorBubbleMenuProps> = ({ editor }) =>
               'h-5.5 px-1 rounded flex flex-col items-center justify-center gap-0.5 cursor-pointer transition-colors',
               isHighlightActive
                 ? 'text-accent font-semibold'
-                : 'text-veyra-muted hover:text-veyra-text'
+                : 'text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-zinc-100'
             )}
           >
             <Highlighter className="w-3 h-3" />
@@ -361,8 +453,8 @@ export const EditorBubbleMenu: React.FC<EditorBubbleMenuProps> = ({ editor }) =>
             onClick={handleToggleHighlightMenu}
             title="Elegir otro color de resaltado"
             className={cn(
-              'h-5.5 w-3 rounded flex items-center justify-center cursor-pointer transition-colors text-veyra-muted hover:text-veyra-text hover:bg-black/10 dark:hover:bg-white/10',
-              isHighlightMenuOpen && 'bg-black/10 dark:bg-white/10 text-veyra-text'
+              'h-5.5 w-3 rounded flex items-center justify-center cursor-pointer transition-colors text-slate-500 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-zinc-100 hover:bg-slate-200/60 dark:hover:bg-zinc-700/60',
+              isHighlightMenuOpen && 'bg-slate-200/60 dark:bg-zinc-700/60 text-slate-900 dark:text-zinc-100'
             )}
           >
             <ChevronDown
@@ -374,7 +466,7 @@ export const EditorBubbleMenu: React.FC<EditorBubbleMenuProps> = ({ editor }) =>
           </button>
         </div>
 
-        <div className="w-[1px] h-3.5 bg-veyra-border mx-0.5 shrink-0" />
+        <div className="w-[1px] h-3.5 bg-slate-200 dark:bg-zinc-800 mx-0.5 shrink-0" />
 
         {btn(
           editor.isActive('code'),
@@ -399,6 +491,12 @@ export const EditorBubbleMenu: React.FC<EditorBubbleMenuProps> = ({ editor }) =>
           'Borrar formato'
         )}
         {btn(
+          false,
+          handleCut,
+          <Scissors className="w-3.5 h-3.5" />,
+          'Cortar (Ctrl+X)'
+        )}
+        {btn(
           copied,
           handleCopy,
           copied ? <Check className="w-3.5 h-3.5 text-accent" /> : <Copy className="w-3.5 h-3.5" />,
@@ -408,7 +506,7 @@ export const EditorBubbleMenu: React.FC<EditorBubbleMenuProps> = ({ editor }) =>
           false,
           handlePaste,
           <ClipboardPaste className="w-3.5 h-3.5" />,
-          'Pegar'
+          'Pegar (Ctrl+V)'
         )}
       </BubbleMenu>
 
