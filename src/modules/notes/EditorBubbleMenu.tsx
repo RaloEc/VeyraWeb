@@ -337,6 +337,9 @@ export const EditorBubbleMenu: React.FC<EditorBubbleMenuProps> = ({ editor }) =>
           return (
             !editor.view.state.selection.empty &&
             !editor.isActive('image') &&
+            !editor.isActive('bookmark') &&
+            !editor.isActive('bookmarkPrompt') &&
+            !editor.isActive('aiPrompt') &&
             !editor.isActive('mathBlock') &&
             !editor.isActive('mathInline')
           );

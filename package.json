@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.118.0",
+    "@tiptap/extension-code-block-lowlight": "^3.32.2",
     "@tiptap/extension-collaboration": "^3.32.2",
     "@tiptap/extension-color": "^3.32.2",
     "@tiptap/extension-highlight": "^3.32.2",
@@ -31,6 +32,7 @@
     "canvas-confetti": "^1.9.4",
     "clsx": "^2.1.1",
     "katex": "^0.19.1",
+    "lowlight": "^3.3.0",
     "lucide": "^1.66.0",
     "lucide-react": "^1.65.0",
     "morphicons": "^2.0.2",

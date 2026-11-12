@@ -14,6 +14,9 @@ import {
   Eraser,
   Sigma,
   Table,
+  Code2,
+  Sparkles,
+  Bookmark,
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { YT_REGEX } from '../../lib/tiptap-youtube-node';
@@ -39,6 +42,21 @@ function normalizeSearchText(text: string): string {
 }
 
 const SLASH_ITEMS: SlashItem[] = [
+  {
+    id: 'ai-assistant',
+    title: 'Asistente IA',
+    description: 'Escribe /ia [tu orden] y presiona Enter (tablas, checklists, código...)',
+    aliases: ['ia', 'ai', 'inteligencia', 'generar', 'tabla ia', 'asistente', 'magic', 'crear con ia'],
+    icon: <Sparkles className="w-4 h-4" />,
+    action: (editor, range) => {
+      editor
+        .chain()
+        .focus()
+        .deleteRange(range)
+        .insertContent({ type: 'aiPrompt' })
+        .run();
+    },
+  },
   {
     id: 'h1',
     title: 'Título 1',
@@ -210,6 +228,21 @@ const SLASH_ITEMS: SlashItem[] = [
     },
   },
   {
+    id: 'code-block',
+    title: 'Bloque de código',
+    description: 'Fragmento de código con selector de lenguaje y copiar',
+    aliases: ['codigo', 'code', 'snippet', 'programacion', 'pre', 'script', 'bloque de codigo'],
+    icon: <Code2 className="w-4 h-4 text-emerald-500" />,
+    action: (editor, range) => {
+      editor
+        .chain()
+        .focus()
+        .deleteRange(range)
+        .toggleCodeBlock()
+        .run();
+    },
+  },
+  {
     id: 'math',
     title: 'Fórmula matemática',
     description: 'Ecuación o cálculo en formato LaTeX',
@@ -250,12 +283,32 @@ const SLASH_ITEMS: SlashItem[] = [
       }
     },
   },
+  {
+    id: 'bookmark',
+    title: 'Enlace web o tarjeta',
+    description: 'Insertar tarjeta previa o enlace directo (bibliografía)',
+    aliases: ['enlace', 'link', 'bookmark', 'tarjeta', 'url', 'web', 'bibliografia'],
+    icon: <Bookmark className="w-4 h-4" />,
+    action: (editor, range) => {
+      editor
+        .chain()
+        .focus()
+        .deleteRange(range)
+        .insertContent({ type: 'bookmarkPrompt' })
+        .run();
+    },
+  },
 ];
 
 export const EditorSlashMenu: React.FC<EditorSlashMenuProps> = ({ editor }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState(0);
-  const [coords, setCoords] = useState<{ top: number; left: number }>({ top: 0, left: 0 });
+  const [coords, setCoords] = useState<{
+    top: number;
+    left: number;
+    showAbove: boolean;
+    maxHeight: number;
+  }>({ top: 0, left: 0, showAbove: false, maxHeight: 288 });
   const [range, setRange] = useState<{ from: number; to: number }>({ from: 0, to: 0 });
   const [query, setQuery] = useState('');
   const menuRef = useRef<HTMLDivElement>(null);
@@ -309,10 +362,24 @@ export const EditorSlashMenu: React.FC<EditorSlashMenuProps> = ({ editor }) => {
 
     try {
       const clientCoords = editor.view.coordsAtPos(from);
-      // Position fixed below cursor line
+      const MENU_WIDTH = 260;
+      const ESTIMATED_HEIGHT = 280;
+      const PADDING = 10;
+
+      const spaceBelow = window.innerHeight - clientCoords.bottom;
+      const spaceAbove = clientCoords.top;
+      // Si no cabe abajo y arriba hay más espacio, posicionar arriba del cursor
+      const showAbove = spaceBelow < ESTIMATED_HEIGHT && spaceAbove > spaceBelow;
+
+      const top = showAbove ? clientCoords.top - 6 : clientCoords.bottom + 6;
+      const left = Math.max(PADDING, Math.min(clientCoords.left, window.innerWidth - MENU_WIDTH - PADDING));
+      const maxHeight = Math.max(120, Math.min(288, (showAbove ? spaceAbove : spaceBelow) - 16));
+
       setCoords({
-        top: clientCoords.bottom + 6,
-        left: Math.min(clientCoords.left, window.innerWidth - 260),
+        top,
+        left,
+        showAbove,
+        maxHeight,
       });
       setIsOpen(true);
       setSelectedIndex(0);
@@ -371,13 +438,30 @@ export const EditorSlashMenu: React.FC<EditorSlashMenuProps> = ({ editor }) => {
     };
   }, [isOpen, editor, filteredItems, selectedIndex, executeItem]);
 
+  // Scroll automatico del item seleccionado
+  useEffect(() => {
+    if (!isOpen || !menuRef.current) return;
+    const itemsList = menuRef.current.querySelector('.space-y-0\\.5');
+    const selectedButton = itemsList?.children[selectedIndex] as HTMLElement | undefined;
+    if (selectedButton) {
+      selectedButton.scrollIntoView({ block: 'nearest' });
+    }
+  }, [isOpen, selectedIndex]);
+
   if (!isOpen || filteredItems.length === 0) return null;
 
   return (
     <div
       ref={menuRef}
-      style={{ top: coords.top, left: coords.left }}
-      className="fixed w-64 max-h-72 overflow-y-auto p-1 rounded-md bg-veyra-surface border border-veyra-border shadow-elevated z-50 animate-in fade-in zoom-in-95 duration-100 select-none backdrop-blur-md"
+      style={{
+        top: coords.top,
+        left: coords.left,
+        maxHeight: coords.maxHeight,
+      }}
+      className={cn(
+        'fixed w-64 overflow-y-auto p-1 rounded-md bg-veyra-surface border border-veyra-border shadow-elevated z-50 animate-in fade-in zoom-in-95 duration-100 select-none backdrop-blur-md',
+        coords.showAbove && '-translate-y-full'
+      )}
     >
       <div className="px-2 py-1 text-[10px] font-semibold text-veyra-subtle uppercase tracking-wider">
         Bloques de contenido

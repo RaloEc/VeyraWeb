@@ -30,6 +30,8 @@ import {
   RotateCcw,
   Sigma,
   Table,
+  Code2,
+  Sparkles,
   AArrowUp,
   AArrowDown,
 } from 'lucide-react';
@@ -858,6 +860,22 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({ editor, onUploadIm
               .run(),
           <Table className="w-3.5 h-3.5" />,
           'Insertar tabla (o escribe /tabla)'
+        )}
+
+        {/* 9. Bloque de Código */}
+        {toolBtn(
+          editor.isActive('codeBlock'),
+          () => editor.chain().focus().toggleCodeBlock().run(),
+          <Code2 className="w-3.5 h-3.5" />,
+          'Bloque de código (o escribe /codigo)'
+        )}
+
+        {/* 10. Asistente IA */}
+        {toolBtn(
+          editor.isActive('aiPrompt'),
+          () => editor.chain().focus().insertContent({ type: 'aiPrompt' }).run(),
+          <Sparkles className="w-3.5 h-3.5" />,
+          'Asistente IA (o escribe /ia)'
         )}
 
         <div className="w-[1px] h-3.5 bg-veyra-border mx-1 shrink-0" />

@@ -188,6 +188,203 @@
   color: #e2e8f0;
 }
 
+.veyra-code-block-wrapper {
+  width: 100% !important;
+  max-width: 100% !important;
+  box-sizing: border-box !important;
+}
+
+.veyra-code-block-wrapper pre {
+  background: transparent !important;
+  border: none !important;
+  padding: 0.85rem 1.15rem !important;
+  margin: 0 !important;
+  border-radius: 0 !important;
+  font-family: 'JetBrains Mono', 'Fira Code', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace !important;
+  font-size: 13px !important;
+  line-height: 1.65 !important;
+  color: #9cdcfe !important; /* Variables e identificadores por defecto estilo VS Code Dark+ */
+  width: 100% !important;
+  max-width: 100% !important;
+  box-sizing: border-box !important;
+}
+
+/* Modo Normal (Sin Wrap / Scroll horizontal fluido) */
+.veyra-code-block-wrapper pre:not(.is-wrapped) {
+  white-space: pre !important;
+  overflow-x: auto !important;
+  word-break: normal !important;
+}
+
+.veyra-code-block-wrapper pre:not(.is-wrapped) * {
+  white-space: pre !important;
+  word-break: normal !important;
+}
+
+/* Modo Con Wrap (Ajuste de línea activo / Quiebre garantizado sin desbordamiento) */
+.veyra-code-block-wrapper pre.is-wrapped,
+.veyra-code-block-wrapper pre.is-wrapped * {
+  white-space: pre-wrap !important;
+  word-break: break-all !important;
+  overflow-wrap: anywhere !important;
+  overflow-x: hidden !important;
+}
+
+/* ─── Resaltado de Sintaxis Pro (Estilo VS Code Dark+) ─── */
+/* Palabras clave (const, if, return, import, export, def, class, for, while) */
+.tiptap pre .hljs-keyword,
+.tiptap pre .hljs-selector-tag {
+  color: #c586c0 !important; /* Magenta/Púrpura VS Code */
+  font-weight: 500;
+}
+
+/* Nombres de funciones y métodos llamados (useEffect, on, off, handleUpdate, calculate) */
+.tiptap pre .hljs-title.function_,
+.tiptap pre .hljs-title.class_,
+.tiptap pre .hljs-title {
+  color: #dcdcaa !important; /* Amarillo funciones VS Code */
+  font-weight: 500;
+}
+
+/* Propiedades de objetos (.state, .selection, .empty, .current) y claves de objetos (from:, to:) */
+.tiptap pre .hljs-property,
+.tiptap pre .hljs-attr,
+.tiptap pre .hljs-attribute {
+  color: #4ec9b0 !important; /* Cyan / Verde azulado propiedades VS Code */
+}
+
+/* Cadenas de texto / Strings ('transaction', "hola") */
+.tiptap pre .hljs-string,
+.tiptap pre .hljs-doctag {
+  color: #ce9178 !important; /* Salmón cálido / Terracota strings VS Code */
+}
+
+/* Números y valores booleanos / literales (0, 100, true, false, null, undefined) */
+.tiptap pre .hljs-number {
+  color: #b5cea8 !important; /* Verde menta números VS Code */
+}
+
+.tiptap pre .hljs-literal,
+.tiptap pre .hljs-boolean {
+  color: #569cd6 !important; /* Azul literales VS Code */
+}
+
+/* Comentarios */
+.tiptap pre .hljs-comment,
+.tiptap pre .hljs-quote {
+  color: #6a9955 !important; /* Verde comentarios VS Code */
+  font-style: italic;
+}
+
+/* Tipos nativos y clases (Promise, Array, String, number, boolean, void) */
+.tiptap pre .hljs-type,
+.tiptap pre .hljs-built_in,
+.tiptap pre .hljs-builtin-name {
+  color: #4ec9b0 !important; /* Turquesa tipos VS Code */
+}
+
+/* Etiquetas HTML / JSX y nombres de etiquetas (<div, <span, </button>) */
+.tiptap pre .hljs-tag {
+  color: #808080 !important;
+}
+.tiptap pre .hljs-name {
+  color: #569cd6 !important; /* Azul de etiqueta */
+}
+
+/* Operadores y puntuación (=, =>, &&, ||, +, -, etc.) */
+.tiptap pre .hljs-operator,
+.tiptap pre .hljs-punctuation {
+  color: #d4d4d4 !important;
+}
+
+/* Variables explícitas y parámetros */
+.tiptap pre .hljs-variable,
+.tiptap pre .hljs-template-variable,
+.tiptap pre .hljs-params {
+  color: #9cdcfe !important; /* Celeste variables VS Code */
+}
+
+.tiptap pre .hljs-regexp,
+.tiptap pre .hljs-link {
+  color: #d16969 !important;
+}
+
+.tiptap pre .hljs-meta {
+  color: #9cdcfe !important;
+}
+
+.tiptap pre .hljs-deletion {
+  background: rgba(244, 63, 94, 0.2);
+  color: #fda4af;
+}
+
+.tiptap pre .hljs-addition {
+  background: rgba(74, 222, 128, 0.2);
+  color: #86efac;
+}
+
+.tiptap pre .hljs-emphasis {
+  font-style: italic;
+}
+
+.tiptap pre .hljs-strong {
+  font-weight: bold;
+}
+
+/* Modo Claro (Estilo VS Code Light+) */
+html:not(.dark) .veyra-code-block-wrapper pre {
+  color: #001080 !important; /* Variables / Identificadores en azul marino oscuro */
+}
+
+html:not(.dark) .tiptap pre .hljs-keyword,
+html:not(.dark) .tiptap pre .hljs-selector-tag {
+  color: #af00db !important; /* Púrpura */
+  font-weight: 500;
+}
+
+html:not(.dark) .tiptap pre .hljs-title.function_,
+html:not(.dark) .tiptap pre .hljs-title.class_,
+html:not(.dark) .tiptap pre .hljs-title {
+  color: #795e26 !important; /* Ocre / amarillo oscuro funciones */
+  font-weight: 500;
+}
+
+html:not(.dark) .tiptap pre .hljs-property,
+html:not(.dark) .tiptap pre .hljs-attr,
+html:not(.dark) .tiptap pre .hljs-attribute {
+  color: #0070c1 !important; /* Azul propiedad */
+}
+
+html:not(.dark) .tiptap pre .hljs-string,
+html:not(.dark) .tiptap pre .hljs-doctag {
+  color: #a31515 !important; /* Rojo vino strings */
+}
+
+html:not(.dark) .tiptap pre .hljs-number {
+  color: #098658 !important; /* Verde numérico */
+}
+
+html:not(.dark) .tiptap pre .hljs-literal,
+html:not(.dark) .tiptap pre .hljs-boolean {
+  color: #0000ff !important; /* Azul */
+}
+
+html:not(.dark) .tiptap pre .hljs-comment,
+html:not(.dark) .tiptap pre .hljs-quote {
+  color: #008000 !important; /* Verde comentarios */
+  font-style: italic;
+}
+
+html:not(.dark) .tiptap pre .hljs-type,
+html:not(.dark) .tiptap pre .hljs-built_in,
+html:not(.dark) .tiptap pre .hljs-builtin-name {
+  color: #267f99 !important; /* Teal */
+}
+
+html:not(.dark) .tiptap pre .hljs-name {
+  color: #800000 !important;
+}
+
 .tiptap pre code {
   background: transparent !important;
   color: inherit !important;
@@ -913,11 +1110,11 @@ figcaption,
   width: 100%;
   margin: 0;
   overflow: hidden;
-  border: 1.5px solid #cbd5e1;
+  border: 1.5px solid var(--table-custom-border, #cbd5e1);
 }
 
 .dark .veyra-table {
-  border-color: #3f3f46;
+  border-color: var(--table-custom-border, #3f3f46);
 }
 
 .veyra-table tr {
@@ -927,8 +1124,8 @@ figcaption,
 .veyra-table td,
 .veyra-table th {
   min-width: 90px;
-  padding: 4px 8px; /* Ajuste compacto para que el mínimo sea un poco más del texto */
-  border: 1px solid #cbd5e1;
+  padding: 6px 10px;
+  border: 1px solid var(--table-custom-border, #cbd5e1);
   vertical-align: middle;
   box-sizing: border-box;
   position: relative;
@@ -943,7 +1140,7 @@ figcaption,
 
 .dark .veyra-table td,
 .dark .veyra-table th {
-  border-color: #3f3f46;
+  border-color: var(--table-custom-border, #3f3f46);
 }
 
 .veyra-table th {
@@ -953,6 +1150,61 @@ figcaption,
 
 .dark .veyra-table th {
   background-color: #27272a;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   PRESETS DE ESTILO DE TABLA (Minimalista, Cebra, Sin bordes, etc.)
+   ═══════════════════════════════════════════════════════════════ */
+
+/* 1. Minimalista: Solo líneas horizontales sutiles, sin líneas verticales */
+.veyra-table[data-table-style="minimal"] {
+  border-left: none !important;
+  border-right: none !important;
+  border-top: 1.5px solid var(--table-custom-border, #cbd5e1);
+  border-bottom: 1.5px solid var(--table-custom-border, #cbd5e1);
+}
+.dark .veyra-table[data-table-style="minimal"] {
+  border-top-color: var(--table-custom-border, #3f3f46);
+  border-bottom-color: var(--table-custom-border, #3f3f46);
+}
+.veyra-table[data-table-style="minimal"] td,
+.veyra-table[data-table-style="minimal"] th {
+  border-left: none !important;
+  border-right: none !important;
+  border-top: 1px solid var(--table-custom-border, #e2e8f0);
+  border-bottom: 1px solid var(--table-custom-border, #e2e8f0);
+}
+.dark .veyra-table[data-table-style="minimal"] td,
+.dark .veyra-table[data-table-style="minimal"] th {
+  border-top-color: var(--table-custom-border, #27272a);
+  border-bottom-color: var(--table-custom-border, #27272a);
+}
+
+/* 2. Cebra: Filas alternadas para lectura rápida */
+.veyra-table[data-table-style="striped"] tr:nth-child(even) td {
+  background-color: #f8fafc;
+}
+.dark .veyra-table[data-table-style="striped"] tr:nth-child(even) td {
+  background-color: #1e1e24;
+}
+
+/* 3. Sin bordes / Bordeless (Limpia) */
+.veyra-table[data-table-style="borderless"] {
+  border: none !important;
+}
+.veyra-table[data-table-style="borderless"] td,
+.veyra-table[data-table-style="borderless"] th {
+  border: 1px solid transparent !important;
+}
+.veyra-table[data-table-style="borderless"] tr:hover td {
+  background-color: rgba(148, 163, 184, 0.08);
+}
+
+/* 4. Compacta (Poco padding para tablas densas) */
+.veyra-table[data-table-style="compact"] td,
+.veyra-table[data-table-style="compact"] th {
+  padding: 3px 6px !important;
+  font-size: 0.825rem;
 }
 
 .veyra-table .selectedCell:after {

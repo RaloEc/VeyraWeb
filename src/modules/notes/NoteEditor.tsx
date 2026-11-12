@@ -11,6 +11,7 @@ import { ImageNode } from './extensions/ImageNode';
 import { FontFamily } from './extensions/FontFamily';
 import { FontSize } from './extensions/FontSize';
 import { CustomOrderedList } from './extensions/CustomOrderedList';
+import { CustomCodeBlock } from './extensions/CustomCodeBlock';
 import { MathBlock, MathInline } from './extensions/MathNode';
 import {
   hasMathContent,
@@ -31,13 +32,20 @@ import { EditorBubbleMenu } from './EditorBubbleMenu';
 import { EditorImageBubbleMenu } from './EditorImageBubbleMenu';
 import { EditorTableBubbleMenu } from './EditorTableBubbleMenu';
 import { EditorSlashMenu } from './EditorSlashMenu';
+import { AIPrompt } from './extensions/AIPromptNode';
 import { EditorListNumberTooltip } from './components/EditorListNumberTooltip';
+import { BookmarkNode } from './extensions/BookmarkNode';
+import { BookmarkPrompt } from './extensions/BookmarkPromptNode';
+import { CustomLink } from './extensions/CustomLink';
+import { EditorWordCount } from './components/EditorWordCount';
+import { fetchLinkMetadata } from '../../lib/link-metadata';
 import {
   CustomTable,
   CustomTableRow,
   CustomTableHeader,
   CustomTableCell,
 } from './extensions/TableExtensions';
+import { AICommandExtension } from './extensions/AICommandExtension';
 import { EditorToolbar } from './EditorToolbar';
 import { CollabPresence } from './CollabPresence';
 import { uploadNoteImage } from '../../lib/storage-upload';
@@ -558,8 +566,10 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
           undoRedo: false, // Collaboration extension handles collaborative history
           heading: { levels: [1, 2, 3] },
           orderedList: false,
+          codeBlock: false,
         }),
         CustomOrderedList,
+        CustomCodeBlock,
         Collaboration.configure({
           document: ydoc,
           field: fragmentName,
@@ -599,6 +609,11 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
         MathBlock,
         MathInline,
         KeyboardClipboard,
+        CustomLink,
+        BookmarkNode,
+        BookmarkPrompt,
+        AIPrompt,
+        AICommandExtension,
       ],
       editorProps: {
         attributes: {
@@ -736,6 +751,33 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
               currentEditor.commands.insertContent(formattedHtml);
             }
             return true;
+          }
+
+          // Si es una URL web solitaria y válida (que no sea YouTube ya capturado arriba),
+          // ofrecemos insertarla como tarjeta de enlace enriquecida con metadatos.
+          const trimmedPlain = plainText.trim();
+          const isSingleUrl = /^https?:\/\/[^\s$.?#].[^\s]*$/i.test(trimmedPlain) && !trimmedPlain.includes('\n');
+          if (isSingleUrl && !html.includes('<img')) {
+            event.preventDefault();
+            const currentEditor = (_view as any).editor || editorRef.current;
+            if (currentEditor && !currentEditor.isDestroyed) {
+              fetchLinkMetadata(trimmedPlain).then((metadata) => {
+                if (currentEditor && !currentEditor.isDestroyed) {
+                  currentEditor.commands.insertContent({
+                    type: 'bookmark',
+                    attrs: {
+                      url: metadata.url,
+                      title: metadata.title,
+                      domain: metadata.domain,
+                      favicon: metadata.favicon,
+                      description: metadata.description,
+                      image: metadata.image || null,
+                    },
+                  });
+                }
+              });
+              return true;
+            }
           }
 
           return false;
@@ -1250,6 +1292,11 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
               <EditorTableBubbleMenu editor={editor} />
               <EditorSlashMenu editor={editor} />
               <EditorListNumberTooltip editor={editor} />
+            </div>
+
+            {/* Contador de palabras y caracteres (Discreto al pie del documento) */}
+            <div className="mt-8 pt-4 border-t border-slate-200/60 dark:border-zinc-800/60 flex items-center justify-between text-xs">
+              <EditorWordCount editor={editor} />
             </div>
           </div>
         </div>

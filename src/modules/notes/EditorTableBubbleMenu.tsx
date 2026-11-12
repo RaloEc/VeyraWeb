@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import type { Editor } from '@tiptap/react';
 import { BubbleMenu } from '@tiptap/react/menus';
+import { findParentNode } from '@tiptap/core';
 import {
   Rows,
   Columns,
@@ -16,6 +17,8 @@ import {
   ChevronDown,
   ArrowRight,
   ArrowDown,
+  TableProperties,
+  Check,
 } from 'lucide-react';
 import { createPortal } from 'react-dom';
 import { cn } from '../../lib/utils';
@@ -40,11 +43,33 @@ const CELL_COLORS = [
   { label: 'Gris suave', value: '#f1f5f9', bgClass: 'bg-slate-200/80 dark:bg-zinc-800' },
 ];
 
+const TABLE_PRESETS = [
+  { id: 'default', label: 'Estándar', desc: 'Cuadrícula clásica y prolija con bordes completos' },
+  { id: 'minimal', label: 'Minimalista', desc: 'Solo líneas horizontales sutiles (estilo Notion/Docs)' },
+  { id: 'striped', label: 'Cebra', desc: 'Filas alternadas en tonos suaves para fácil lectura' },
+  { id: 'borderless', label: 'Sin bordes', desc: 'Diseño limpio sin líneas, resalta al posar el cursor' },
+  { id: 'compact', label: 'Compacta', desc: 'Menos relleno entre celdas para tablas con muchos datos' },
+];
+
+const BORDER_COLORS = [
+  { label: 'Predeterminado', value: null, bgClass: 'bg-slate-300 dark:bg-zinc-600' },
+  { label: 'Gris sutil', value: '#e2e8f0', bgClass: 'bg-slate-200 dark:bg-zinc-700' },
+  { label: 'Gris oscuro', value: '#64748b', bgClass: 'bg-slate-500 dark:bg-zinc-400' },
+  { label: 'Índigo / Acento', value: '#6366f1', bgClass: 'bg-indigo-500' },
+  { label: 'Azul suave', value: '#93c5fd', bgClass: 'bg-blue-300' },
+  { label: 'Verde suave', value: '#86efac', bgClass: 'bg-emerald-300' },
+  { label: 'Ámbar suave', value: '#fde047', bgClass: 'bg-amber-300' },
+  { label: 'Rojo suave', value: '#fca5a5', bgClass: 'bg-rose-300' },
+];
+
 export const EditorTableBubbleMenu: React.FC<EditorTableBubbleMenuProps> = ({ editor }) => {
   if (!editor) return null;
 
   const [isColorMenuOpen, setIsColorMenuOpen] = useState(false);
   const [colorCoords, setColorCoords] = useState<{ top: number; left: number }>({ top: 0, left: 0 });
+
+  const [isStyleMenuOpen, setIsStyleMenuOpen] = useState(false);
+  const [styleCoords, setStyleCoords] = useState<{ top: number; left: number }>({ top: 0, left: 0 });
 
   const [isMergeMenuOpen, setIsMergeMenuOpen] = useState(false);
   const [mergeCoords, setMergeCoords] = useState<{ top: number; left: number }>({ top: 0, left: 0 });
@@ -52,6 +77,8 @@ export const EditorTableBubbleMenu: React.FC<EditorTableBubbleMenuProps> = ({ ed
   const [confirmDelete, setConfirmDelete] = useState(false);
   const colorBtnRef = useRef<HTMLButtonElement>(null);
   const colorMenuRef = useRef<HTMLDivElement>(null);
+  const styleBtnRef = useRef<HTMLButtonElement>(null);
+  const styleMenuRef = useRef<HTMLDivElement>(null);
   const mergeBtnRef = useRef<HTMLButtonElement>(null);
   const mergeMenuRef = useRef<HTMLDivElement>(null);
   const deleteTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -85,6 +112,14 @@ export const EditorTableBubbleMenu: React.FC<EditorTableBubbleMenuProps> = ({ ed
         setIsColorMenuOpen(false);
       }
       if (
+        styleMenuRef.current &&
+        !styleMenuRef.current.contains(target) &&
+        styleBtnRef.current &&
+        !styleBtnRef.current.contains(target)
+      ) {
+        setIsStyleMenuOpen(false);
+      }
+      if (
         mergeMenuRef.current &&
         !mergeMenuRef.current.contains(target) &&
         mergeBtnRef.current &&
@@ -93,13 +128,13 @@ export const EditorTableBubbleMenu: React.FC<EditorTableBubbleMenuProps> = ({ ed
         setIsMergeMenuOpen(false);
       }
     };
-    if (isColorMenuOpen || isMergeMenuOpen) {
+    if (isColorMenuOpen || isStyleMenuOpen || isMergeMenuOpen) {
       document.addEventListener('mousedown', handleClickOutside);
     }
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
     };
-  }, [isColorMenuOpen, isMergeMenuOpen]);
+  }, [isColorMenuOpen, isStyleMenuOpen, isMergeMenuOpen]);
 
   const updateColorPosition = useCallback(() => {
     if (!colorBtnRef.current) return;
@@ -113,6 +148,23 @@ export const EditorTableBubbleMenu: React.FC<EditorTableBubbleMenuProps> = ({ ed
     if (left < margin) left = margin;
 
     setColorCoords({
+      top: rect.bottom + 6,
+      left,
+    });
+  }, []);
+
+  const updateStylePosition = useCallback(() => {
+    if (!styleBtnRef.current) return;
+    const rect = styleBtnRef.current.getBoundingClientRect();
+    const popoverWidth = 240;
+    const margin = 10;
+    let left = rect.left;
+    if (left + popoverWidth > window.innerWidth - margin) {
+      left = window.innerWidth - popoverWidth - margin;
+    }
+    if (left < margin) left = margin;
+
+    setStyleCoords({
       top: rect.bottom + 6,
       left,
     });
@@ -138,15 +190,30 @@ export const EditorTableBubbleMenu: React.FC<EditorTableBubbleMenuProps> = ({ ed
   const handleToggleColorMenu = () => {
     if (!isColorMenuOpen) {
       updateColorPosition();
+      setIsStyleMenuOpen(false);
+      setIsMergeMenuOpen(false);
       setIsColorMenuOpen(true);
     } else {
       setIsColorMenuOpen(false);
     }
   };
 
+  const handleToggleStyleMenu = () => {
+    if (!isStyleMenuOpen) {
+      updateStylePosition();
+      setIsColorMenuOpen(false);
+      setIsMergeMenuOpen(false);
+      setIsStyleMenuOpen(true);
+    } else {
+      setIsStyleMenuOpen(false);
+    }
+  };
+
   const handleToggleMergeMenu = () => {
     if (!isMergeMenuOpen) {
       updateMergePosition();
+      setIsColorMenuOpen(false);
+      setIsStyleMenuOpen(false);
       setIsMergeMenuOpen(true);
     } else {
       setIsMergeMenuOpen(false);
@@ -157,6 +224,57 @@ export const EditorTableBubbleMenu: React.FC<EditorTableBubbleMenuProps> = ({ ed
     if (!editor) return;
     editor.chain().focus().setCellAttribute('backgroundColor', color).run();
     setIsColorMenuOpen(false);
+  };
+
+  // Helper para leer atributos de la tabla actual
+  const currentTableAttrs = (() => {
+    if (!editor) return { tableStyle: 'default', borderColor: null };
+    try {
+      const tableParent = findParentNode((node) => node.type.name === 'table')(editor.state.selection);
+      if (tableParent && tableParent.node.attrs) {
+        return {
+          tableStyle: tableParent.node.attrs.tableStyle || 'default',
+          borderColor: tableParent.node.attrs.borderColor || null,
+        };
+      }
+    } catch {
+      // ignore
+    }
+    return { tableStyle: 'default', borderColor: null };
+  })();
+
+  const handleSetTableStyle = (styleId: string) => {
+    if (!editor) return;
+    try {
+      const tableParent = findParentNode((node) => node.type.name === 'table')(editor.state.selection);
+      if (!tableParent) return;
+
+      const { tr } = editor.state;
+      tr.setNodeMarkup(tableParent.pos, undefined, {
+        ...tableParent.node.attrs,
+        tableStyle: styleId,
+      });
+      editor.view.dispatch(tr);
+    } catch {
+      // fallback
+    }
+  };
+
+  const handleSetBorderColor = (color: string | null) => {
+    if (!editor) return;
+    try {
+      const tableParent = findParentNode((node) => node.type.name === 'table')(editor.state.selection);
+      if (!tableParent) return;
+
+      const { tr } = editor.state;
+      tr.setNodeMarkup(tableParent.pos, undefined, {
+        ...tableParent.node.attrs,
+        borderColor: color,
+      });
+      editor.view.dispatch(tr);
+    } catch {
+      // fallback
+    }
   };
 
   const handleDeleteTable = () => {
@@ -184,6 +302,54 @@ export const EditorTableBubbleMenu: React.FC<EditorTableBubbleMenuProps> = ({ ed
     editor.chain().focus().splitCell().run();
   };
 
+  /**
+   * Obtiene la posición virtual para anclar el BubbleMenu en la parte superior
+   * de toda la tabla, en vez de sobre la celda seleccionada.
+   * Si la tabla es muy grande y el usuario hace scroll hacia abajo, se adapta de forma
+   * dinámica y pegada ("sticky") para no salirse de la vista.
+   */
+  const getTableVirtualElement = useCallback(() => {
+    if (!editor || editor.isDestroyed) return null;
+
+    try {
+      const tableParent = findParentNode((node) => node.type.name === 'table')(editor.state.selection);
+      if (!tableParent) return null;
+
+      const domNode = editor.view.nodeDOM(tableParent.pos);
+      const tableElement =
+        domNode instanceof HTMLElement
+          ? (domNode.tagName.toLowerCase() === 'table' ? domNode : domNode.querySelector('table') || domNode)
+          : null;
+
+      if (!tableElement) return null;
+
+      const rect = tableElement.getBoundingClientRect();
+      const topMargin = 72; // Margen superior para evitar solapar la barra de herramientas
+      const menuEstimatedHeight = 44;
+
+      // Si la parte superior de la tabla ya se desplazó fuera de la pantalla (scroll hacia abajo),
+      // mantenemos el menú flotando de forma visible y pegada sobre el cuerpo visible de la tabla.
+      let visibleTop = rect.top;
+      if (rect.top < topMargin && rect.bottom > topMargin + menuEstimatedHeight + 20) {
+        visibleTop = Math.min(topMargin, rect.bottom - menuEstimatedHeight - 16);
+      }
+
+      const virtualRect = new DOMRect(
+        rect.left,
+        visibleTop,
+        rect.width,
+        rect.height
+      );
+
+      return {
+        getBoundingClientRect: () => virtualRect,
+        getClientRects: () => [virtualRect],
+      };
+    } catch {
+      return null;
+    }
+  }, [editor]);
+
   return (
     <>
       <BubbleMenu
@@ -192,6 +358,11 @@ export const EditorTableBubbleMenu: React.FC<EditorTableBubbleMenuProps> = ({ ed
         shouldShow={({ editor }) => {
           if (isColorMenuOpen || isMergeMenuOpen) return true;
           return editor.isActive('table');
+        }}
+        getReferencedVirtualElement={getTableVirtualElement}
+        options={{
+          placement: 'top',
+          offset: 10,
         }}
         className="flex items-center gap-1 p-1 rounded-xl bg-white dark:bg-[#18181b] border border-slate-200 dark:border-zinc-800 shadow-xl z-50 text-slate-700 dark:text-zinc-200 text-xs select-none"
       >
@@ -364,6 +535,23 @@ export const EditorTableBubbleMenu: React.FC<EditorTableBubbleMenuProps> = ({ ed
           <ChevronDown className="w-2.5 h-2.5" />
         </button>
 
+        {/* Estilo y Bordes de Tabla */}
+        <button
+          ref={styleBtnRef}
+          type="button"
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={handleToggleStyleMenu}
+          title="Personalizar estilo y bordes de la tabla"
+          className={cn(
+            'h-7 px-2 rounded-lg text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-zinc-100 hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer flex items-center gap-1 shrink-0',
+            isStyleMenuOpen && 'bg-slate-200/60 dark:bg-zinc-700/60 text-slate-900 dark:text-zinc-100'
+          )}
+        >
+          <TableProperties className="w-3.5 h-3.5 text-accent" />
+          <span className="text-[11px] font-medium hidden sm:inline">Estilo</span>
+          <ChevronDown className="w-2.5 h-2.5 opacity-70" />
+        </button>
+
         {/* Encabezado toggle */}
         <button
           type="button"
@@ -532,6 +720,90 @@ export const EditorTableBubbleMenu: React.FC<EditorTableBubbleMenuProps> = ({ ed
                   )}
                 </button>
               ))}
+            </div>
+          </div>,
+          document.body
+        )}
+
+      {/* Popover menú de estilos de tabla y bordes */}
+      {isStyleMenuOpen &&
+        createPortal(
+          <div
+            ref={styleMenuRef}
+            style={{
+              position: 'fixed',
+              top: `${styleCoords.top}px`,
+              left: `${styleCoords.left}px`,
+              zIndex: 9999,
+            }}
+            className="p-2.5 w-[250px] rounded-xl bg-white dark:bg-[#18181b] border border-slate-200 dark:border-zinc-800 shadow-2xl text-xs space-y-2 text-slate-800 dark:text-zinc-200 select-none animate-in fade-in zoom-in-95 duration-100"
+          >
+            <div>
+              <div className="px-1 pb-1 text-[10px] font-bold text-accent uppercase tracking-wider">
+                Estilo de tabla
+              </div>
+              <div className="space-y-0.5">
+                {TABLE_PRESETS.map((preset) => {
+                  const isActive = currentTableAttrs.tableStyle === preset.id;
+                  return (
+                    <button
+                      key={preset.id}
+                      type="button"
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => handleSetTableStyle(preset.id)}
+                      className={cn(
+                        'w-full flex items-center justify-between px-2 py-1.5 rounded-lg transition-colors text-left cursor-pointer',
+                        isActive
+                          ? 'bg-accent/15 text-accent font-semibold'
+                          : 'hover:bg-slate-100 dark:hover:bg-zinc-800 text-slate-700 dark:text-zinc-300'
+                      )}
+                    >
+                      <div>
+                        <div className="text-[12px] leading-tight">{preset.label}</div>
+                        <div className="text-[10px] text-slate-400 dark:text-zinc-500 leading-tight">
+                          {preset.desc}
+                        </div>
+                      </div>
+                      {isActive && <Check className="w-3.5 h-3.5 shrink-0 text-accent ml-1.5" />}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="h-[1px] bg-slate-100 dark:bg-zinc-800 my-1" />
+
+            <div>
+              <div className="px-1 pb-1 text-[10px] font-semibold text-slate-400 dark:text-zinc-500 uppercase tracking-wider">
+                Color de bordes
+              </div>
+              <div className="grid grid-cols-4 gap-1.5 pt-0.5">
+                {BORDER_COLORS.map((border) => {
+                  const isCurrent =
+                    (border.value === null && currentTableAttrs.borderColor === null) ||
+                    currentTableAttrs.borderColor === border.value;
+                  return (
+                    <button
+                      key={border.label}
+                      type="button"
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => handleSetBorderColor(border.value)}
+                      title={border.label}
+                      className={cn(
+                        'w-8 h-8 rounded-lg border flex items-center justify-center transition-all hover:scale-105 active:scale-95 cursor-pointer relative',
+                        border.bgClass,
+                        isCurrent
+                          ? 'ring-2 ring-accent ring-offset-1 dark:ring-offset-zinc-900 border-white dark:border-zinc-800'
+                          : 'border-slate-300 dark:border-zinc-700'
+                      )}
+                    >
+                      {isCurrent && (
+                        <Check className="w-3.5 h-3.5 text-white drop-shadow-[0_1px_1px_rgba(0,0,0,0.8)]" />
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           </div>,
           document.body

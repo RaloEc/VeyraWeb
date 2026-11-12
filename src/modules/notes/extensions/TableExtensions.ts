@@ -249,6 +249,37 @@ export function createRowResizingPlugin() {
 }
 
 export const CustomTable = Table.extend({
+  addAttributes() {
+    return {
+      tableStyle: {
+        default: 'default',
+        parseHTML: (element: HTMLElement) =>
+          element.getAttribute('data-table-style') || 'default',
+        renderHTML: (attributes: Record<string, any>) => {
+          if (!attributes.tableStyle || attributes.tableStyle === 'default') {
+            return {};
+          }
+          return {
+            'data-table-style': attributes.tableStyle,
+          };
+        },
+      },
+      borderColor: {
+        default: null,
+        parseHTML: (element: HTMLElement) =>
+          element.getAttribute('data-border-color') || null,
+        renderHTML: (attributes: Record<string, any>) => {
+          if (!attributes.borderColor) {
+            return {};
+          }
+          return {
+            'data-border-color': attributes.borderColor,
+            style: `--table-custom-border: ${attributes.borderColor};`,
+          };
+        },
+      },
+    };
+  },
   addKeyboardShortcuts() {
     return {
       ...this.parent?.(),
