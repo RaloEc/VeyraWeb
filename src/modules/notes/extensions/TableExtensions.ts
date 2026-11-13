@@ -1,5 +1,5 @@
 import { Table, TableRow, TableHeader, TableCell } from '@tiptap/extension-table';
-import type { Editor } from '@tiptap/core';
+import { findParentNode, type Editor } from '@tiptap/core';
 import { selectedRect, CellSelection, mergeCells } from '@tiptap/pm/tables';
 import { Plugin, PluginKey } from '@tiptap/pm/state';
 
@@ -278,6 +278,18 @@ export const CustomTable = Table.extend({
           };
         },
       },
+      tableAlign: {
+        default: 'left',
+        parseHTML: (element: HTMLElement) =>
+          element.getAttribute('data-table-align') || element.getAttribute('align') || 'left',
+        renderHTML: (attributes: Record<string, any>) => {
+          const align = attributes.tableAlign || 'left';
+          return {
+            'data-table-align': align,
+            align: align,
+          };
+        },
+      },
     };
   },
   addKeyboardShortcuts() {
@@ -325,6 +337,7 @@ export function getTableSelectionInfo(editor: Editor | null) {
       isMergedCell: false,
       colspan: 1,
       rowspan: 1,
+      tableAlign: 'left' as 'left' | 'center' | 'right',
     };
   }
 
@@ -365,6 +378,16 @@ export function getTableSelectionInfo(editor: Editor | null) {
     // Si la selección no se encuentra en un rectángulo de tabla válido
   }
 
+  let tableAlign: 'left' | 'center' | 'right' = 'left';
+  try {
+    const tableParent = findParentNode((node: any) => node.type.name === 'table')(state.selection);
+    if (tableParent?.node?.attrs?.tableAlign) {
+      tableAlign = tableParent.node.attrs.tableAlign;
+    }
+  } catch {
+    // ignore
+  }
+
   return {
     isInTable: true,
     isCellSelection,
@@ -375,6 +398,7 @@ export function getTableSelectionInfo(editor: Editor | null) {
     isMergedCell,
     colspan,
     rowspan,
+    tableAlign,
   };
 }
 

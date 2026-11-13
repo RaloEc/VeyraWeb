@@ -567,6 +567,36 @@ export function buildPdfDocumentHtml(
       page-break-inside: auto;
     }
 
+    table[data-table-align="center"]:not([style*="width"]),
+    table[align="center"]:not([style*="width"]) {
+      width: fit-content !important;
+      max-width: 100% !important;
+    }
+
+    table[data-table-align="right"]:not([style*="width"]),
+    table[align="right"]:not([style*="width"]) {
+      width: fit-content !important;
+      max-width: 100% !important;
+    }
+
+    table[data-table-align="center"],
+    table[align="center"] {
+      margin-left: auto !important;
+      margin-right: auto !important;
+    }
+
+    table[data-table-align="right"],
+    table[align="right"] {
+      margin-left: auto !important;
+      margin-right: 0 !important;
+    }
+
+    table[data-table-align="left"],
+    table[align="left"] {
+      margin-left: 0 !important;
+      margin-right: auto !important;
+    }
+
     tr {
       page-break-inside: avoid;
       page-break-after: auto;

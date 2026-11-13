@@ -1117,6 +1117,38 @@ figcaption,
   border-color: var(--table-custom-border, #3f3f46);
 }
 
+/* ─── Alineación de Posición de Tablas (Izquierda, Centro, Derecha) ─── */
+.veyra-table[data-table-align="center"]:not([style*="width"]),
+.veyra-table[align="center"]:not([style*="width"]) {
+  width: fit-content !important;
+  max-width: 100% !important;
+}
+
+.veyra-table[data-table-align="right"]:not([style*="width"]),
+.veyra-table[align="right"]:not([style*="width"]) {
+  width: fit-content !important;
+  max-width: 100% !important;
+}
+
+.veyra-table[data-table-align="center"],
+.veyra-table[align="center"] {
+  margin-left: auto !important;
+  margin-right: auto !important;
+}
+
+.veyra-table[data-table-align="right"],
+.veyra-table[align="right"] {
+  margin-left: auto !important;
+  margin-right: 0 !important;
+}
+
+.veyra-table[data-table-align="left"],
+.veyra-table[align="left"],
+.veyra-table:not([data-table-align]):not([align]) {
+  margin-left: 0 !important;
+  margin-right: auto !important;
+}
+
 .veyra-table tr {
   box-sizing: border-box;
 }

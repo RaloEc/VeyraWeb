@@ -243,20 +243,38 @@ export const EditorTableBubbleMenu: React.FC<EditorTableBubbleMenuProps> = ({ ed
 
   // Helper para leer atributos de la tabla actual
   const currentTableAttrs = (() => {
-    if (!editor) return { tableStyle: 'default', borderColor: null };
+    if (!editor) return { tableStyle: 'default', borderColor: null, tableAlign: 'left' as 'left' | 'center' | 'right' };
     try {
       const tableParent = findParentNode((node) => node.type.name === 'table')(editor.state.selection);
       if (tableParent && tableParent.node.attrs) {
         return {
           tableStyle: tableParent.node.attrs.tableStyle || 'default',
           borderColor: tableParent.node.attrs.borderColor || null,
+          tableAlign: (tableParent.node.attrs.tableAlign || 'left') as 'left' | 'center' | 'right',
         };
       }
     } catch {
       // ignore
     }
-    return { tableStyle: 'default', borderColor: null };
+    return { tableStyle: 'default', borderColor: null, tableAlign: 'left' as 'left' | 'center' | 'right' };
   })();
+
+  const handleSetTableAlign = (align: 'left' | 'center' | 'right') => {
+    if (!editor) return;
+    try {
+      const tableParent = findParentNode((node) => node.type.name === 'table')(editor.state.selection);
+      if (!tableParent) return;
+
+      const { tr } = editor.state;
+      tr.setNodeMarkup(tableParent.pos, undefined, {
+        ...tableParent.node.attrs,
+        tableAlign: align,
+      });
+      editor.view.dispatch(tr);
+    } catch {
+      // fallback
+    }
+  };
 
   const handleSetTableStyle = (styleId: string) => {
     if (!editor) return;
@@ -572,7 +590,57 @@ export const EditorTableBubbleMenu: React.FC<EditorTableBubbleMenuProps> = ({ ed
           TH
         </button>
 
-        {/* Alineación rápida */}
+        <div className="w-[1px] h-4 bg-veyra-border mx-0.5 shrink-0" />
+
+        {/* Posición de la tabla (Izquierda, Centro, Derecha) */}
+        <div className="inline-flex items-center gap-0.5 p-0.5 rounded-lg bg-black/[0.04] dark:bg-white/[0.05] border border-veyra-border/40">
+          <button
+            type="button"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => handleSetTableAlign('left')}
+            title="Alinear tabla a la izquierda"
+            className={cn(
+              'h-6 w-6 rounded-md transition-colors cursor-pointer flex items-center justify-center shrink-0',
+              currentTableAttrs.tableAlign === 'left'
+                ? 'bg-accent text-white shadow-xs'
+                : 'text-veyra-muted hover:text-veyra-text hover:bg-black/5 dark:hover:bg-white/5'
+            )}
+          >
+            <AlignLeft className="w-3.5 h-3.5" />
+          </button>
+          <button
+            type="button"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => handleSetTableAlign('center')}
+            title="Centrar tabla en la página"
+            className={cn(
+              'h-6 w-6 rounded-md transition-colors cursor-pointer flex items-center justify-center shrink-0',
+              currentTableAttrs.tableAlign === 'center'
+                ? 'bg-accent text-white shadow-xs'
+                : 'text-veyra-muted hover:text-veyra-text hover:bg-black/5 dark:hover:bg-white/5'
+            )}
+          >
+            <AlignCenter className="w-3.5 h-3.5" />
+          </button>
+          <button
+            type="button"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => handleSetTableAlign('right')}
+            title="Alinear tabla a la derecha"
+            className={cn(
+              'h-6 w-6 rounded-md transition-colors cursor-pointer flex items-center justify-center shrink-0',
+              currentTableAttrs.tableAlign === 'right'
+                ? 'bg-accent text-white shadow-xs'
+                : 'text-veyra-muted hover:text-veyra-text hover:bg-black/5 dark:hover:bg-white/5'
+            )}
+          >
+            <AlignRight className="w-3.5 h-3.5" />
+          </button>
+        </div>
+
+        <div className="w-[1px] h-4 bg-veyra-border mx-0.5 shrink-0" />
+
+        {/* Alineación rápida del texto de celda */}
         <div className="inline-flex items-center gap-0.5">
           <button
             type="button"
@@ -774,6 +842,41 @@ export const EditorTableBubbleMenu: React.FC<EditorTableBubbleMenuProps> = ({ ed
                         </div>
                       </div>
                       {isActive && <Check className="w-3.5 h-3.5 shrink-0 text-accent ml-1.5" />}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="h-[1px] bg-veyra-border my-1" />
+
+            <div>
+              <div className="px-1 pb-1 text-[10px] font-semibold text-veyra-muted uppercase tracking-wider">
+                Alineación de la tabla
+              </div>
+              <div className="grid grid-cols-3 gap-1 pt-0.5">
+                {[
+                  { id: 'left', label: 'Izquierda', icon: AlignLeft },
+                  { id: 'center', label: 'Centro', icon: AlignCenter },
+                  { id: 'right', label: 'Derecha', icon: AlignRight },
+                ].map((item) => {
+                  const isActive = currentTableAttrs.tableAlign === item.id;
+                  const Icon = item.icon;
+                  return (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => handleSetTableAlign(item.id as 'left' | 'center' | 'right')}
+                      className={cn(
+                        'flex flex-col items-center justify-center gap-1 py-1.5 px-1 rounded-lg border text-xs transition-all cursor-pointer',
+                        isActive
+                          ? 'border-accent bg-accent/15 text-accent font-semibold'
+                          : 'border-veyra-border/60 hover:bg-black/5 dark:hover:bg-white/5 text-veyra-text'
+                      )}
+                    >
+                      <Icon className="w-4 h-4" />
+                      <span className="text-[10px] leading-none">{item.label}</span>
                     </button>
                   );
                 })}
