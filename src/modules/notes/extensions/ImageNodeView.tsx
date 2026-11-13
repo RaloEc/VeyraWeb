@@ -1,6 +1,10 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { NodeViewWrapper, useEditorState, type NodeViewProps } from '@tiptap/react';
+import { toast } from 'sonner';
 import { cn } from '../../../lib/utils';
+import { uploadNoteImage } from '../../../lib/storage-upload';
+import { deleteNoteImage } from '../../../lib/storage-delete';
+import { InlineImageCropper } from '../components/InlineImageCropper';
 
 export const ImageNodeView: React.FC<NodeViewProps> = ({
   node,
@@ -21,6 +25,15 @@ export const ImageNodeView: React.FC<NodeViewProps> = ({
     selector: (ctx) => {
       const storage = ctx.editor.storage.image;
       return typeof pos === 'number' && storage?.editingCaptionPos === pos;
+    },
+  });
+
+  // Suscripción reactiva para modo de recorte inline
+  const isCropping = useEditorState({
+    editor,
+    selector: (ctx) => {
+      const storage = ctx.editor.storage.image;
+      return typeof pos === 'number' && storage?.croppingPos === pos;
     },
   });
 
@@ -68,6 +81,39 @@ export const ImageNodeView: React.FC<NodeViewProps> = ({
       editor.commands.clearCaptionEditing();
     }
   }, [selected, isEditingCaption, editor]);
+
+  // Salir del modo recorte inline si el nodo pierde selección
+  useEffect(() => {
+    if (!isCropping) return;
+    if (!selected) {
+      editor.commands.clearCropEditing();
+    }
+  }, [selected, isCropping, editor]);
+
+  // Guardar recorte procesado
+  const handleApplyCropped = async (croppedBlob: Blob) => {
+    try {
+      const oldSrc = src;
+      const currentUserId = editor.storage.image?.currentUserId;
+      const newUrl = await uploadNoteImage(croppedBlob, currentUserId || undefined);
+
+      updateAttributes({ src: newUrl });
+
+      if (oldSrc && oldSrc.includes('attachments')) {
+        deleteNoteImage(oldSrc);
+      }
+
+      editor.commands.clearCropEditing();
+      toast.success('Imagen recortada con éxito');
+    } catch (err: any) {
+      console.error('[ImageNodeView] Error al guardar recorte:', err);
+      toast.error(err.message || 'Error al guardar la imagen recortada');
+    }
+  };
+
+  const handleCancelCrop = () => {
+    editor.commands.clearCropEditing();
+  };
 
   // Cancelar AnimationFrame si el componente se desmonta
   useEffect(() => {
@@ -212,99 +258,112 @@ export const ImageNodeView: React.FC<NodeViewProps> = ({
       data-text-align={textAlign}
       data-selected={selected ? 'true' : undefined}
     >
-      <div
-        ref={imageWrapperRef}
-        style={{ width: widthStyle, marginLeft }}
-        className={cn(
-          'relative group max-w-full mr-auto',
-          !isResizing && 'transition-[width,margin-left] duration-220 ease-out will-change-[width,margin-left]',
-          selected && 'outline outline-1 outline-accent outline-offset-2 rounded-lg'
-        )}
-        onClick={() => {
-          if (!selected && typeof getPos === 'function') {
-            const pos = getPos();
-            if (typeof pos === 'number') {
-              editor.commands.setNodeSelection(pos);
-            }
-          }
-        }}
-      >
-        <img
-          src={src}
-          alt={alt || ''}
-          draggable={false}
-          className="w-full h-auto block rounded-lg object-contain shadow-sm pointer-events-none"
-        />
-
-        {/* Tiradores de redimensión en las 4 esquinas si está seleccionado y NO editando caption */}
-        {selected && !isEditingCaption && (
-          <>
-            {/* Indicador de porcentaje flotante durante el redimensionamiento */}
-            {isResizing && currentWidth && (
-              <div className="absolute top-2 left-1/2 -translate-x-1/2 bg-black/80 text-white text-[11px] font-medium px-2 py-0.5 rounded-full backdrop-blur-sm pointer-events-none z-30 shadow">
-                {currentWidth}%
-              </div>
+      {isCropping ? (
+        <div style={{ width: widthStyle, marginLeft }} className="mr-auto">
+          <InlineImageCropper
+            src={src}
+            alt={alt || ''}
+            onApply={handleApplyCropped}
+            onCancel={handleCancelCrop}
+          />
+        </div>
+      ) : (
+        <>
+          <div
+            ref={imageWrapperRef}
+            style={{ width: widthStyle, marginLeft }}
+            className={cn(
+              'relative group max-w-full mr-auto',
+              !isResizing && 'transition-[width,margin-left] duration-220 ease-out will-change-[width,margin-left]',
+              selected && 'outline outline-1 outline-accent outline-offset-2 rounded-lg'
             )}
+            onClick={() => {
+              if (!selected && typeof getPos === 'function') {
+                const pos = getPos();
+                if (typeof pos === 'number') {
+                  editor.commands.setNodeSelection(pos);
+                }
+              }
+            }}
+          >
+            <img
+              src={src}
+              alt={alt || ''}
+              draggable={false}
+              className="w-full h-auto block rounded-lg object-contain shadow-sm pointer-events-none"
+            />
 
-            {/* Manija Noroeste (NW) */}
-            <div
-              onPointerDown={(e) => handlePointerDown(e, 'nw')}
-              className="resize-handle resize-nw"
-              title="Redimensionar"
-            />
-            {/* Manija Noreste (NE) */}
-            <div
-              onPointerDown={(e) => handlePointerDown(e, 'ne')}
-              className="resize-handle resize-ne"
-              title="Redimensionar"
-            />
-            {/* Manija Suroeste (SW) */}
-            <div
-              onPointerDown={(e) => handlePointerDown(e, 'sw')}
-              className="resize-handle resize-sw"
-              title="Redimensionar"
-            />
-            {/* Manija Sureste (SE) */}
-            <div
-              onPointerDown={(e) => handlePointerDown(e, 'se')}
-              className="resize-handle resize-se"
-              title="Redimensionar"
-            />
-          </>
-        )}
-      </div>
+            {/* Tiradores de redimensión en las 4 esquinas si está seleccionado y NO editando caption */}
+            {selected && !isEditingCaption && (
+              <>
+                {/* Indicador de porcentaje flotante durante el redimensionamiento */}
+                {isResizing && currentWidth && (
+                  <div className="absolute top-2 left-1/2 -translate-x-1/2 bg-black/80 text-white text-[11px] font-medium px-2 py-0.5 rounded-full backdrop-blur-sm pointer-events-none z-30 shadow">
+                    {currentWidth}%
+                  </div>
+                )}
 
-      {/* Pie de foto (Caption): input interactivo en modo edición, texto plano estático fuera de él */}
-      {isEditingCaption ? (
-        <input
-          ref={captionInputRef}
-          type="text"
-          defaultValue={caption || ''}
-          placeholder="Escribe un pie de foto..."
-          onBlur={handleCaptionBlur}
-          onKeyDown={handleCaptionKeyDown}
-          style={{ width: widthStyle, marginLeft }}
-          className={cn(
-            'veyra-figcaption-input mr-auto',
-            !isResizing && 'transition-[width,margin-left] duration-220 ease-out will-change-[width,margin-left]'
-          )}
-        />
-      ) : hasContent ? (
-        <figcaption
-          style={{ width: widthStyle, marginLeft, cursor: 'text' }}
-          className={cn(
-            'veyra-figcaption-text mr-auto',
-            !isResizing && 'transition-[width,margin-left] duration-220 ease-out will-change-[width,margin-left]'
-          )}
-          onClick={() => {
-            if (typeof pos === 'number') {
-              editor.commands.setCaptionEditing(pos);
-            }
-          }}
-        >
-          {caption}
-        </figcaption>
-      ) : null}
+                {/* Manija Noroeste (NW) */}
+                <div
+                  onPointerDown={(e) => handlePointerDown(e, 'nw')}
+                  className="resize-handle resize-nw"
+                  title="Redimensionar"
+                />
+                {/* Manija Noreste (NE) */}
+                <div
+                  onPointerDown={(e) => handlePointerDown(e, 'ne')}
+                  className="resize-handle resize-ne"
+                  title="Redimensionar"
+                />
+                {/* Manija Suroeste (SW) */}
+                <div
+                  onPointerDown={(e) => handlePointerDown(e, 'sw')}
+                  className="resize-handle resize-sw"
+                  title="Redimensionar"
+                />
+                {/* Manija Sureste (SE) */}
+                <div
+                  onPointerDown={(e) => handlePointerDown(e, 'se')}
+                  className="resize-handle resize-se"
+                  title="Redimensionar"
+                />
+              </>
+            )}
+          </div>
+
+          {/* Pie de foto (Caption): input interactivo en modo edición, texto plano estático fuera de él */}
+          {isEditingCaption ? (
+            <input
+              ref={captionInputRef}
+              type="text"
+              defaultValue={caption || ''}
+              placeholder="Escribe un pie de foto..."
+              onBlur={handleCaptionBlur}
+              onKeyDown={handleCaptionKeyDown}
+              style={{ width: widthStyle, marginLeft }}
+              className={cn(
+                'veyra-figcaption-input mr-auto',
+                !isResizing && 'transition-[width,margin-left] duration-220 ease-out will-change-[width,margin-left]'
+              )}
+            />
+          ) : hasContent ? (
+            <figcaption
+              style={{ width: widthStyle, marginLeft, cursor: 'text' }}
+              className={cn(
+                'veyra-figcaption-text mr-auto',
+                !isResizing && 'transition-[width,margin-left] duration-220 ease-out will-change-[width,margin-left]'
+              )}
+              onClick={() => {
+                if (typeof pos === 'number') {
+                  editor.commands.setCaptionEditing(pos);
+                }
+              }}
+            >
+              {caption}
+            </figcaption>
+          ) : null}
+        </>
+      )}
     </NodeViewWrapper>
   );
 };

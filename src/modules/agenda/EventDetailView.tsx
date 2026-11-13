@@ -27,7 +27,7 @@ import type { Note, Folder } from '../../types/notes';
 import type { useReminders } from '../../hooks/useReminders';
 import type { useEvents } from '../../hooks/useEvents';
 import { useTheme } from '../../theme/ThemeProvider';
-import { cn, isImageAttachment, parseAttachments } from '../../lib/utils';
+import { cn, isImageAttachment, parseAttachments, toLocalYmd } from '../../lib/utils';
 import { ConfirmTooltip } from '../../components/common/ConfirmTooltip';
 
 const COLOR_OPTIONS = [
@@ -101,7 +101,8 @@ export const EventDetailView: React.FC<EventDetailViewProps> = ({
   const handleOpenAddReminder = () => {
     const s = Number(event.start_time_ms) || Date.now();
     const d = new Date(s);
-    setNewReminderDueDate(d.toISOString().split('T')[0]);
+    setDateVal(toLocalYmd(d));
+    setNewReminderDueDate(toLocalYmd(d));
     setNewReminderDueTime(d.toTimeString().substring(0, 5));
     setNewReminderPriority(1);
     setShowAddReminderForm(true);
@@ -148,7 +149,11 @@ export const EventDetailView: React.FC<EventDetailViewProps> = ({
     const startDate = new Date(s);
     const endDate = new Date(e);
 
-    setDateVal(startDate.toISOString().split('T')[0]);
+    if (event.is_all_day && event.all_day_date) {
+      setDateVal(event.all_day_date);
+    } else {
+      setDateVal(toLocalYmd(startDate));
+    }
     setStartTimeVal(startDate.toTimeString().substring(0, 5));
     setEndTimeVal(endDate.toTimeString().substring(0, 5));
 
@@ -249,6 +254,7 @@ export const EventDetailView: React.FC<EventDetailViewProps> = ({
       location: location.trim() || null,
       color: colorVal,
       is_all_day: isAllDay,
+      all_day_date: isAllDay ? dateVal : null,
       start_time_ms: startMs,
       end_time_ms: endMs,
       tags: tagsVal.length > 0 ? tagsVal : null,
@@ -332,6 +338,11 @@ export const EventDetailView: React.FC<EventDetailViewProps> = ({
   const nowMs = Date.now();
   const isHappeningNow = nowMs >= startTimeMs && nowMs <= endTimeMs;
   const isPast = nowMs > endTimeMs;
+
+  const isRecurringEvent = useMemo(() => Boolean(
+    (event.repeat_rule && event.repeat_rule !== 'none' && event.repeat_rule !== 'null') ||
+    (event.recurrence_rule && event.recurrence_rule !== 'none' && event.recurrence_rule !== 'null')
+  ), [event.repeat_rule, event.recurrence_rule]);
 
   const durationMinutes = Math.max(0, Math.round((endTimeMs - startTimeMs) / (1000 * 60)));
   const durationText = useMemo(() => {
@@ -573,18 +584,21 @@ export const EventDetailView: React.FC<EventDetailViewProps> = ({
 
           <div className="w-[1px] h-3 bg-veyra-border mx-0.5" />
 
-          {/* Quick Snooze */}
-          <button
-            type="button"
-            onClick={handleSnoozeEvent}
-            title="Posponer 1 día (+24 horas)"
-            className="px-2 py-1 rounded text-veyra-muted hover:text-veyra-text hover:bg-white/5 text-[11px] font-medium cursor-pointer transition-colors flex items-center gap-1"
-          >
-            <Clock className="w-3 h-3 text-veyra-subtle" />
-            <span>+1d</span>
-          </button>
-
-          <div className="w-[1px] h-3 bg-veyra-border mx-0.5" />
+          {/* Quick Snooze - Solo para eventos no recurrentes */}
+          {!isRecurringEvent && (
+            <>
+              <button
+                type="button"
+                onClick={handleSnoozeEvent}
+                title="Posponer 1 día (+24 horas)"
+                className="px-2 py-1 rounded text-veyra-muted hover:text-veyra-text hover:bg-white/5 text-[11px] font-medium cursor-pointer transition-colors flex items-center gap-1"
+              >
+                <Clock className="w-3 h-3 text-veyra-subtle" />
+                <span>+1d</span>
+              </button>
+              <div className="w-[1px] h-3 bg-veyra-border mx-0.5" />
+            </>
+          )}
 
           {/* Edit Button / Actions */}
           {eventsHook?.updateEvent && (

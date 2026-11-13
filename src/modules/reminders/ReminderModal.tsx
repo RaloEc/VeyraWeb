@@ -24,7 +24,7 @@ import {
 } from 'lucide-react';
 import type { Reminder, ReminderPriority, ReminderControlLevel, Subtask } from '../../types/reminders';
 import type { CalendarEvent } from '../../hooks/useEvents';
-import { parseSubtasks, cn, isImageAttachment, type AttachmentItem } from '../../lib/utils';
+import { parseSubtasks, cn, isImageAttachment, toLocalYmd, type AttachmentItem } from '../../lib/utils';
 import { uploadNoteImage } from '../../lib/storage-upload';
 
 export type ReminderAttachment = AttachmentItem;
@@ -108,7 +108,7 @@ export const ReminderModal: React.FC<ReminderModalProps> = ({
       setDescription(reminder.description || '');
       setSelectedEventId(reminder.event_id || defaultEventId || null);
       const d = new Date(reminder.due_date_ms);
-      setDateStr(d.toISOString().split('T')[0]);
+      setDateStr(toLocalYmd(d));
       setTimeStr(d.toTimeString().substring(0, 5));
       setControlLevel(
         reminder.control_level ||
@@ -157,7 +157,7 @@ export const ReminderModal: React.FC<ReminderModalProps> = ({
       // Default new reminder: today + 2 hours
       const now = new Date();
       now.setHours(now.getHours() + 2);
-      setDateStr(now.toISOString().split('T')[0]);
+      setDateStr(toLocalYmd(now));
       setTimeStr(now.toTimeString().substring(0, 5));
       setTitle('');
       setDescription('');

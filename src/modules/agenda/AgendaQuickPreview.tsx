@@ -359,6 +359,10 @@ export const AgendaQuickPreview: React.FC<AgendaQuickPreviewProps> = ({
 
     const durationStr = formatDuration(event.start_time_ms, event.end_time_ms);
     const timeRangeStr = formatTimeRange(event.start_time_ms, event.end_time_ms);
+    const isRecurring = Boolean(
+      (event.repeat_rule && event.repeat_rule !== 'none' && event.repeat_rule !== 'null') ||
+      (event.recurrence_rule && event.recurrence_rule !== 'none' && event.recurrence_rule !== 'null')
+    );
 
     const linkedNote = event.note_id
       ? allNotes.find((n) => n.id === event.note_id)
@@ -443,7 +447,7 @@ export const AgendaQuickPreview: React.FC<AgendaQuickPreviewProps> = ({
               </span>
             )}
 
-            {onSnoozeEvent && (
+            {onSnoozeEvent && !isRecurring && (
               <button
                 type="button"
                 onClick={() => onSnoozeEvent(event.id)}

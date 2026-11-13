@@ -471,9 +471,17 @@ export const AgendaSidebarView: React.FC<AgendaSidebarViewProps> = ({
         onDoubleClick={(ev) => handleEventDoubleClick(ev)}
         onDelete={(id) => eventsHook?.deleteEvent(id)}
         onSnooze={(id) => {
+          const current = events.find((e) => e.id === id);
+          if (!current) return;
+          const isRec = Boolean(
+            (current.repeat_rule && current.repeat_rule !== 'none' && current.repeat_rule !== 'null') ||
+            (current.recurrence_rule && current.recurrence_rule !== 'none' && current.recurrence_rule !== 'null')
+          );
+          if (isRec) return;
+          const oneDayMs = 24 * 60 * 60 * 1000;
           eventsHook?.updateEvent(id, {
-            start_time_ms: event.start_time_ms + 24 * 60 * 60 * 1000,
-            end_time_ms: event.end_time_ms + 24 * 60 * 60 * 1000,
+            start_time_ms: current.start_time_ms + oneDayMs,
+            end_time_ms: current.end_time_ms + oneDayMs,
           });
         }}
         onSelectNote={onSelectNote}
@@ -992,6 +1000,11 @@ export const AgendaSidebarView: React.FC<AgendaSidebarViewProps> = ({
           onSnoozeEvent={(id) => {
             const current = events.find((e) => e.id === id);
             if (current) {
+              const isRec = Boolean(
+                (current.repeat_rule && current.repeat_rule !== 'none' && current.repeat_rule !== 'null') ||
+                (current.recurrence_rule && current.recurrence_rule !== 'none' && current.recurrence_rule !== 'null')
+              );
+              if (isRec) return;
               const oneDayMs = 24 * 60 * 60 * 1000;
               eventsHook?.updateEvent(id, {
                 start_time_ms: current.start_time_ms + oneDayMs,

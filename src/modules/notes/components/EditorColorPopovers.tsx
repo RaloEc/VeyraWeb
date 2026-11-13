@@ -38,10 +38,10 @@ export const TextColorPopover: React.FC<TextColorPopoverProps> = ({
         left: coords.left,
         zIndex: 9999,
       }}
-      className="p-2.5 rounded-xl bg-white dark:bg-[#18181B] border border-slate-200 dark:border-zinc-800 shadow-xl min-w-[215px] animate-in fade-in zoom-in-95 duration-100 select-none text-xs"
+      className="p-2.5 rounded-xl bg-veyra-card/98 border border-veyra-border shadow-elevated min-w-[215px] animate-in fade-in zoom-in-95 duration-100 select-none text-xs backdrop-blur-md"
     >
       <div className="flex items-center justify-between px-1 mb-2">
-        <span className="text-[11px] font-semibold text-slate-800 dark:text-zinc-200">
+        <span className="text-[11px] font-semibold text-veyra-text">
           Color de texto
         </span>
         {currentTextColor && (
@@ -61,8 +61,8 @@ export const TextColorPopover: React.FC<TextColorPopoverProps> = ({
 
       {/* Fila de colores recientes */}
       {recentColors.length > 0 && (
-        <div className="mb-2.5 pb-2 border-b border-slate-200 dark:border-zinc-800">
-          <div className="text-[10px] font-medium text-slate-500 dark:text-zinc-400 mb-1 px-0.5">
+        <div className="mb-2.5 pb-2 border-b border-veyra-border">
+          <div className="text-[10px] font-medium text-veyra-muted mb-1 px-0.5">
             Últimos usados
           </div>
           <div className="flex items-center gap-1.5 px-0.5">
@@ -81,8 +81,8 @@ export const TextColorPopover: React.FC<TextColorPopoverProps> = ({
                   className={cn(
                     'w-6 h-6 rounded-full flex items-center justify-center transition-transform hover:scale-110 cursor-pointer border',
                     isSelected
-                      ? 'ring-2 ring-accent ring-offset-1 ring-offset-white dark:ring-offset-[#18181B] border-transparent scale-105'
-                      : 'border-slate-300 dark:border-zinc-700'
+                      ? 'ring-2 ring-accent ring-offset-1 ring-offset-veyra-card border-transparent scale-105'
+                      : 'border-veyra-border'
                   )}
                   style={{ backgroundColor: color }}
                 >
@@ -116,8 +116,8 @@ export const TextColorPopover: React.FC<TextColorPopoverProps> = ({
               className={cn(
                 'w-7 h-7 rounded-full flex items-center justify-center transition-transform hover:scale-110 cursor-pointer border',
                 isSelected
-                  ? 'ring-2 ring-accent ring-offset-1 ring-offset-white dark:ring-offset-[#18181B] border-transparent scale-105'
-                  : 'border-slate-300 dark:border-zinc-700'
+                  ? 'ring-2 ring-accent ring-offset-1 ring-offset-veyra-card border-transparent scale-105'
+                  : 'border-veyra-border'
               )}
               style={{
                 backgroundColor:
@@ -127,7 +127,7 @@ export const TextColorPopover: React.FC<TextColorPopoverProps> = ({
               }}
             >
               {item.color === 'default' ? (
-                <span className="text-[10px] font-bold text-slate-700 dark:text-zinc-300">A</span>
+                <span className="text-[10px] font-bold text-veyra-text">A</span>
               ) : isSelected ? (
                 <Check className="w-3.5 h-3.5 text-white drop-shadow-md stroke-[3]" />
               ) : null}
@@ -172,10 +172,10 @@ export const HighlightColorPopover: React.FC<HighlightColorPopoverProps> = ({
         left: coords.left,
         zIndex: 9999,
       }}
-      className="p-2.5 rounded-xl bg-white dark:bg-[#18181B] border border-slate-200 dark:border-zinc-800 shadow-xl min-w-[200px] animate-in fade-in zoom-in-95 duration-100 select-none text-xs"
+      className="p-2.5 rounded-xl bg-veyra-card/98 border border-veyra-border shadow-elevated min-w-[200px] animate-in fade-in zoom-in-95 duration-100 select-none text-xs backdrop-blur-md"
     >
       <div className="flex items-center justify-between px-1 mb-2">
-        <span className="text-[11px] font-semibold text-slate-800 dark:text-zinc-200">
+        <span className="text-[11px] font-semibold text-veyra-text">
           Marcatextos
         </span>
         {isHighlightActive && currentHighlightColor && (
@@ -195,8 +195,8 @@ export const HighlightColorPopover: React.FC<HighlightColorPopoverProps> = ({
 
       {/* Fila de colores recientes */}
       {recentColors.length > 0 && (
-        <div className="mb-2.5 pb-2 border-b border-slate-200 dark:border-zinc-800">
-          <div className="text-[10px] font-medium text-slate-500 dark:text-zinc-400 mb-1 px-0.5">
+        <div className="mb-2.5 pb-2 border-b border-veyra-border">
+          <div className="text-[10px] font-medium text-veyra-muted mb-1 px-0.5">
             Últimos usados
           </div>
           <div className="flex items-center gap-1.5 px-0.5">
@@ -216,8 +216,8 @@ export const HighlightColorPopover: React.FC<HighlightColorPopoverProps> = ({
                   className={cn(
                     'w-6 h-6 rounded-full flex items-center justify-center transition-transform hover:scale-110 cursor-pointer border',
                     isSelected
-                      ? 'ring-2 ring-accent ring-offset-1 ring-offset-white dark:ring-offset-[#18181B] border-transparent scale-105'
-                      : 'border-slate-300 dark:border-zinc-700'
+                      ? 'ring-2 ring-accent ring-offset-1 ring-offset-veyra-card border-transparent scale-105'
+                      : 'border-veyra-border'
                   )}
                   style={{ backgroundColor: color }}
                 >
@@ -253,8 +253,8 @@ export const HighlightColorPopover: React.FC<HighlightColorPopoverProps> = ({
               className={cn(
                 'w-7 h-7 rounded-full flex items-center justify-center transition-transform hover:scale-110 cursor-pointer border relative overflow-hidden',
                 isSelected
-                  ? 'ring-2 ring-accent ring-offset-1 ring-offset-white dark:ring-offset-[#18181B] border-transparent scale-105'
-                  : 'border-slate-300 dark:border-zinc-700'
+                  ? 'ring-2 ring-accent ring-offset-1 ring-offset-veyra-card border-transparent scale-105'
+                  : 'border-veyra-border'
               )}
               style={{
                 backgroundColor:

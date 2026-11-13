@@ -36,6 +36,30 @@ export function formatDate(timestampMs: number): string {
   return `${dateStr}, ${timeStr}`;
 }
 
+/**
+ * Convierte una fecha o timestamp a formato 'YYYY-MM-DD' en la zona horaria LOCAL del dispositivo,
+ * evitando el desplazamiento de día provocado por toISOString() en zonas con offset negativo (GMT-5, etc.).
+ */
+export function toLocalYmd(d: Date | number | null | undefined): string {
+  if (!d) return '';
+  const date = typeof d === 'number' ? new Date(d) : d;
+  if (isNaN(date.getTime())) return '';
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+/**
+ * Parsea un string 'YYYY-MM-DD' en hora local de forma segura sin interpretar UTC midnight.
+ */
+export function parseLocalYmd(ymd: string): { year: number; month: number; day: number } | null {
+  if (!ymd || !/^\d{4}-\d{2}-\d{2}$/.test(ymd)) return null;
+  const [year, month, day] = ymd.split('-').map(Number);
+  if (!year || !month || !day) return null;
+  return { year, month, day };
+}
+
 export function isDateToday(timestampMs: number | string): boolean {
   const ts = Number(timestampMs);
   if (!ts || isNaN(ts)) return false;

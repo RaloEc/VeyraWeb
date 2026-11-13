@@ -24,7 +24,7 @@ import {
 } from 'lucide-react';
 import type { CalendarEvent } from '../../hooks/useEvents';
 import type { Note } from '../../types/notes';
-import { cn, isImageAttachment, type AttachmentItem } from '../../lib/utils';
+import { cn, isImageAttachment, toLocalYmd, type AttachmentItem } from '../../lib/utils';
 import { getDeviceTimezone } from '../../services/recurrence/recurrenceEngine';
 import { uploadNoteImage } from '../../lib/storage-upload';
 
@@ -157,7 +157,11 @@ export const EventModal: React.FC<EventModalProps> = ({
       const startDate = new Date(s);
       const endDate = new Date(e);
 
-      setDateStr(startDate.toISOString().split('T')[0]);
+      if (event.is_all_day && event.all_day_date) {
+        setDateStr(event.all_day_date);
+      } else {
+        setDateStr(toLocalYmd(startDate));
+      }
       setStartTimeStr(startDate.toTimeString().substring(0, 5));
       setEndTimeStr(endDate.toTimeString().substring(0, 5));
 
@@ -241,7 +245,7 @@ export const EventModal: React.FC<EventModalProps> = ({
       now.setHours(now.getHours() + 1);
       const end = new Date(now.getTime() + 60 * 60 * 1000);
 
-      setDateStr(now.toISOString().split('T')[0]);
+      setDateStr(toLocalYmd(now));
       setStartTimeStr(now.toTimeString().substring(0, 5));
       setEndTimeStr(end.toTimeString().substring(0, 5));
       setTitle('');

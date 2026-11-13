@@ -336,10 +336,10 @@ export const EditorBubbleMenu: React.FC<EditorBubbleMenuProps> = ({ editor }) =>
       onClick={onClick}
       title={title}
       className={cn(
-        'p-1.5 rounded-md text-xs transition-colors cursor-pointer flex items-center justify-center',
+        'p-1.5 rounded-lg text-xs transition-colors cursor-pointer flex items-center justify-center',
         isActive
           ? 'text-accent bg-accent/15 font-semibold'
-          : 'text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-zinc-100 hover:bg-slate-100 dark:hover:bg-zinc-800'
+          : 'text-veyra-muted hover:text-veyra-text hover:bg-black/5 dark:hover:bg-white/5'
       )}
     >
       {icon}
@@ -352,7 +352,7 @@ export const EditorBubbleMenu: React.FC<EditorBubbleMenuProps> = ({ editor }) =>
         editor={editor}
         pluginKey="textBubbleMenu"
         shouldShow={shouldShowTextBubbleMenu}
-        className="flex items-center gap-0.5 p-1 rounded-lg bg-white dark:bg-[#18181b] border border-slate-200 dark:border-zinc-800 shadow-lg z-50 text-slate-700 dark:text-zinc-200 select-none"
+        className="flex items-center gap-0.5 p-1 rounded-xl bg-veyra-card/95 border border-veyra-border shadow-elevated z-50 text-veyra-text select-none backdrop-blur-md"
       >
         {btn(
           editor.isActive('bold'),
@@ -379,7 +379,7 @@ export const EditorBubbleMenu: React.FC<EditorBubbleMenuProps> = ({ editor }) =>
           'Tachado'
         )}
 
-        <div className="w-[1px] h-3.5 bg-slate-200 dark:bg-zinc-800 mx-0.5 shrink-0" />
+        <div className="w-[1px] h-3.5 bg-veyra-border mx-0.5 shrink-0" />
 
         {/* Tamaño de texto seleccionado */}
         {btn(
@@ -395,10 +395,10 @@ export const EditorBubbleMenu: React.FC<EditorBubbleMenuProps> = ({ editor }) =>
           `Disminuir tamaño de texto (${currentFontSize || '14px'} → ${getNextSmallerFontSize(currentFontSize)})`
         )}
 
-        <div className="w-[1px] h-3.5 bg-slate-200 dark:bg-zinc-800 mx-0.5 shrink-0" />
+        <div className="w-[1px] h-3.5 bg-veyra-border mx-0.5 shrink-0" />
 
         {/* Control Color de Texto (Acción Rápida + Chevron) */}
-        <div className="inline-flex items-center h-6.5 rounded p-0.5 transition-colors hover:bg-slate-100 dark:hover:bg-zinc-800 shrink-0">
+        <div className="inline-flex items-center h-6.5 rounded-lg p-0.5 transition-colors hover:bg-black/5 dark:hover:bg-white/5 shrink-0">
           <button
             type="button"
             onMouseDown={(e) => e.preventDefault()}
@@ -408,7 +408,7 @@ export const EditorBubbleMenu: React.FC<EditorBubbleMenuProps> = ({ editor }) =>
               'h-5.5 px-1 rounded flex flex-col items-center justify-center gap-0.5 cursor-pointer transition-colors',
               currentTextColor
                 ? 'text-accent font-semibold'
-                : 'text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-zinc-100'
+                : 'text-veyra-muted hover:text-veyra-text'
             )}
           >
             <Palette className="w-3 h-3" />
@@ -424,8 +424,8 @@ export const EditorBubbleMenu: React.FC<EditorBubbleMenuProps> = ({ editor }) =>
             onClick={handleToggleTextColorMenu}
             title="Elegir otro color de texto"
             className={cn(
-              'h-5.5 w-3 rounded flex items-center justify-center cursor-pointer transition-colors text-slate-500 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-zinc-100 hover:bg-slate-200/60 dark:hover:bg-zinc-700/60',
-              isTextColorMenuOpen && 'bg-slate-200/60 dark:bg-zinc-700/60 text-slate-900 dark:text-zinc-100'
+              'h-5.5 w-3 rounded flex items-center justify-center cursor-pointer transition-colors text-veyra-muted hover:text-veyra-text hover:bg-black/10 dark:hover:bg-white/10',
+              isTextColorMenuOpen && 'bg-black/10 dark:bg-white/10 text-veyra-text'
             )}
           >
             <ChevronDown
@@ -438,7 +438,7 @@ export const EditorBubbleMenu: React.FC<EditorBubbleMenuProps> = ({ editor }) =>
         </div>
 
         {/* Control Marcatextos / Resaltado (Acción Rápida + Chevron) */}
-        <div className="inline-flex items-center h-6.5 rounded p-0.5 transition-colors hover:bg-slate-100 dark:hover:bg-zinc-800 shrink-0">
+        <div className="inline-flex items-center h-6.5 rounded-lg p-0.5 transition-colors hover:bg-black/5 dark:hover:bg-white/5 shrink-0">
           <button
             type="button"
             onMouseDown={(e) => e.preventDefault()}
@@ -448,7 +448,7 @@ export const EditorBubbleMenu: React.FC<EditorBubbleMenuProps> = ({ editor }) =>
               'h-5.5 px-1 rounded flex flex-col items-center justify-center gap-0.5 cursor-pointer transition-colors',
               isHighlightActive
                 ? 'text-accent font-semibold'
-                : 'text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-zinc-100'
+                : 'text-veyra-muted hover:text-veyra-text'
             )}
           >
             <Highlighter className="w-3 h-3" />
@@ -464,8 +464,8 @@ export const EditorBubbleMenu: React.FC<EditorBubbleMenuProps> = ({ editor }) =>
             onClick={handleToggleHighlightMenu}
             title="Elegir otro color de resaltado"
             className={cn(
-              'h-5.5 w-3 rounded flex items-center justify-center cursor-pointer transition-colors text-slate-500 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-zinc-100 hover:bg-slate-200/60 dark:hover:bg-zinc-700/60',
-              isHighlightMenuOpen && 'bg-slate-200/60 dark:bg-zinc-700/60 text-slate-900 dark:text-zinc-100'
+              'h-5.5 w-3 rounded flex items-center justify-center cursor-pointer transition-colors text-veyra-muted hover:text-veyra-text hover:bg-black/10 dark:hover:bg-white/10',
+              isHighlightMenuOpen && 'bg-black/10 dark:bg-white/10 text-veyra-text'
             )}
           >
             <ChevronDown
@@ -477,7 +477,7 @@ export const EditorBubbleMenu: React.FC<EditorBubbleMenuProps> = ({ editor }) =>
           </button>
         </div>
 
-        <div className="w-[1px] h-3.5 bg-slate-200 dark:bg-zinc-800 mx-0.5 shrink-0" />
+        <div className="w-[1px] h-3.5 bg-veyra-border mx-0.5 shrink-0" />
 
         {btn(
           editor.isActive('code'),

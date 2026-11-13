@@ -91,6 +91,11 @@ export const EventCard: React.FC<EventCardProps> = ({
   const now = Date.now();
   const isHappeningNow = now >= event.start_time_ms && now <= event.end_time_ms;
 
+  const isRecurring = Boolean(
+    (event.repeat_rule && event.repeat_rule !== 'none' && event.repeat_rule !== 'null') ||
+    (event.recurrence_rule && event.recurrence_rule !== 'none' && event.recurrence_rule !== 'null')
+  );
+
   const durationStr = formatDuration(event.start_time_ms, event.end_time_ms);
   const timeRangeStr = formatTimeRange(event.start_time_ms, event.end_time_ms);
 
@@ -190,14 +195,14 @@ export const EventCard: React.FC<EventCardProps> = ({
                 </button>
               )}
 
-              {onSnooze && (
+              {onSnooze && !isRecurring && (
                 <button
                   type="button"
                   onClick={(e) => {
                     e.stopPropagation();
                     onSnooze(event.id);
                   }}
-                  title="Posponer 1 día"
+                  title="Posponer 1 día (+24h)"
                   className="p-0.5 rounded text-slate-400 hover:text-white transition-colors"
                 >
                   <CalendarPlus className="w-3 h-3" />

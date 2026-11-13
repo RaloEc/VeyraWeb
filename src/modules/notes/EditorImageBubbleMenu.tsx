@@ -31,7 +31,13 @@ export interface EditorImageBubbleMenuProps {
   currentUserId?: string | null;
 }
 
-const shouldShowImageBubbleMenu = ({ editor }: { editor: Editor }) => editor.isActive('image');
+const shouldShowImageBubbleMenu = ({ editor }: { editor: Editor }) => {
+  if (!editor || editor.isDestroyed || !editor.isActive('image')) return false;
+  // Ocultar si está en modo de recorte inline para no superponer herramientas
+  const storage = editor.storage.image;
+  if (storage?.croppingPos != null) return false;
+  return true;
+};
 
 export const EditorImageBubbleMenu: React.FC<EditorImageBubbleMenuProps> = ({
   editor,
@@ -98,6 +104,13 @@ export const EditorImageBubbleMenu: React.FC<EditorImageBubbleMenuProps> = ({
       // Para borrar, el usuario entra, borra el texto y hace blur
       editor.commands.setCaptionEditing(selection.from);
     }
+  };
+
+  // Iniciar recorte inline
+  const handleStartCrop = () => {
+    const { selection } = editor.state;
+    if (!(selection instanceof NodeSelection)) return;
+    editor.commands.setCropEditing(selection.from);
   };
 
   // Reemplazar imagen
@@ -216,7 +229,7 @@ export const EditorImageBubbleMenu: React.FC<EditorImageBubbleMenuProps> = ({
       editor={editor}
       pluginKey="imageBubbleMenu"
       shouldShow={shouldShowImageBubbleMenu}
-      className="flex items-center gap-0.5 p-1 rounded-lg bg-white dark:bg-[#18181b] border border-slate-200 dark:border-zinc-800 shadow-lg z-50 text-slate-700 dark:text-zinc-200 text-xs select-none"
+      className="flex items-center gap-0.5 p-1 rounded-xl bg-veyra-card/95 border border-veyra-border shadow-elevated z-50 text-veyra-text text-xs select-none backdrop-blur-md"
     >
       <input
         ref={fileInputRef}
@@ -233,10 +246,10 @@ export const EditorImageBubbleMenu: React.FC<EditorImageBubbleMenuProps> = ({
         onClick={() => handleSetAlign('left')}
         title="Alinear a la izquierda"
         className={cn(
-          'p-1.5 rounded transition-colors cursor-pointer flex items-center justify-center',
+          'p-1.5 rounded-lg transition-colors cursor-pointer flex items-center justify-center',
           currentAlign === 'left'
             ? 'text-accent bg-accent/15 font-semibold'
-            : 'text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-zinc-100 hover:bg-slate-100 dark:hover:bg-zinc-800'
+            : 'text-veyra-muted hover:text-veyra-text hover:bg-black/5 dark:hover:bg-white/5'
         )}
       >
         <AlignLeft className="w-3.5 h-3.5" />
@@ -248,10 +261,10 @@ export const EditorImageBubbleMenu: React.FC<EditorImageBubbleMenuProps> = ({
         onClick={() => handleSetAlign('center')}
         title="Centrar"
         className={cn(
-          'p-1.5 rounded transition-colors cursor-pointer flex items-center justify-center',
+          'p-1.5 rounded-lg transition-colors cursor-pointer flex items-center justify-center',
           currentAlign === 'center'
             ? 'text-accent bg-accent/15 font-semibold'
-            : 'text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-zinc-100 hover:bg-slate-100 dark:hover:bg-zinc-800'
+            : 'text-veyra-muted hover:text-veyra-text hover:bg-black/5 dark:hover:bg-white/5'
         )}
       >
         <AlignCenter className="w-3.5 h-3.5" />
@@ -263,16 +276,16 @@ export const EditorImageBubbleMenu: React.FC<EditorImageBubbleMenuProps> = ({
         onClick={() => handleSetAlign('right')}
         title="Alinear a la derecha"
         className={cn(
-          'p-1.5 rounded transition-colors cursor-pointer flex items-center justify-center',
+          'p-1.5 rounded-lg transition-colors cursor-pointer flex items-center justify-center',
           currentAlign === 'right'
             ? 'text-accent bg-accent/15 font-semibold'
-            : 'text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-zinc-100 hover:bg-slate-100 dark:hover:bg-zinc-800'
+            : 'text-veyra-muted hover:text-veyra-text hover:bg-black/5 dark:hover:bg-white/5'
         )}
       >
         <AlignRight className="w-3.5 h-3.5" />
       </button>
 
-      <div className="w-[1px] h-3.5 bg-slate-200 dark:bg-zinc-800 mx-1" />
+      <div className="w-[1px] h-3.5 bg-veyra-border mx-1 shrink-0" />
 
       {/* Presets de tamaño */}
       {presets.map((pct) => {
@@ -285,10 +298,10 @@ export const EditorImageBubbleMenu: React.FC<EditorImageBubbleMenuProps> = ({
             onMouseDown={(e) => e.preventDefault()}
             onClick={() => handleSetWidth(pct)}
             className={cn(
-              'px-1.5 py-1 rounded text-[11px] font-medium transition-colors cursor-pointer',
+              'px-1.5 py-1 rounded-md text-[11px] font-medium transition-colors cursor-pointer',
               isSelected
                 ? 'text-accent bg-accent/15 font-semibold'
-                : 'text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-zinc-100 hover:bg-slate-100 dark:hover:bg-zinc-800'
+                : 'text-veyra-muted hover:text-veyra-text hover:bg-black/5 dark:hover:bg-white/5'
             )}
             title={`Ajustar a ${pct}%`}
           >
@@ -297,7 +310,7 @@ export const EditorImageBubbleMenu: React.FC<EditorImageBubbleMenuProps> = ({
         );
       })}
 
-      <div className="w-[1px] h-3.5 bg-slate-200 dark:bg-zinc-800 mx-1" />
+      <div className="w-[1px] h-3.5 bg-veyra-border mx-1 shrink-0" />
 
       {/* Pie de foto */}
       <button
@@ -306,10 +319,10 @@ export const EditorImageBubbleMenu: React.FC<EditorImageBubbleMenuProps> = ({
         onClick={handleToggleCaption}
         title={hasCaptionContent ? 'Editar pie de foto' : 'Añadir pie de foto'}
         className={cn(
-          'p-1.5 rounded transition-colors cursor-pointer flex items-center justify-center',
+          'p-1.5 rounded-lg transition-colors cursor-pointer flex items-center justify-center',
           isCaptionActive
             ? 'text-accent bg-accent/15 font-semibold'
-            : 'text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-zinc-100 hover:bg-slate-100 dark:hover:bg-zinc-800'
+            : 'text-veyra-muted hover:text-veyra-text hover:bg-black/5 dark:hover:bg-white/5'
         )}
       >
         <Subtitles className="w-3.5 h-3.5" />
@@ -322,7 +335,7 @@ export const EditorImageBubbleMenu: React.FC<EditorImageBubbleMenuProps> = ({
         disabled={isUploading}
         onClick={handleReplaceClick}
         title="Reemplazar imagen"
-        className="p-1.5 rounded text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-zinc-100 hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer flex items-center justify-center disabled:opacity-50"
+        className="p-1.5 rounded-lg text-veyra-muted hover:text-veyra-text hover:bg-black/5 dark:hover:bg-white/5 transition-colors cursor-pointer flex items-center justify-center disabled:opacity-40"
       >
         {isUploading ? (
           <Loader2 className="w-3.5 h-3.5 animate-spin text-accent" />
@@ -337,7 +350,7 @@ export const EditorImageBubbleMenu: React.FC<EditorImageBubbleMenuProps> = ({
         onMouseDown={(e) => e.preventDefault()}
         onClick={handleDownload}
         title="Descargar imagen"
-        className="p-1.5 rounded text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-zinc-100 hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer flex items-center justify-center"
+        className="p-1.5 rounded-lg text-veyra-muted hover:text-veyra-text hover:bg-black/5 dark:hover:bg-white/5 transition-colors cursor-pointer flex items-center justify-center"
       >
         <Download className="w-3.5 h-3.5" />
       </button>
@@ -348,7 +361,7 @@ export const EditorImageBubbleMenu: React.FC<EditorImageBubbleMenuProps> = ({
         onMouseDown={(e) => e.preventDefault()}
         onClick={handleCopyImage}
         title="Copiar imagen (Ctrl+C)"
-        className="p-1.5 rounded text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-zinc-100 hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer flex items-center justify-center"
+        className="p-1.5 rounded-lg text-veyra-muted hover:text-veyra-text hover:bg-black/5 dark:hover:bg-white/5 transition-colors cursor-pointer flex items-center justify-center"
       >
         <Copy className="w-3.5 h-3.5" />
       </button>
@@ -359,20 +372,26 @@ export const EditorImageBubbleMenu: React.FC<EditorImageBubbleMenuProps> = ({
         onMouseDown={(e) => e.preventDefault()}
         onClick={handleCutImage}
         title="Cortar imagen (Ctrl+X)"
-        className="p-1.5 rounded text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-zinc-100 hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer flex items-center justify-center"
+        className="p-1.5 rounded-lg text-veyra-muted hover:text-veyra-text hover:bg-black/5 dark:hover:bg-white/5 transition-colors cursor-pointer flex items-center justify-center"
       >
         <Scissors className="w-3.5 h-3.5" />
       </button>
 
-      <div className="w-[1px] h-3.5 bg-slate-200 dark:bg-zinc-800 mx-1" />
+      <div className="w-[1px] h-3.5 bg-veyra-border mx-1 shrink-0" />
 
-      {/* Controles avanzados de transformación (Fase 2) */}
+      {/* Recorte inline */}
       <button
         type="button"
         onMouseDown={(e) => e.preventDefault()}
-        disabled={true}
-        title={isImageGif ? 'GIFs no admiten recorte' : 'Recorte inline (Fase 2)'}
-        className="p-1.5 rounded text-veyra-subtle cursor-not-allowed opacity-50 flex items-center justify-center"
+        disabled={isImageGif}
+        onClick={handleStartCrop}
+        title={isImageGif ? 'GIFs no admiten recorte' : 'Recortar imagen'}
+        className={cn(
+          'p-1.5 rounded-lg transition-colors cursor-pointer flex items-center justify-center',
+          isImageGif
+            ? 'text-veyra-subtle cursor-not-allowed opacity-40'
+            : 'text-veyra-muted hover:text-veyra-text hover:bg-black/5 dark:hover:bg-white/5'
+        )}
       >
         <Crop className="w-3.5 h-3.5" />
       </button>
@@ -382,7 +401,7 @@ export const EditorImageBubbleMenu: React.FC<EditorImageBubbleMenuProps> = ({
         onMouseDown={(e) => e.preventDefault()}
         disabled={true}
         title={isImageGif ? 'GIFs no admiten rotación' : 'Rotar 90° (Fase 2)'}
-        className="p-1.5 rounded text-veyra-subtle cursor-not-allowed opacity-50 flex items-center justify-center"
+        className="p-1.5 rounded-lg text-veyra-subtle cursor-not-allowed opacity-40 flex items-center justify-center"
       >
         <RotateCw className="w-3.5 h-3.5" />
       </button>
@@ -392,21 +411,21 @@ export const EditorImageBubbleMenu: React.FC<EditorImageBubbleMenuProps> = ({
         onMouseDown={(e) => e.preventDefault()}
         disabled={true}
         title={isImageGif ? 'GIFs no admiten volteo' : 'Volteo horizontal (Fase 2)'}
-        className="p-1.5 rounded text-veyra-subtle cursor-not-allowed opacity-50 flex items-center justify-center"
+        className="p-1.5 rounded-lg text-veyra-subtle cursor-not-allowed opacity-40 flex items-center justify-center"
       >
         <FlipHorizontal className="w-3.5 h-3.5" />
       </button>
 
       {isImageGif && (
         <span
-          className="text-[10px] text-amber-400/80 px-1 flex items-center gap-0.5"
+          className="text-[10px] text-amber-500/90 dark:text-amber-400/80 px-1 flex items-center gap-0.5"
           title="Los GIFs animados no admiten transformaciones destructivas"
         >
           <AlertCircle className="w-3 h-3" /> GIF
         </span>
       )}
 
-      <div className="w-[1px] h-3.5 bg-veyra-border mx-1" />
+      <div className="w-[1px] h-3.5 bg-veyra-border mx-1 shrink-0" />
 
       {/* Eliminar con confirmación rápida */}
       <button
@@ -415,10 +434,10 @@ export const EditorImageBubbleMenu: React.FC<EditorImageBubbleMenuProps> = ({
         onClick={handleDelete}
         title={confirmDelete ? 'Haz clic para confirmar eliminación' : 'Eliminar imagen'}
         className={cn(
-          'p-1.5 rounded transition-all cursor-pointer flex items-center gap-1',
+          'p-1.5 rounded-lg transition-all cursor-pointer flex items-center gap-1',
           confirmDelete
-            ? 'bg-red-500/20 text-red-400 font-medium px-2'
-            : 'text-veyra-muted hover:text-red-400 hover:bg-red-500/10'
+            ? 'bg-red-500/20 text-red-600 dark:text-red-400 font-medium px-2'
+            : 'text-veyra-muted hover:text-red-600 dark:hover:text-red-400 hover:bg-red-500/10'
         )}
       >
         <Trash2 className="w-3.5 h-3.5" />

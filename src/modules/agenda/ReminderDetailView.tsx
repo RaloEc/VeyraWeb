@@ -24,7 +24,7 @@ import type { Note } from '../../types/notes';
 import type { useReminders } from '../../hooks/useReminders';
 import type { useEvents } from '../../hooks/useEvents';
 import { useTheme } from '../../theme/ThemeProvider';
-import { cn, isDateToday, isDateOverdue, parseSubtasks, isImageAttachment, parseAttachments } from '../../lib/utils';
+import { cn, isDateToday, isDateOverdue, parseSubtasks, isImageAttachment, parseAttachments, toLocalYmd } from '../../lib/utils';
 import { ConfirmTooltip } from '../../components/common/ConfirmTooltip';
 
 export interface ReminderDetailViewProps {
@@ -71,11 +71,11 @@ export const ReminderDetailView: React.FC<ReminderDetailViewProps> = ({
     );
     if (reminder.due_date_ms) {
       const d = new Date(reminder.due_date_ms);
-      setDateVal(d.toISOString().split('T')[0]);
+      setDateVal(toLocalYmd(d));
       setTimeVal(d.toTimeString().substring(0, 5));
     } else {
       const d = new Date();
-      setDateVal(d.toISOString().split('T')[0]);
+      setDateVal(toLocalYmd(d));
       setTimeVal(d.toTimeString().substring(0, 5));
     }
   };

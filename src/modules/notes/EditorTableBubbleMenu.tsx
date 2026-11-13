@@ -373,7 +373,7 @@ export const EditorTableBubbleMenu: React.FC<EditorTableBubbleMenuProps> = ({ ed
         shouldShow={shouldShowTableBubbleMenu}
         getReferencedVirtualElement={getTableVirtualElement}
         options={TABLE_BUBBLE_MENU_OPTIONS}
-        className="flex items-center gap-1 p-1 rounded-xl bg-white dark:bg-[#18181b] border border-slate-200 dark:border-zinc-800 shadow-xl z-50 text-slate-700 dark:text-zinc-200 text-xs select-none"
+        className="flex items-center gap-1 p-1 rounded-xl bg-veyra-card/95 border border-veyra-border shadow-elevated z-50 text-veyra-text text-xs select-none backdrop-blur-md"
       >
         {/* Botón Combinar Celdas */}
         {tableInfo.canMergeSelection ? (
@@ -384,7 +384,7 @@ export const EditorTableBubbleMenu: React.FC<EditorTableBubbleMenuProps> = ({ ed
             onMouseDown={(e) => e.preventDefault()}
             onClick={handleMergeSelection}
             title={`Combinar las ${selectedCellCount} celdas seleccionadas`}
-            className="h-7 px-2.5 rounded-lg font-medium text-xs bg-accent text-white hover:bg-accent/90 shadow-sm flex items-center gap-1.5 cursor-pointer transition-all active:scale-95 shrink-0"
+            className="h-7 px-2.5 rounded-lg font-medium text-xs bg-accent text-white hover:bg-accent/90 shadow-xs flex items-center gap-1.5 cursor-pointer transition-all active:scale-95 shrink-0"
           >
             <Combine className="w-3.5 h-3.5" />
             <span>Combinar</span>
@@ -435,14 +435,14 @@ export const EditorTableBubbleMenu: React.FC<EditorTableBubbleMenuProps> = ({ ed
             'h-7 px-2 rounded-lg font-medium text-xs transition-colors flex items-center gap-1 shrink-0',
             tableInfo.canSplit
               ? 'bg-accent/15 text-accent hover:bg-accent/25 cursor-pointer shadow-xs'
-              : 'text-slate-400 dark:text-zinc-600 cursor-not-allowed opacity-40'
+              : 'text-veyra-subtle cursor-not-allowed opacity-40'
           )}
         >
           <Split className="w-3.5 h-3.5" />
           <span>Dividir</span>
         </button>
 
-        <div className="w-[1px] h-4 bg-slate-200 dark:bg-zinc-800 mx-0.5 shrink-0" />
+        <div className="w-[1px] h-4 bg-veyra-border mx-0.5 shrink-0" />
 
         {/* Filas: Agregar y Eliminar */}
         <div className="inline-flex items-center gap-0.5">
@@ -451,7 +451,7 @@ export const EditorTableBubbleMenu: React.FC<EditorTableBubbleMenuProps> = ({ ed
             onMouseDown={(e) => e.preventDefault()}
             onClick={() => editor.chain().focus().addRowBefore().run()}
             title="Añadir fila arriba"
-            className="h-7 w-7 rounded-lg text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-zinc-100 hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer flex items-center justify-center shrink-0"
+            className="h-7 w-7 rounded-lg text-veyra-muted hover:text-veyra-text hover:bg-black/5 dark:hover:bg-white/5 transition-colors cursor-pointer flex items-center justify-center shrink-0"
           >
             <div className="relative">
               <Rows className="w-3.5 h-3.5" />
@@ -463,7 +463,7 @@ export const EditorTableBubbleMenu: React.FC<EditorTableBubbleMenuProps> = ({ ed
             onMouseDown={(e) => e.preventDefault()}
             onClick={() => editor.chain().focus().addRowAfter().run()}
             title="Añadir fila abajo (o pulsa Ctrl+Enter / Shift+Enter)"
-            className="h-7 w-7 rounded-lg text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-zinc-100 hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer flex items-center justify-center shrink-0"
+            className="h-7 w-7 rounded-lg text-veyra-muted hover:text-veyra-text hover:bg-black/5 dark:hover:bg-white/5 transition-colors cursor-pointer flex items-center justify-center shrink-0"
           >
             <div className="relative">
               <Rows className="w-3.5 h-3.5" />
@@ -475,7 +475,7 @@ export const EditorTableBubbleMenu: React.FC<EditorTableBubbleMenuProps> = ({ ed
             onMouseDown={(e) => e.preventDefault()}
             onClick={() => editor.chain().focus().deleteRow().run()}
             title="Eliminar fila actual"
-            className="h-7 w-7 rounded-lg text-slate-600 dark:text-zinc-400 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/30 transition-colors cursor-pointer flex items-center justify-center shrink-0"
+            className="h-7 w-7 rounded-lg text-veyra-muted hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/30 transition-colors cursor-pointer flex items-center justify-center shrink-0"
           >
             <div className="relative">
               <Rows className="w-3.5 h-3.5" />
@@ -484,7 +484,7 @@ export const EditorTableBubbleMenu: React.FC<EditorTableBubbleMenuProps> = ({ ed
           </button>
         </div>
 
-        <div className="w-[1px] h-4 bg-slate-200 dark:bg-zinc-800 mx-0.5 shrink-0" />
+        <div className="w-[1px] h-4 bg-veyra-border mx-0.5 shrink-0" />
 
         {/* Columnas: Agregar y Eliminar */}
         <div className="inline-flex items-center gap-0.5">
@@ -493,7 +493,7 @@ export const EditorTableBubbleMenu: React.FC<EditorTableBubbleMenuProps> = ({ ed
             onMouseDown={(e) => e.preventDefault()}
             onClick={() => editor.chain().focus().addColumnBefore().run()}
             title="Añadir columna a la izquierda"
-            className="h-7 w-7 rounded-lg text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-zinc-100 hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer flex items-center justify-center shrink-0"
+            className="h-7 w-7 rounded-lg text-veyra-muted hover:text-veyra-text hover:bg-black/5 dark:hover:bg-white/5 transition-colors cursor-pointer flex items-center justify-center shrink-0"
           >
             <div className="relative">
               <Columns className="w-3.5 h-3.5" />
@@ -505,7 +505,7 @@ export const EditorTableBubbleMenu: React.FC<EditorTableBubbleMenuProps> = ({ ed
             onMouseDown={(e) => e.preventDefault()}
             onClick={() => editor.chain().focus().addColumnAfter().run()}
             title="Añadir columna a la derecha"
-            className="h-7 w-7 rounded-lg text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-zinc-100 hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer flex items-center justify-center shrink-0"
+            className="h-7 w-7 rounded-lg text-veyra-muted hover:text-veyra-text hover:bg-black/5 dark:hover:bg-white/5 transition-colors cursor-pointer flex items-center justify-center shrink-0"
           >
             <div className="relative">
               <Columns className="w-3.5 h-3.5" />
@@ -517,7 +517,7 @@ export const EditorTableBubbleMenu: React.FC<EditorTableBubbleMenuProps> = ({ ed
             onMouseDown={(e) => e.preventDefault()}
             onClick={() => editor.chain().focus().deleteColumn().run()}
             title="Eliminar columna actual"
-            className="h-7 w-7 rounded-lg text-slate-600 dark:text-zinc-400 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/30 transition-colors cursor-pointer flex items-center justify-center shrink-0"
+            className="h-7 w-7 rounded-lg text-veyra-muted hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/30 transition-colors cursor-pointer flex items-center justify-center shrink-0"
           >
             <div className="relative">
               <Columns className="w-3.5 h-3.5" />
@@ -526,7 +526,7 @@ export const EditorTableBubbleMenu: React.FC<EditorTableBubbleMenuProps> = ({ ed
           </button>
         </div>
 
-        <div className="w-[1px] h-4 bg-slate-200 dark:bg-zinc-800 mx-0.5 shrink-0" />
+        <div className="w-[1px] h-4 bg-veyra-border mx-0.5 shrink-0" />
 
         {/* Color de Fondo de Celda */}
         <button
@@ -536,8 +536,8 @@ export const EditorTableBubbleMenu: React.FC<EditorTableBubbleMenuProps> = ({ ed
           onClick={handleToggleColorMenu}
           title="Color de fondo de celda(s)"
           className={cn(
-            'h-7 px-1.5 rounded-lg text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-zinc-100 hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer flex items-center gap-1 shrink-0',
-            isColorMenuOpen && 'bg-slate-200/60 dark:bg-zinc-700/60 text-slate-900 dark:text-zinc-100'
+            'h-7 px-1.5 rounded-lg text-veyra-muted hover:text-veyra-text hover:bg-black/5 dark:hover:bg-white/5 transition-colors cursor-pointer flex items-center gap-1 shrink-0',
+            isColorMenuOpen && 'bg-black/10 dark:bg-white/10 text-veyra-text'
           )}
         >
           <Palette className="w-3.5 h-3.5" />
@@ -552,8 +552,8 @@ export const EditorTableBubbleMenu: React.FC<EditorTableBubbleMenuProps> = ({ ed
           onClick={handleToggleStyleMenu}
           title="Personalizar estilo y bordes de la tabla"
           className={cn(
-            'h-7 px-2 rounded-lg text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-zinc-100 hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer flex items-center gap-1 shrink-0',
-            isStyleMenuOpen && 'bg-slate-200/60 dark:bg-zinc-700/60 text-slate-900 dark:text-zinc-100'
+            'h-7 px-2 rounded-lg text-veyra-muted hover:text-veyra-text hover:bg-black/5 dark:hover:bg-white/5 transition-colors cursor-pointer flex items-center gap-1 shrink-0',
+            isStyleMenuOpen && 'bg-black/10 dark:bg-white/10 text-veyra-text'
           )}
         >
           <TableProperties className="w-3.5 h-3.5 text-accent" />
@@ -567,7 +567,7 @@ export const EditorTableBubbleMenu: React.FC<EditorTableBubbleMenuProps> = ({ ed
           onMouseDown={(e) => e.preventDefault()}
           onClick={() => editor.chain().focus().toggleHeaderRow().run()}
           title="Alternar fila de encabezado"
-          className="h-7 px-2 rounded-lg text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-zinc-100 hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer flex items-center justify-center font-bold text-[11px] shrink-0"
+          className="h-7 px-2 rounded-lg text-veyra-muted hover:text-veyra-text hover:bg-black/5 dark:hover:bg-white/5 transition-colors cursor-pointer flex items-center justify-center font-bold text-[11px] shrink-0"
         >
           TH
         </button>
@@ -579,7 +579,7 @@ export const EditorTableBubbleMenu: React.FC<EditorTableBubbleMenuProps> = ({ ed
             onMouseDown={(e) => e.preventDefault()}
             onClick={() => editor.chain().focus().setTextAlign('left').run()}
             title="Alinear texto de celda a la izquierda"
-            className="h-7 w-7 rounded-lg text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-zinc-100 hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer flex items-center justify-center shrink-0"
+            className="h-7 w-7 rounded-lg text-veyra-muted hover:text-veyra-text hover:bg-black/5 dark:hover:bg-white/5 transition-colors cursor-pointer flex items-center justify-center shrink-0"
           >
             <AlignLeft className="w-3.5 h-3.5" />
           </button>
@@ -588,7 +588,7 @@ export const EditorTableBubbleMenu: React.FC<EditorTableBubbleMenuProps> = ({ ed
             onMouseDown={(e) => e.preventDefault()}
             onClick={() => editor.chain().focus().setTextAlign('center').run()}
             title="Centrar texto de celda"
-            className="h-7 w-7 rounded-lg text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-zinc-100 hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer flex items-center justify-center shrink-0"
+            className="h-7 w-7 rounded-lg text-veyra-muted hover:text-veyra-text hover:bg-black/5 dark:hover:bg-white/5 transition-colors cursor-pointer flex items-center justify-center shrink-0"
           >
             <AlignCenter className="w-3.5 h-3.5" />
           </button>
@@ -597,13 +597,13 @@ export const EditorTableBubbleMenu: React.FC<EditorTableBubbleMenuProps> = ({ ed
             onMouseDown={(e) => e.preventDefault()}
             onClick={() => editor.chain().focus().setTextAlign('right').run()}
             title="Alinear texto de celda a la derecha"
-            className="h-7 w-7 rounded-lg text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-zinc-100 hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer flex items-center justify-center shrink-0"
+            className="h-7 w-7 rounded-lg text-veyra-muted hover:text-veyra-text hover:bg-black/5 dark:hover:bg-white/5 transition-colors cursor-pointer flex items-center justify-center shrink-0"
           >
             <AlignRight className="w-3.5 h-3.5" />
           </button>
         </div>
 
-        <div className="w-[1px] h-4 bg-slate-200 dark:bg-zinc-800 mx-0.5 shrink-0" />
+        <div className="w-[1px] h-4 bg-veyra-border mx-0.5 shrink-0" />
 
         {/* Eliminar tabla con confirmación */}
         <button
@@ -615,7 +615,7 @@ export const EditorTableBubbleMenu: React.FC<EditorTableBubbleMenuProps> = ({ ed
             'h-7 px-2 rounded-lg transition-all cursor-pointer flex items-center gap-1 shrink-0',
             confirmDelete
               ? 'bg-rose-500/20 text-rose-500 font-medium px-2.5'
-              : 'text-slate-600 dark:text-zinc-400 hover:text-rose-500 hover:bg-rose-500/10'
+              : 'text-veyra-muted hover:text-rose-500 hover:bg-rose-500/10'
           )}
         >
           <Trash2 className="w-3.5 h-3.5" />
@@ -634,7 +634,7 @@ export const EditorTableBubbleMenu: React.FC<EditorTableBubbleMenuProps> = ({ ed
               left: `${mergeCoords.left}px`,
               zIndex: 9999,
             }}
-            className="p-2 w-[220px] rounded-xl bg-white dark:bg-[#18181b] border border-slate-200 dark:border-zinc-800 shadow-2xl text-xs space-y-1 text-slate-800 dark:text-zinc-200 select-none animate-in fade-in zoom-in-95 duration-100"
+            className="p-2 w-[220px] rounded-xl bg-veyra-card/98 border border-veyra-border shadow-elevated text-xs space-y-1 text-veyra-text select-none animate-in fade-in zoom-in-95 duration-100 backdrop-blur-md"
           >
             <div className="px-2 pt-0.5 pb-1 text-[10px] font-bold text-accent uppercase tracking-wider">
               Combinar celdas
@@ -652,15 +652,15 @@ export const EditorTableBubbleMenu: React.FC<EditorTableBubbleMenuProps> = ({ ed
               className={cn(
                 'w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg transition-colors text-left',
                 tableInfo.canMergeRight
-                  ? 'hover:bg-slate-100 dark:hover:bg-zinc-800 text-slate-700 dark:text-zinc-200 cursor-pointer font-medium'
-                  : 'opacity-40 cursor-not-allowed text-slate-400 dark:text-zinc-600'
+                  ? 'hover:bg-black/5 dark:hover:bg-white/5 text-veyra-text cursor-pointer font-medium'
+                  : 'opacity-40 cursor-not-allowed text-veyra-subtle'
               )}
             >
               <div className="flex items-center gap-2">
                 <ArrowRight className="w-3.5 h-3.5 text-accent" />
                 <span>Unir con la derecha</span>
               </div>
-              <span className="text-[10px] text-slate-400 dark:text-zinc-500 font-mono">Columna</span>
+              <span className="text-[10px] text-veyra-muted font-mono">Columna</span>
             </button>
 
             {/* Opción 2: Combinar con la celda inferior */}
@@ -675,20 +675,20 @@ export const EditorTableBubbleMenu: React.FC<EditorTableBubbleMenuProps> = ({ ed
               className={cn(
                 'w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg transition-colors text-left',
                 tableInfo.canMergeBelow
-                  ? 'hover:bg-slate-100 dark:hover:bg-zinc-800 text-slate-700 dark:text-zinc-200 cursor-pointer font-medium'
-                  : 'opacity-40 cursor-not-allowed text-slate-400 dark:text-zinc-600'
+                  ? 'hover:bg-black/5 dark:hover:bg-white/5 text-veyra-text cursor-pointer font-medium'
+                  : 'opacity-40 cursor-not-allowed text-veyra-subtle'
               )}
             >
               <div className="flex items-center gap-2">
                 <ArrowDown className="w-3.5 h-3.5 text-accent" />
                 <span>Unir con la de abajo</span>
               </div>
-              <span className="text-[10px] text-slate-400 dark:text-zinc-500 font-mono">Fila</span>
+              <span className="text-[10px] text-veyra-muted font-mono">Fila</span>
             </button>
 
-            <div className="h-[1px] bg-slate-100 dark:bg-zinc-800 my-1" />
+            <div className="h-[1px] bg-veyra-border my-1" />
 
-            <div className="px-2 py-0.5 text-[10px] text-slate-500 dark:text-zinc-400 leading-snug">
+            <div className="px-2 py-0.5 text-[10px] text-veyra-muted leading-snug">
               💡 Tip: Arrastra el cursor sobre dos o más celdas para seleccionarlas y combinarlas con 1 clic.
             </div>
           </div>,
@@ -706,9 +706,9 @@ export const EditorTableBubbleMenu: React.FC<EditorTableBubbleMenuProps> = ({ ed
               left: `${colorCoords.left}px`,
               zIndex: 9999,
             }}
-            className="p-2 w-[190px] rounded-xl bg-white dark:bg-[#18181b] border border-slate-200 dark:border-zinc-800 shadow-2xl text-xs space-y-1.5 text-slate-800 dark:text-zinc-200 select-none animate-in fade-in zoom-in-95 duration-100"
+            className="p-2 w-[190px] rounded-xl bg-veyra-card/98 border border-veyra-border shadow-elevated text-xs space-y-1.5 text-veyra-text select-none animate-in fade-in zoom-in-95 duration-100 backdrop-blur-md"
           >
-            <div className="px-1 text-[10px] font-semibold text-slate-400 dark:text-zinc-500 uppercase tracking-wider">
+            <div className="px-1 text-[10px] font-semibold text-veyra-muted uppercase tracking-wider">
               Fondo de celda
             </div>
             <div className="grid grid-cols-4 gap-1.5 pt-1">
@@ -720,7 +720,7 @@ export const EditorTableBubbleMenu: React.FC<EditorTableBubbleMenuProps> = ({ ed
                   onClick={() => handleSetCellColor(item.value)}
                   title={item.label}
                   className={cn(
-                    'w-8 h-8 rounded-lg border border-slate-300 dark:border-zinc-700 flex items-center justify-center transition-transform hover:scale-105 active:scale-95 cursor-pointer',
+                    'w-8 h-8 rounded-lg border border-veyra-border flex items-center justify-center transition-transform hover:scale-105 active:scale-95 cursor-pointer',
                     item.bgClass
                   )}
                 >
@@ -745,7 +745,7 @@ export const EditorTableBubbleMenu: React.FC<EditorTableBubbleMenuProps> = ({ ed
               left: `${styleCoords.left}px`,
               zIndex: 9999,
             }}
-            className="p-2.5 w-[250px] rounded-xl bg-white dark:bg-[#18181b] border border-slate-200 dark:border-zinc-800 shadow-2xl text-xs space-y-2 text-slate-800 dark:text-zinc-200 select-none animate-in fade-in zoom-in-95 duration-100"
+            className="p-2.5 w-[250px] rounded-xl bg-veyra-card/98 border border-veyra-border shadow-elevated text-xs space-y-2 text-veyra-text select-none animate-in fade-in zoom-in-95 duration-100 backdrop-blur-md"
           >
             <div>
               <div className="px-1 pb-1 text-[10px] font-bold text-accent uppercase tracking-wider">
@@ -764,12 +764,12 @@ export const EditorTableBubbleMenu: React.FC<EditorTableBubbleMenuProps> = ({ ed
                         'w-full flex items-center justify-between px-2 py-1.5 rounded-lg transition-colors text-left cursor-pointer',
                         isActive
                           ? 'bg-accent/15 text-accent font-semibold'
-                          : 'hover:bg-slate-100 dark:hover:bg-zinc-800 text-slate-700 dark:text-zinc-300'
+                          : 'hover:bg-black/5 dark:hover:bg-white/5 text-veyra-text'
                       )}
                     >
                       <div>
                         <div className="text-[12px] leading-tight">{preset.label}</div>
-                        <div className="text-[10px] text-slate-400 dark:text-zinc-500 leading-tight">
+                        <div className="text-[10px] text-veyra-muted leading-tight">
                           {preset.desc}
                         </div>
                       </div>
@@ -780,10 +780,10 @@ export const EditorTableBubbleMenu: React.FC<EditorTableBubbleMenuProps> = ({ ed
               </div>
             </div>
 
-            <div className="h-[1px] bg-slate-100 dark:bg-zinc-800 my-1" />
+            <div className="h-[1px] bg-veyra-border my-1" />
 
             <div>
-              <div className="px-1 pb-1 text-[10px] font-semibold text-slate-400 dark:text-zinc-500 uppercase tracking-wider">
+              <div className="px-1 pb-1 text-[10px] font-semibold text-veyra-muted uppercase tracking-wider">
                 Color de bordes
               </div>
               <div className="grid grid-cols-4 gap-1.5 pt-0.5">
@@ -802,8 +802,8 @@ export const EditorTableBubbleMenu: React.FC<EditorTableBubbleMenuProps> = ({ ed
                         'w-8 h-8 rounded-lg border flex items-center justify-center transition-all hover:scale-105 active:scale-95 cursor-pointer relative',
                         border.bgClass,
                         isCurrent
-                          ? 'ring-2 ring-accent ring-offset-1 dark:ring-offset-zinc-900 border-white dark:border-zinc-800'
-                          : 'border-slate-300 dark:border-zinc-700'
+                          ? 'ring-2 ring-accent ring-offset-1 ring-offset-veyra-card border-accent'
+                          : 'border-veyra-border'
                       )}
                     >
                       {isCurrent && (

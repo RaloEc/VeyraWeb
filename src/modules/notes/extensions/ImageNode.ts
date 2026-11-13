@@ -12,6 +12,8 @@ export interface ImageNodeAttributes {
 
 export interface ImageStorage {
   editingCaptionPos: number | null;
+  croppingPos: number | null;
+  currentUserId?: string | null;
 }
 
 declare module '@tiptap/core' {
@@ -19,6 +21,8 @@ declare module '@tiptap/core' {
     imageCaption: {
       setCaptionEditing: (pos: number) => ReturnType;
       clearCaptionEditing: () => ReturnType;
+      setCropEditing: (pos: number) => ReturnType;
+      clearCropEditing: () => ReturnType;
     };
   }
   interface Storage {
@@ -33,6 +37,8 @@ export const ImageNode = Image.extend({
     return {
       ...this.parent?.(),
       editingCaptionPos: null as number | null,
+      croppingPos: null as number | null,
+      currentUserId: null as string | null,
     };
   },
 
@@ -44,6 +50,7 @@ export const ImageNode = Image.extend({
         ({ editor }) => {
           const prev = editor.storage.image.editingCaptionPos;
           editor.storage.image.editingCaptionPos = pos;
+          editor.storage.image.croppingPos = null;
           editor.view.dispatch(
             editor.state.tr.setMeta('captionEditing', { from: prev, to: pos })
           );
@@ -56,6 +63,27 @@ export const ImageNode = Image.extend({
           editor.storage.image.editingCaptionPos = null;
           editor.view.dispatch(
             editor.state.tr.setMeta('captionEditing', { from: prev, to: null })
+          );
+          return true;
+        },
+      setCropEditing:
+        (pos: number) =>
+        ({ editor }) => {
+          const prev = editor.storage.image.croppingPos;
+          editor.storage.image.croppingPos = pos;
+          editor.storage.image.editingCaptionPos = null;
+          editor.view.dispatch(
+            editor.state.tr.setMeta('cropEditing', { from: prev, to: pos })
+          );
+          return true;
+        },
+      clearCropEditing:
+        () =>
+        ({ editor }) => {
+          const prev = editor.storage.image.croppingPos;
+          editor.storage.image.croppingPos = null;
+          editor.view.dispatch(
+            editor.state.tr.setMeta('cropEditing', { from: prev, to: null })
           );
           return true;
         },
