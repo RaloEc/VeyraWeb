@@ -21,6 +21,8 @@ export interface NoteContentPaginated {
   isPaginated: boolean;
   version: number;
   layout: string;
+  pageFormat?: 'infinite' | 'a4';
+  a4HeaderFooterConfig?: any;
   pages: NotePage[];
 }
 

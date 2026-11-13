@@ -56,6 +56,26 @@ export const EditorBubbleMenu: React.FC<EditorBubbleMenuProps> = ({ editor }) =>
   const [textColorCoords, setTextColorCoords] = useState<{ top: number; left: number }>({ top: 0, left: 0 });
   const [highlightCoords, setHighlightCoords] = useState<{ top: number; left: number }>({ top: 0, left: 0 });
 
+  const isTextColorMenuOpenRef = useRef(isTextColorMenuOpen);
+  isTextColorMenuOpenRef.current = isTextColorMenuOpen;
+  const isHighlightMenuOpenRef = useRef(isHighlightMenuOpen);
+  isHighlightMenuOpenRef.current = isHighlightMenuOpen;
+
+  const shouldShowTextBubbleMenu = useCallback(({ editor: ed }: { editor: Editor }) => {
+    if (isTextColorMenuOpenRef.current || isHighlightMenuOpenRef.current) return true;
+    const isCellSelection = ed.state.selection?.constructor?.name === 'CellSelection';
+    if (isCellSelection) return false;
+    return (
+      !ed.view.state.selection.empty &&
+      !ed.isActive('image') &&
+      !ed.isActive('bookmark') &&
+      !ed.isActive('bookmarkPrompt') &&
+      !ed.isActive('aiPrompt') &&
+      !ed.isActive('mathBlock') &&
+      !ed.isActive('mathInline')
+    );
+  }, []);
+
   const currentTextColor = (editor?.getAttributes('textStyle')?.color as string | undefined) || null;
   const currentHighlightColor = (editor?.getAttributes('highlight')?.color as string | undefined) || null;
   const currentFontSize = (editor?.getAttributes('textStyle')?.fontSize as string | undefined) || null;
@@ -330,20 +350,8 @@ export const EditorBubbleMenu: React.FC<EditorBubbleMenuProps> = ({ editor }) =>
     <>
       <BubbleMenu
         editor={editor}
-        shouldShow={({ editor }) => {
-          if (isTextColorMenuOpen || isHighlightMenuOpen) return true;
-          const isCellSelection = editor.state.selection?.constructor?.name === 'CellSelection';
-          if (isCellSelection) return false;
-          return (
-            !editor.view.state.selection.empty &&
-            !editor.isActive('image') &&
-            !editor.isActive('bookmark') &&
-            !editor.isActive('bookmarkPrompt') &&
-            !editor.isActive('aiPrompt') &&
-            !editor.isActive('mathBlock') &&
-            !editor.isActive('mathInline')
-          );
-        }}
+        pluginKey="textBubbleMenu"
+        shouldShow={shouldShowTextBubbleMenu}
         className="flex items-center gap-0.5 p-1 rounded-lg bg-white dark:bg-[#18181b] border border-slate-200 dark:border-zinc-800 shadow-lg z-50 text-slate-700 dark:text-zinc-200 select-none"
       >
         {btn(

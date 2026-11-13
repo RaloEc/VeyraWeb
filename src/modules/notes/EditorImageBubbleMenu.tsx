@@ -31,6 +31,8 @@ export interface EditorImageBubbleMenuProps {
   currentUserId?: string | null;
 }
 
+const shouldShowImageBubbleMenu = ({ editor }: { editor: Editor }) => editor.isActive('image');
+
 export const EditorImageBubbleMenu: React.FC<EditorImageBubbleMenuProps> = ({
   editor,
   currentUserId,
@@ -45,7 +47,18 @@ export const EditorImageBubbleMenu: React.FC<EditorImageBubbleMenuProps> = ({
   // Obtener atributos de forma reactiva con useEditorState para que el menú siempre esté sincronizado
   const imageAttrs = useEditorState({
     editor,
-    selector: (ctx) => ctx.editor.getAttributes('image'),
+    selector: (ctx) => {
+      if (!ctx.editor || ctx.editor.isDestroyed || !ctx.editor.isActive('image')) {
+        return { src: undefined, width: null, textAlign: 'center', caption: null };
+      }
+      const attrs = ctx.editor.getAttributes('image');
+      return {
+        src: attrs.src as string | undefined,
+        width: attrs.width ?? null,
+        textAlign: (attrs.textAlign as string | undefined) || 'center',
+        caption: attrs.caption ?? null,
+      };
+    },
   });
   const currentSrc = imageAttrs.src as string | undefined;
   const rawWidth = imageAttrs.width;
@@ -201,7 +214,8 @@ export const EditorImageBubbleMenu: React.FC<EditorImageBubbleMenuProps> = ({
   return (
     <BubbleMenu
       editor={editor}
-      shouldShow={({ editor }) => editor.isActive('image')}
+      pluginKey="imageBubbleMenu"
+      shouldShow={shouldShowImageBubbleMenu}
       className="flex items-center gap-0.5 p-1 rounded-lg bg-white dark:bg-[#18181b] border border-slate-200 dark:border-zinc-800 shadow-lg z-50 text-slate-700 dark:text-zinc-200 text-xs select-none"
     >
       <input

@@ -9,6 +9,10 @@ export interface CollabPresenceProps {
 export const CollabPresence: React.FC<CollabPresenceProps> = ({ users, currentUserId }) => {
   if (!users || users.length === 0) return null;
 
+  // No mostrar avatares si únicamente el propio usuario actual está editando la nota en una sola sesión
+  const hasOtherParticipants = users.some((u) => u.userId !== currentUserId) || users.length > 1;
+  if (!hasOtherParticipants) return null;
+
   return (
     <div className="flex items-center -space-x-1 overflow-hidden select-none">
       {users.map((u) => {

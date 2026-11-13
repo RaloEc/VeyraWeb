@@ -36,6 +36,10 @@ export interface PagesSidebarProps {
   ydoc: Y.Doc;
   noteTitle?: string;
   onSave?: () => void;
+  pageFormat?: 'infinite' | 'a4';
+  a4Sheets?: PageMeta[];
+  activeA4SheetIndex?: number;
+  onSelectA4Sheet?: (sheetIndex: number) => void;
 }
 
 export interface PageBlock {
@@ -48,7 +52,7 @@ export interface PageBlock {
   videoId?: string;
 }
 
-interface PageMeta {
+export interface PageMeta {
   id: string;
   index: number;
   title: string;
@@ -264,7 +268,12 @@ export const PagesSidebar: React.FC<PagesSidebarProps> = ({
   ydoc,
   noteTitle,
   onSave,
+  pageFormat = 'infinite',
+  a4Sheets,
+  activeA4SheetIndex = 0,
+  onSelectA4Sheet,
 }) => {
+  const isA4Mode = pageFormat === 'a4';
   const [search, setSearch] = useState('');
   const [viewMode, setViewMode] = useState<'list' | 'grid'>('list');
   const [isReordering, setIsReordering] = useState(false);
@@ -316,9 +325,19 @@ export const PagesSidebar: React.FC<PagesSidebarProps> = ({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [activeMenuPageId]);
 
-  // Extract real metadata and blocks for each page from Yjs document
+  // Extract real metadata and blocks for each page from Yjs document (or physical A4 sheets in A4 mode)
   const pagesMeta: PageMeta[] = useMemo(() => {
     const titlesMap = ydoc.getMap<string>('pageCustomTitles');
+
+    if (isA4Mode && a4Sheets && a4Sheets.length > 0) {
+      return a4Sheets.map((sheet) => {
+        const customTitle = titlesMap.get(sheet.id);
+        return {
+          ...sheet,
+          title: customTitle || sheet.title || `Hoja ${sheet.index + 1}`,
+        };
+      });
+    }
 
     return pages.map((pid, idx) => {
       const fragKey = resolvePageFragmentName(ydoc, pid);
@@ -359,7 +378,7 @@ export const PagesSidebar: React.FC<PagesSidebarProps> = ({
         badgeText,
       };
     });
-  }, [pages, ydoc, updateTick]);
+  }, [isA4Mode, a4Sheets, pages, ydoc, updateTick]);
 
   // Filtered by search
   const filteredPages = useMemo(() => {
@@ -519,22 +538,26 @@ export const PagesSidebar: React.FC<PagesSidebarProps> = ({
       <div className="px-3 py-2 border-b border-veyra-border flex items-center justify-between shrink-0 bg-veyra-card">
         <div className="flex items-center gap-2 min-w-0" title={noteTitle ? `Hojas de: ${noteTitle}` : 'Hojas'}>
           <Layers className="w-4 h-4 text-accent shrink-0" />
-          <h3 className="font-semibold text-xs text-veyra-text tracking-tight">Hojas</h3>
+          <h3 className="font-semibold text-xs text-veyra-text tracking-tight">
+            {isA4Mode ? 'Hojas A4' : 'Hojas'}
+          </h3>
           <span className="px-1.5 py-0.2 rounded-full bg-accent/15 border border-accent/25 text-accent font-mono text-[10px] font-bold">
-            {pages.length}
+            {pagesMeta.length}
           </span>
         </div>
 
         <div className="flex items-center gap-1 shrink-0">
-          <button
-            type="button"
-            onClick={onAddPage}
-            className="flex items-center gap-1 px-2 py-1 rounded-md bg-accent text-white text-[10.5px] font-medium hover:opacity-90 shadow-2xs cursor-pointer transition-opacity"
-            title="Añadir hoja al final"
-          >
-            <Plus className="w-3 h-3 stroke-[2.5]" />
-            <span>Nueva</span>
-          </button>
+          {!isA4Mode && (
+            <button
+              type="button"
+              onClick={onAddPage}
+              className="flex items-center gap-1 px-2 py-1 rounded-md bg-accent text-white text-[10.5px] font-medium hover:opacity-90 shadow-2xs cursor-pointer transition-opacity"
+              title="Añadir hoja al final"
+            >
+              <Plus className="w-3 h-3 stroke-[2.5]" />
+              <span>Nueva</span>
+            </button>
+          )}
           <button
             type="button"
             onClick={onClose}
@@ -578,7 +601,9 @@ export const PagesSidebar: React.FC<PagesSidebarProps> = ({
         ) : (
           <div className={cn(viewMode === 'grid' ? 'grid grid-cols-2 gap-2' : 'space-y-1.5')}>
             {filteredPages.map((page) => {
-              const isCurrent = page.id === activePageId;
+              const isCurrent = isA4Mode
+                ? page.index === activeA4SheetIndex
+                : page.id === activePageId;
               const isEditing = editingPageId === page.id;
               const isMenuOpen = activeMenuPageId === page.id;
 
@@ -586,13 +611,15 @@ export const PagesSidebar: React.FC<PagesSidebarProps> = ({
                 <React.Fragment key={page.id}>
                   {/* Card Element */}
                   <div
-                    draggable={!isEditing && !isReordering}
+                    draggable={!isA4Mode && !isEditing && !isReordering}
                     onDragStart={(e) => {
+                      if (isA4Mode) return;
                       e.dataTransfer.setData('text/plain', page.id);
                       e.dataTransfer.effectAllowed = 'move';
                       setDraggedPageId(page.id);
                     }}
                     onDragOver={(e) => {
+                      if (isA4Mode) return;
                       e.preventDefault();
                       e.dataTransfer.dropEffect = 'move';
                       if (draggedPageId && draggedPageId !== page.id) {
@@ -603,12 +630,14 @@ export const PagesSidebar: React.FC<PagesSidebarProps> = ({
                       }
                     }}
                     onDragLeave={(e) => {
+                      if (isA4Mode) return;
                       if (e.currentTarget === e.target) {
                         setDragOverPageId(null);
                         setDropPosition(null);
                       }
                     }}
                     onDrop={(e) => {
+                      if (isA4Mode) return;
                       e.preventDefault();
                       if (draggedPageId && draggedPageId !== page.id) {
                         handleDropReorder(draggedPageId, page.id, dropPosition || 'after');
@@ -624,7 +653,11 @@ export const PagesSidebar: React.FC<PagesSidebarProps> = ({
                     }}
                     onClick={() => {
                       if (!isEditing) {
-                        onSelectPage(page.id);
+                        if (isA4Mode) {
+                          onSelectA4Sheet?.(page.index);
+                        } else {
+                          onSelectPage(page.id);
+                        }
                       }
                     }}
                     className={cn(
@@ -647,7 +680,7 @@ export const PagesSidebar: React.FC<PagesSidebarProps> = ({
                     <div className="flex items-center justify-between gap-1.5 relative">
                       <div className="flex items-center gap-1.5 min-w-0 flex-1">
                         {/* Drag grip icon */}
-                        {!isReordering && (
+                        {!isA4Mode && !isReordering && (
                           <div
                             className="opacity-0 group-hover:opacity-100 transition-opacity cursor-grab active:cursor-grabbing text-veyra-subtle hover:text-accent shrink-0 -ml-1"
                             title="Arrastra para reordenar"
@@ -771,39 +804,43 @@ export const PagesSidebar: React.FC<PagesSidebarProps> = ({
                                   <Pencil className="w-3.5 h-3.5 text-veyra-subtle" />
                                   <span>Renombrar</span>
                                 </button>
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    handleDuplicate(e, page.id);
-                                    setActiveMenuPageId(null);
-                                  }}
-                                  className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-veyra-text hover:bg-veyra-hover cursor-pointer text-left transition-colors"
-                                >
-                                  <Copy className="w-3.5 h-3.5 text-veyra-subtle" />
-                                  <span>Duplicar hoja</span>
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => handleClearContent(page.id)}
-                                  className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-veyra-text hover:bg-veyra-hover cursor-pointer text-left transition-colors"
-                                >
-                                  <RotateCcw className="w-3.5 h-3.5 text-veyra-subtle" />
-                                  <span>Vaciar contenido</span>
-                                </button>
-                                {pages.length > 1 && (
+                                {!isA4Mode && (
                                   <>
-                                    <div className="h-[1px] bg-veyra-border my-0.5" />
                                     <button
                                       type="button"
                                       onClick={(e) => {
-                                        handleDelete(e, page.id);
+                                        handleDuplicate(e, page.id);
                                         setActiveMenuPageId(null);
                                       }}
-                                      className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-rose-500 hover:bg-rose-500/10 cursor-pointer text-left transition-colors"
+                                      className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-veyra-text hover:bg-veyra-hover cursor-pointer text-left transition-colors"
                                     >
-                                      <Trash2 className="w-3.5 h-3.5" />
-                                      <span>Eliminar hoja</span>
+                                      <Copy className="w-3.5 h-3.5 text-veyra-subtle" />
+                                      <span>Duplicar hoja</span>
                                     </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleClearContent(page.id)}
+                                      className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-veyra-text hover:bg-veyra-hover cursor-pointer text-left transition-colors"
+                                    >
+                                      <RotateCcw className="w-3.5 h-3.5 text-veyra-subtle" />
+                                      <span>Vaciar contenido</span>
+                                    </button>
+                                    {pages.length > 1 && (
+                                      <>
+                                        <div className="h-[1px] bg-veyra-border my-0.5" />
+                                        <button
+                                          type="button"
+                                          onClick={(e) => {
+                                            handleDelete(e, page.id);
+                                            setActiveMenuPageId(null);
+                                          }}
+                                          className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-rose-500 hover:bg-rose-500/10 cursor-pointer text-left transition-colors"
+                                        >
+                                          <Trash2 className="w-3.5 h-3.5" />
+                                          <span>Eliminar hoja</span>
+                                        </button>
+                                      </>
+                                    )}
                                   </>
                                 )}
                               </div>
@@ -950,7 +987,7 @@ export const PagesSidebar: React.FC<PagesSidebarProps> = ({
                   </div>
 
                   {/* Quick Insert Page Divider between cards */}
-                  {viewMode !== 'grid' && (
+                  {!isA4Mode && viewMode !== 'grid' && (
                     <div className="relative py-1 -my-0.5 group/insert flex items-center justify-center">
                       <div className="absolute inset-x-6 h-[1px] bg-transparent group-hover/insert:bg-accent/40 transition-colors" />
                       <button
@@ -994,17 +1031,19 @@ export const PagesSidebar: React.FC<PagesSidebarProps> = ({
           )}
         </button>
 
-        <button
-          type="button"
-          onClick={() => setIsReordering(!isReordering)}
-          className={cn(
-            'flex items-center gap-1.5 transition-colors cursor-pointer py-1 px-1.5 rounded hover:bg-veyra-hover',
-            isReordering ? 'text-accent font-semibold' : 'hover:text-veyra-text'
-          )}
-        >
-          <ArrowUpDown className="w-3.5 h-3.5" />
-          <span>{isReordering ? 'Listo' : 'Reordenar con flechas'}</span>
-        </button>
+        {!isA4Mode && (
+          <button
+            type="button"
+            onClick={() => setIsReordering(!isReordering)}
+            className={cn(
+              'flex items-center gap-1.5 transition-colors cursor-pointer py-1 px-1.5 rounded hover:bg-veyra-hover',
+              isReordering ? 'text-accent font-semibold' : 'hover:text-veyra-text'
+            )}
+          >
+            <ArrowUpDown className="w-3.5 h-3.5" />
+            <span>{isReordering ? 'Listo' : 'Reordenar con flechas'}</span>
+          </button>
+        )}
       </div>
     </div>
   );

@@ -38,7 +38,6 @@ import { BookmarkNode } from './extensions/BookmarkNode';
 import { BookmarkPrompt } from './extensions/BookmarkPromptNode';
 import { CustomLink } from './extensions/CustomLink';
 import { EditorWordCount } from './components/EditorWordCount';
-import { fetchLinkMetadata } from '../../lib/link-metadata';
 import {
   CustomTable,
   CustomTableRow,
@@ -61,11 +60,24 @@ import { cn } from '../../lib/utils';
 import type { Note, CollabUser, Folder, NoteContentPaginated, NotePage } from '../../types/notes';
 import type { CalendarEvent } from '../../hooks/useEvents';
 import { getEventCategoryTag } from './NotesSidebar';
-import { Loader2, Plus, ChevronLeft, ChevronRight, PanelLeft, X, Layers, GraduationCap, Folder as FolderIcon, Calendar, FileDown } from 'lucide-react';
+import { Loader2, PanelLeft, X, Layers, GraduationCap, Folder as FolderIcon, Calendar, FileDown, FileText, ScrollText } from 'lucide-react';
 import { useTheme } from '../../theme/ThemeProvider';
-import { PagesSidebar } from './PagesSidebar';
+import { PagesSidebar, type PageMeta, type PageBlock } from './PagesSidebar';
 import { ExportPdfModal } from './pdf/ExportPdfModal';
 import { HashtagInput } from '../../components/common/HashtagInput';
+import {
+  type A4HeaderFooterConfig,
+  getEffectiveZoneHeightPx,
+  loadA4HeaderFooterConfigForNote,
+  normalizeA4HeaderFooterConfig,
+  saveA4HeaderFooterConfigForNote,
+} from './components/A4HeaderFooterTypes';
+import {
+  A4HeaderFooterRibbon,
+  A4SheetHeaderFooterZones,
+  createHeaderFooterImageFromFile,
+  resolveSlotsKey,
+} from './components/A4HeaderFooterOverlay';
 
 export interface NoteEditorProps {
   note: Note | null;
@@ -161,9 +173,171 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
   const [syncStatus, setSyncStatus] = useState<'connecting' | 'connected' | 'disconnected'>('connecting');
   const [saveStatus, setSaveStatus] = useState<'saved' | 'saving' | 'error'>('saved');
   const [, setLastSavedAt] = useState<Date | null>(new Date());
-  const [isPageMenuOpen, setIsPageMenuOpen] = useState(false);
   const [isPagesSidebarOpen, setIsPagesSidebarOpen] = useState(true);
-  const pageMenuRef = useRef<HTMLDivElement>(null);
+  const [pageFormat, setPageFormat] = useState<'infinite' | 'a4'>(() => {
+    // 1. Prioridad: Metadato Yjs de esta nota específica
+    const metaFmt = ydoc.getMap('meta').get('pageFormat');
+    if (metaFmt === 'a4' || metaFmt === 'infinite') {
+      return metaFmt;
+    }
+    // 2. Prioridad: JSON serializado en note.content de esta nota
+    if (note.content && note.content.startsWith('{')) {
+      try {
+        const parsed = JSON.parse(note.content);
+        if (parsed.pageFormat === 'a4' || parsed.pageFormat === 'infinite') {
+          return parsed.pageFormat;
+        }
+      } catch {}
+    }
+    // 3. Prioridad: Caché local individual por ID de nota, o preferencia por defecto del usuario
+    if (typeof window !== 'undefined') {
+      try {
+        const perNote = localStorage.getItem(`veyra_note_page_format_${note.id}`);
+        if (perNote === 'a4' || perNote === 'infinite') {
+          return perNote;
+        }
+        return (localStorage.getItem('veyra_note_page_format') as 'infinite' | 'a4') || 'infinite';
+      } catch {
+        return 'infinite';
+      }
+    }
+    return 'infinite';
+  });
+  const pageFormatRef = useRef<'infinite' | 'a4'>(pageFormat);
+  const docSheetRef = useRef<HTMLDivElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const a4StyleRef = useRef<HTMLStyleElement | null>(null);
+  const [a4PageBreaks, setA4PageBreaks] = useState<number[]>([]);
+  const lastBreaksStrRef = useRef<string>('');
+  const [a4SheetsMeta, setA4SheetsMeta] = useState<PageMeta[]>([]);
+  const lastA4SheetsSignatureRef = useRef<string>('');
+  const [activeA4SheetIndex, setActiveA4SheetIndex] = useState<number>(0);
+  const [a4HeaderFooterConfig, setA4HeaderFooterConfig] = useState<A4HeaderFooterConfig>(() => {
+    const metaHf = ydoc.getMap('meta').get('a4HeaderFooterConfig');
+    if (metaHf && typeof metaHf === 'object') {
+      return loadA4HeaderFooterConfigForNote(note.id, metaHf);
+    }
+    if (note.content && note.content.startsWith('{')) {
+      try {
+        const parsed = JSON.parse(note.content);
+        if (parsed.a4HeaderFooterConfig && typeof parsed.a4HeaderFooterConfig === 'object') {
+          return loadA4HeaderFooterConfigForNote(note.id, parsed.a4HeaderFooterConfig);
+        }
+      } catch {}
+    }
+    return loadA4HeaderFooterConfigForNote(note.id);
+  });
+  const a4HeaderFooterConfigRef = useRef<A4HeaderFooterConfig>(a4HeaderFooterConfig);
+  const [activeHeaderFooterZone, setActiveHeaderFooterZone] = useState<'header' | 'footer' | null>(
+    null
+  );
+  const [activeHeaderFooterSheetIdx, setActiveHeaderFooterSheetIdx] = useState<number>(0);
+  const [activeHeaderFooterSlot, setActiveHeaderFooterSlot] = useState<'left' | 'center' | 'right'>(
+    'left'
+  );
+
+  useEffect(() => {
+    a4HeaderFooterConfigRef.current = a4HeaderFooterConfig;
+  }, [a4HeaderFooterConfig]);
+
+  useEffect(() => {
+    if (pageFormat !== 'a4' && activeHeaderFooterZone !== null) {
+      setActiveHeaderFooterZone(null);
+    }
+  }, [pageFormat, activeHeaderFooterZone]);
+
+  useEffect(() => {
+    if (!activeHeaderFooterZone) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setActiveHeaderFooterZone(null);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [activeHeaderFooterZone]);
+
+  const handleUpdateHeaderFooterConfig = useCallback(
+    (next: A4HeaderFooterConfig) => {
+      setA4HeaderFooterConfig(next);
+      a4HeaderFooterConfigRef.current = next;
+      saveA4HeaderFooterConfigForNote(note.id, next);
+      try {
+        ydoc.getMap('meta').set('a4HeaderFooterConfig', next);
+      } catch {}
+      triggerAutoSaveRef.current?.();
+    },
+    [note.id, ydoc]
+  );
+
+  const scrollToHeaderFooterZone = useCallback(
+    (zone: 'header' | 'footer', sheetIdx: number) => {
+      const container = scrollContainerRef.current;
+      const sheet = docSheetRef.current;
+      if (!container || !sheet) return;
+      const stride = 1123 + 36;
+      const zoneY =
+        zone === 'header' ? sheetIdx * stride : sheetIdx * stride + 1123 - 180;
+      container.scrollTo({
+        top: Math.max(0, sheet.offsetTop + zoneY - 40),
+        behavior: 'smooth',
+      });
+    },
+    []
+  );
+
+  const handleSelectA4Sheet = useCallback((sheetIdx: number) => {
+    setActiveA4SheetIndex(sheetIdx);
+    const container = scrollContainerRef.current;
+    const sheet = docSheetRef.current;
+    if (!container || !sheet) return;
+    const stride = 1123 + 36;
+    container.scrollTo({
+      top: Math.max(0, sheet.offsetTop + sheetIdx * stride - 24),
+      behavior: 'smooth',
+    });
+  }, []);
+
+  useEffect(() => {
+    if (pageFormat !== 'a4') return;
+    const container = scrollContainerRef.current;
+    if (!container) return;
+
+    const handleScroll = () => {
+      const sheet = docSheetRef.current;
+      if (!sheet) return;
+      const stride = 1123 + 36;
+      const totalSheets = a4PageBreaks.length + 1;
+      const relativeScroll = Math.max(0, container.scrollTop - sheet.offsetTop + 260);
+      const currentSheet = Math.min(
+        totalSheets - 1,
+        Math.max(0, Math.floor(relativeScroll / stride))
+      );
+      setActiveA4SheetIndex((prev) => (prev === currentSheet ? prev : currentSheet));
+    };
+
+    container.addEventListener('scroll', handleScroll, { passive: true });
+    return () => container.removeEventListener('scroll', handleScroll);
+  }, [pageFormat, a4PageBreaks.length]);
+
+  useEffect(() => {
+    pageFormatRef.current = pageFormat;
+  }, [pageFormat]);
+
+  const handleTogglePageFormat = useCallback(() => {
+    const next: 'infinite' | 'a4' = pageFormatRef.current === 'a4' ? 'infinite' : 'a4';
+    setPageFormat(next);
+    pageFormatRef.current = next;
+    try {
+      ydoc.getMap('meta').set('pageFormat', next);
+    } catch {}
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.setItem(`veyra_note_page_format_${note.id}`, next);
+      } catch {}
+    }
+    triggerAutoSaveRef.current?.();
+  }, [ydoc, note.id]);
 
   const pageHtmlCacheRef = useRef<Map<string, string>>(new Map());
   const activePageIdRef = useRef<string>(activePageId);
@@ -283,6 +457,8 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
       isPaginated: true,
       version: 2,
       layout: 'vertical',
+      pageFormat: pageFormatRef.current,
+      a4HeaderFooterConfig: a4HeaderFooterConfigRef.current,
       pages: pagesData,
     };
 
@@ -426,17 +602,6 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
     onCloseNote?.();
   };
 
-  // Close page popover on outside click
-  useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      if (pageMenuRef.current && !pageMenuRef.current.contains(e.target as Node)) {
-        setIsPageMenuOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
-
   const providerRef = useRef<YjsSupabaseProvider | null>(null);
 
   // Keep local user metadata synchronized in Awareness
@@ -538,13 +703,36 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
     return () => window.removeEventListener('popstate', handlePopState);
   }, [pages, activePageId]);
 
-  // Listen to remote changes to meta map (title)
+  // Listen to remote changes to meta map (title & pageFormat)
   useEffect(() => {
     const metaMap = ydoc.getMap('meta');
     const handleMetaChange = () => {
       const remoteTitle = metaMap.get('title') as string | undefined;
-      if (remoteTitle !== undefined && remoteTitle !== title) {
+      if (remoteTitle !== undefined && remoteTitle !== titleRef.current) {
         setTitle(remoteTitle);
+        titleRef.current = remoteTitle;
+      }
+      const remoteFormat = metaMap.get('pageFormat') as 'infinite' | 'a4' | undefined;
+      if (
+        (remoteFormat === 'a4' || remoteFormat === 'infinite') &&
+        remoteFormat !== pageFormatRef.current
+      ) {
+        setPageFormat(remoteFormat);
+        pageFormatRef.current = remoteFormat;
+        if (typeof window !== 'undefined') {
+          try {
+            localStorage.setItem(`veyra_note_page_format_${note.id}`, remoteFormat);
+          } catch {}
+        }
+      }
+      const remoteHf = metaMap.get('a4HeaderFooterConfig') as A4HeaderFooterConfig | undefined;
+      if (remoteHf && typeof remoteHf === 'object') {
+        const normalized = normalizeA4HeaderFooterConfig(remoteHf);
+        if (JSON.stringify(normalized) !== JSON.stringify(a4HeaderFooterConfigRef.current)) {
+          setA4HeaderFooterConfig(normalized);
+          a4HeaderFooterConfigRef.current = normalized;
+          saveA4HeaderFooterConfigForNote(note.id, normalized);
+        }
       }
     };
     metaMap.observe(handleMetaChange);
@@ -553,7 +741,7 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
       metaMap.unobserve(handleMetaChange);
       if (saveDebounceTimeoutRef.current) clearTimeout(saveDebounceTimeoutRef.current);
     };
-  }, [ydoc, title]);
+  }, [ydoc, note.id]);
 
   // Compute resolved fragment name for current active page
   const fragmentName = resolvePageFragmentName(ydoc, activePageId);
@@ -754,27 +942,32 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
           }
 
           // Si es una URL web solitaria y válida (que no sea YouTube ya capturado arriba),
-          // ofrecemos insertarla como tarjeta de enlace enriquecida con metadatos.
+          // insertamos de inmediato la tarjeta de enlace con esqueleto animado (0ms) y cargamos metadatos en segundo plano.
           const trimmedPlain = plainText.trim();
           const isSingleUrl = /^https?:\/\/[^\s$.?#].[^\s]*$/i.test(trimmedPlain) && !trimmedPlain.includes('\n');
           if (isSingleUrl && !html.includes('<img')) {
             event.preventDefault();
             const currentEditor = (_view as any).editor || editorRef.current;
             if (currentEditor && !currentEditor.isDestroyed) {
-              fetchLinkMetadata(trimmedPlain).then((metadata) => {
-                if (currentEditor && !currentEditor.isDestroyed) {
-                  currentEditor.commands.insertContent({
-                    type: 'bookmark',
-                    attrs: {
-                      url: metadata.url,
-                      title: metadata.title,
-                      domain: metadata.domain,
-                      favicon: metadata.favicon,
-                      description: metadata.description,
-                      image: metadata.image || null,
-                    },
-                  });
-                }
+              let domain = trimmedPlain;
+              let favicon = '';
+              try {
+                const parsed = new URL(trimmedPlain);
+                domain = parsed.hostname.replace(/^www\./, '');
+                favicon = `https://www.google.com/s2/favicons?domain=${domain}&sz=64`;
+              } catch {}
+
+              currentEditor.commands.insertContent({
+                type: 'bookmark',
+                attrs: {
+                  url: trimmedPlain,
+                  title: domain,
+                  domain,
+                  favicon,
+                  description: '',
+                  image: null,
+                  isLoading: true,
+                },
               });
               return true;
             }
@@ -847,6 +1040,583 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
     }
   }, [editor, awareness]);
 
+  // Paginación A4 con verificación en tiempo real sobre el DOM y empuje vía CSS externo (:nth-child)
+  useEffect(() => {
+    const sheetEl = docSheetRef.current;
+    if (!sheetEl || pageFormat !== 'a4') {
+      if (sheetEl) {
+        sheetEl.style.minHeight = '';
+      }
+      if (a4StyleRef.current) {
+        a4StyleRef.current.textContent = '';
+      }
+      if (lastBreaksStrRef.current !== '') {
+        lastBreaksStrRef.current = '';
+        setA4PageBreaks([]);
+      }
+      return;
+    }
+
+    const A4_HEIGHT_PX = 1123;
+    const PAGE_GAP_PX = 36;
+    const STRIDE = A4_HEIGHT_PX + PAGE_GAP_PX;
+    let isCalculating = false;
+    let lastSettledW = 0;
+    let lastSettledH = 0;
+    let lastSettledPmH = 0;
+
+    interface BreakableItem {
+      topEl: HTMLElement;
+      bottomEl: HTMLElement;
+      targetEl: HTMLElement;
+      selector: string;
+      prop: 'margin-top' | 'padding-top';
+      isHeadingOrLead: boolean;
+    }
+
+    const collectListItems = (
+      listEl: HTMLElement,
+      listSelector: string,
+      isTopLevelList: boolean,
+      out: BreakableItem[]
+    ) => {
+      const children = Array.from(listEl.children) as HTMLElement[];
+      for (let idx = 0; idx < children.length; idx++) {
+        const li = children[idx];
+        if (li.tagName.toLowerCase() !== 'li') continue;
+        const j = idx + 1;
+        const liSelector = `${listSelector} > :nth-child(${j})`;
+        const pushListInstead = isTopLevelList && j === 1;
+        const selector = pushListInstead ? listSelector : liSelector;
+        const targetEl = pushListInstead ? listEl : li;
+
+        const liChildren = Array.from(li.children) as HTMLElement[];
+        const nestedLists: Array<{ el: HTMLElement; childIdx: number }> = [];
+        let firstContentEl: HTMLElement | null = null;
+
+        for (let cIdx = 0; cIdx < liChildren.length; cIdx++) {
+          const c = liChildren[cIdx];
+          const cTag = c.tagName.toLowerCase();
+          if (cTag === 'ul' || cTag === 'ol') {
+            nestedLists.push({ el: c, childIdx: cIdx + 1 });
+          } else if (!firstContentEl) {
+            firstContentEl = c;
+          }
+        }
+
+        if (nestedLists.length > 0) {
+          const measureEl = firstContentEl || li;
+          out.push({
+            topEl: measureEl,
+            bottomEl: measureEl,
+            targetEl,
+            selector,
+            prop: 'margin-top',
+            isHeadingOrLead: true,
+          });
+          for (const nl of nestedLists) {
+            collectListItems(nl.el, `${liSelector} > :nth-child(${nl.childIdx})`, false, out);
+          }
+        } else {
+          const text = (li.textContent || '').trim();
+          const isLeadBullet = text.endsWith(':') && text.length < 95;
+          out.push({
+            topEl: li,
+            bottomEl: li,
+            targetEl,
+            selector,
+            prop: 'margin-top',
+            isHeadingOrLead: isLeadBullet,
+          });
+        }
+      }
+    };
+
+    const calculateBreaks = () => {
+      if (isCalculating || !docSheetRef.current || !a4StyleRef.current) return;
+      isCalculating = true;
+      try {
+        const sheet = docSheetRef.current;
+        const styleEl = a4StyleRef.current;
+
+        // 1. Limpiar reglas previas PRIMERO para que no queden márgenes antiguos atrapados
+        styleEl.textContent = '';
+
+        const baseMarginVPx = 95; // 2,5 cm estándar A4
+        const marginTopPx = Math.max(
+          48,
+          getEffectiveZoneHeightPx(a4HeaderFooterConfig, 'header') || baseMarginVPx
+        );
+        const marginBottomPx = Math.max(
+          48,
+          getEffectiveZoneHeightPx(a4HeaderFooterConfig, 'footer') || baseMarginVPx
+        );
+        const pm = sheet.querySelector('.ProseMirror') as HTMLElement | null;
+
+        const basePaddingRule =
+          marginTopPx !== 95 || marginBottomPx !== 95
+            ? `div.a4-page-mode { padding-top: ${marginTopPx}px !important; padding-bottom: ${marginBottomPx}px !important; }`
+            : '';
+
+        if (!pm || pm.children.length === 0) {
+          styleEl.textContent = basePaddingRule;
+          sheet.style.minHeight = `${A4_HEIGHT_PX}px`;
+          if (lastBreaksStrRef.current !== '') {
+            lastBreaksStrRef.current = '';
+            setA4PageBreaks([]);
+          }
+          const emptySig = 'empty-1';
+          if (lastA4SheetsSignatureRef.current !== emptySig) {
+            lastA4SheetsSignatureRef.current = emptySig;
+            setA4SheetsMeta([
+              {
+                id: 'a4-sheet-0',
+                index: 0,
+                title: 'Hoja 1',
+                snippet: 'Sin contenido...',
+                blocks: [],
+                paragraphCount: 0,
+                wordCount: 0,
+                bulletCount: 0,
+                taskCount: 0,
+                badgeText: 'Hoja vacía',
+              },
+            ]);
+          }
+          return;
+        }
+
+        // Mantener altura mínima temporalmente para evitar saltos de scroll durante el cálculo
+        const prevSheetH = sheet.offsetHeight;
+        sheet.style.minHeight = `${Math.max(A4_HEIGHT_PX, prevSheetH)}px`;
+
+        styleEl.textContent = basePaddingRule;
+
+        const items: BreakableItem[] = [];
+        const pmChildren = Array.from(pm.children) as HTMLElement[];
+
+        for (let i = 1; i <= pmChildren.length; i++) {
+          const child = pmChildren[i - 1];
+          const tag = child.tagName.toLowerCase();
+          const childSelector = `div.a4-page-mode div.ProseMirror > :nth-child(${i})`;
+
+          if (tag === 'ul' || tag === 'ol') {
+            collectListItems(child, childSelector, true, items);
+            continue;
+          }
+
+          if (child.classList.contains('tableWrapper')) {
+            const rows = Array.from(child.querySelectorAll('tr')) as HTMLElement[];
+            if (rows.length > 0) {
+              for (let rIdx = 0; rIdx < rows.length; rIdx++) {
+                const row = rows[rIdx];
+                const parentEl = row.parentElement;
+                const parentTag = parentEl ? parentEl.tagName.toLowerCase() : 'tbody';
+                const nthRow = parentEl
+                  ? Array.from(parentEl.children).indexOf(row) + 1
+                  : rIdx + 1;
+                const rowH = row.getBoundingClientRect().height;
+                const isHeaderRow =
+                  row.querySelector('th') !== null ||
+                  (rowH < 56 && row.querySelector('strong, b') !== null);
+
+                if (rIdx === 0) {
+                  items.push({
+                    topEl: row,
+                    bottomEl: row,
+                    targetEl: child,
+                    selector: childSelector,
+                    prop: 'margin-top',
+                    isHeadingOrLead: isHeaderRow,
+                  });
+                } else {
+                  const firstCell = (row.querySelector('td, th') as HTMLElement) || row;
+                  const cellContent =
+                    (firstCell.firstElementChild as HTMLElement) || firstCell;
+                  const rowCellsSelector = `${childSelector} ${parentTag} > tr:nth-child(${nthRow}) > td, ${childSelector} ${parentTag} > tr:nth-child(${nthRow}) > th`;
+                  items.push({
+                    topEl: cellContent,
+                    bottomEl: row,
+                    targetEl: firstCell,
+                    selector: rowCellsSelector,
+                    prop: 'padding-top',
+                    isHeadingOrLead: isHeaderRow,
+                  });
+                }
+              }
+              continue;
+            }
+          }
+
+          const text = (child.textContent || '').trim();
+          const isHeading =
+            /^h[1-6]$/.test(tag) ||
+            (tag === 'p' &&
+              text.endsWith(':') &&
+              text.length < 95 &&
+              child.querySelector('strong, b') !== null);
+
+          items.push({
+            topEl: child,
+            bottomEl: child,
+            targetEl: child,
+            selector: childSelector,
+            prop: 'margin-top',
+            isHeadingOrLead: isHeading,
+          });
+        }
+
+        const rules: string[] = basePaddingRule ? [basePaddingRule] : [];
+        const breaks: number[] = [];
+        let currentPage = 0;
+
+        const applyPushToTarget = (target: BreakableItem, desiredTop: number) => {
+          const sRect = sheet.getBoundingClientRect();
+          const tRect = target.topEl.getBoundingClientRect();
+          const currentTop = tRect.top - sRect.top;
+          const cs = window.getComputedStyle(target.targetEl);
+          const baseVal =
+            parseFloat(target.prop === 'margin-top' ? cs.marginTop : cs.paddingTop) || 0;
+          let neededVal = Math.max(0, Math.round(baseVal + (desiredTop - currentTop)));
+
+          const extraRule =
+            target.prop === 'padding-top' ? ' vertical-align: top !important;' : '';
+          const ruleIndex = rules.length;
+          rules.push(
+            `${target.selector} { ${target.prop}: ${neededVal}px !important;${extraRule} }`
+          );
+          styleEl.textContent = rules.join('\n');
+
+          // Verificar posición real en el DOM tras aplicar la regla (compensa colapso de márgenes CSS)
+          const vSheetRect = sheet.getBoundingClientRect();
+          const vTopRect = target.topEl.getBoundingClientRect();
+          const actualTop = vTopRect.top - vSheetRect.top;
+          const diff = Math.round(desiredTop - actualTop);
+          if (Math.abs(diff) > 1) {
+            neededVal = Math.max(0, neededVal + diff);
+            rules[ruleIndex] =
+              `${target.selector} { ${target.prop}: ${neededVal}px !important;${extraRule} }`;
+            styleEl.textContent = rules.join('\n');
+          }
+        };
+
+        for (let k = 0; k < items.length; k++) {
+          const item = items[k];
+          let sheetRect = sheet.getBoundingClientRect();
+          let itemTop = item.topEl.getBoundingClientRect().top - sheetRect.top;
+          let itemBottom = item.bottomEl.getBoundingClientRect().bottom - sheetRect.top;
+
+          let minPrintableY = currentPage * STRIDE + marginTopPx;
+          let maxPrintableY = currentPage * STRIDE + A4_HEIGHT_PX - marginBottomPx;
+
+          // Si un bloque anterior avanzó de página sin empujar a este, asegurar que empiece en minPrintableY
+          if (currentPage > 0 && itemTop < minPrintableY - 2) {
+            applyPushToTarget(item, minPrintableY);
+            sheetRect = sheet.getBoundingClientRect();
+            itemTop = item.topEl.getBoundingClientRect().top - sheetRect.top;
+            itemBottom = item.bottomEl.getBoundingClientRect().bottom - sheetRect.top;
+          }
+
+          if (itemBottom > maxPrintableY) {
+            // Retroceder si el bloque anterior es un título o encabezado que quedaría huérfano al final de la hoja
+            let pushIdx = k;
+            while (pushIdx > 0 && items[pushIdx - 1].isHeadingOrLead) {
+              const prevTop =
+                items[pushIdx - 1].topEl.getBoundingClientRect().top - sheetRect.top;
+              if (prevTop > minPrintableY + 28) {
+                pushIdx -= 1;
+              } else {
+                break;
+              }
+            }
+
+            const target = items[pushIdx];
+            const targetTop = target.topEl.getBoundingClientRect().top - sheetRect.top;
+
+            if (targetTop > minPrintableY + 14) {
+              const breakY = currentPage * STRIDE + A4_HEIGHT_PX;
+              breaks.push(breakY);
+              currentPage += 1;
+
+              const desiredTop = currentPage * STRIDE + marginTopPx;
+              applyPushToTarget(target, desiredTop);
+
+              sheetRect = sheet.getBoundingClientRect();
+              itemBottom = item.bottomEl.getBoundingClientRect().bottom - sheetRect.top;
+              minPrintableY = currentPage * STRIDE + marginTopPx;
+              maxPrintableY = currentPage * STRIDE + A4_HEIGHT_PX - marginBottomPx;
+            }
+
+            // Si el elemento por sí solo sigue superando la página actual, avanzar las páginas necesarias
+            while (itemBottom > currentPage * STRIDE + A4_HEIGHT_PX - marginBottomPx) {
+              const breakY = currentPage * STRIDE + A4_HEIGHT_PX;
+              breaks.push(breakY);
+              currentPage += 1;
+            }
+          }
+        }
+
+        const totalMinHeight = (currentPage + 1) * A4_HEIGHT_PX + currentPage * PAGE_GAP_PX;
+        sheet.style.minHeight = `${totalMinHeight}px`;
+
+        lastSettledW = sheet.offsetWidth;
+        lastSettledH = sheet.offsetHeight;
+        lastSettledPmH = pm.offsetHeight;
+
+        const nextBreaksStr = breaks.join(',');
+        if (lastBreaksStrRef.current !== nextBreaksStr) {
+          lastBreaksStrRef.current = nextBreaksStr;
+          setA4PageBreaks(breaks);
+        }
+
+        // Construir metadatos reales por cada Hoja A4 física según la posición DOM final de cada bloque
+        const totalSheets = currentPage + 1;
+        const finalSheetRect = sheet.getBoundingClientRect();
+        const buckets = Array.from({ length: totalSheets }, () => ({
+          blocks: [] as PageBlock[],
+          headingTitle: '',
+          allTexts: [] as string[],
+          stats: {
+            words: 0,
+            paragraphs: 0,
+            bullets: 0,
+            tasks: 0,
+            headings: 0,
+            tables: 0,
+            images: 0,
+          },
+        }));
+
+        const getElSheetIdx = (el: HTMLElement) => {
+          const top = Math.max(0, el.getBoundingClientRect().top - finalSheetRect.top);
+          return Math.min(totalSheets - 1, Math.max(0, Math.floor(top / STRIDE)));
+        };
+
+        for (let i = 0; i < pmChildren.length; i++) {
+          const child = pmChildren[i];
+          const tag = child.tagName.toLowerCase();
+
+          if (tag === 'ul' || tag === 'ol') {
+            const isTaskList = child.getAttribute('data-type') === 'taskList';
+            const lis = Array.from(child.querySelectorAll('li')) as HTMLElement[];
+            for (let j = 0; j < lis.length; j++) {
+              const li = lis[j];
+              const sIdx = getElSheetIdx(li);
+              const clone = li.cloneNode(true) as HTMLElement;
+              clone.querySelectorAll('ul, ol').forEach((n) => n.remove());
+              const liText = (clone.textContent || '').trim();
+              if (!liText) continue;
+
+              const isTask = isTaskList || li.getAttribute('data-type') === 'taskItem';
+              if (isTask) {
+                const checked =
+                  li.getAttribute('data-checked') === 'true' ||
+                  Boolean((li.querySelector('input[type="checkbox"]') as HTMLInputElement)?.checked);
+                buckets[sIdx].blocks.push({
+                  id: `${i}-${j}`,
+                  type: 'task',
+                  text: liText,
+                  checked,
+                });
+                buckets[sIdx].stats.tasks++;
+              } else {
+                buckets[sIdx].blocks.push({
+                  id: `${i}-${j}`,
+                  type: 'bullet',
+                  text: liText,
+                });
+                buckets[sIdx].stats.bullets++;
+              }
+              buckets[sIdx].allTexts.push(liText);
+            }
+            continue;
+          }
+
+          if (child.classList.contains('tableWrapper') || tag === 'table') {
+            const rows = Array.from(child.querySelectorAll('tr')) as HTMLElement[];
+            const touchedSheets = new Set<number>();
+            if (rows.length > 0) {
+              for (const row of rows) {
+                const sIdx = getElSheetIdx(row);
+                touchedSheets.add(sIdx);
+                const rowText = (row.textContent || '').trim();
+                if (rowText) buckets[sIdx].allTexts.push(rowText);
+              }
+            } else {
+              touchedSheets.add(getElSheetIdx(child));
+            }
+            touchedSheets.forEach((sIdx) => {
+              buckets[sIdx].blocks.push({
+                id: `table-${i}-${sIdx}`,
+                type: 'table',
+                text: 'Tabla',
+              });
+              buckets[sIdx].stats.tables++;
+            });
+            continue;
+          }
+
+          const sIdx = getElSheetIdx(child);
+          const text = (child.textContent || '').trim();
+
+          if (child.querySelector('img') || tag === 'img') {
+            buckets[sIdx].blocks.push({
+              id: `img-${i}`,
+              type: 'image',
+              text: 'Imagen',
+            });
+            buckets[sIdx].stats.images++;
+            continue;
+          }
+
+          if (child.querySelector('iframe')) {
+            buckets[sIdx].blocks.push({
+              id: `yt-${i}`,
+              type: 'youtube',
+              text: 'Video de YouTube',
+            });
+            continue;
+          }
+
+          if (tag === 'pre') {
+            if (text) {
+              buckets[sIdx].blocks.push({
+                id: `code-${i}`,
+                type: 'code',
+                text,
+              });
+              buckets[sIdx].allTexts.push(text);
+            }
+            continue;
+          }
+
+          if (tag === 'blockquote') {
+            if (text) {
+              buckets[sIdx].blocks.push({
+                id: `quote-${i}`,
+                type: 'quote',
+                text,
+              });
+              buckets[sIdx].allTexts.push(text);
+            }
+            continue;
+          }
+
+          const isHeading =
+            /^h[1-6]$/.test(tag) ||
+            (tag === 'p' &&
+              text.endsWith(':') &&
+              text.length < 95 &&
+              child.querySelector('strong, b') !== null);
+
+          if (isHeading && text) {
+            buckets[sIdx].blocks.push({
+              id: `h-${i}`,
+              type: 'heading',
+              text,
+            });
+            if (!buckets[sIdx].headingTitle) {
+              buckets[sIdx].headingTitle = text.replace(/:$/, '');
+            }
+            buckets[sIdx].allTexts.push(text);
+            buckets[sIdx].stats.headings++;
+          } else if (text) {
+            buckets[sIdx].blocks.push({
+              id: `p-${i}`,
+              type: 'paragraph',
+              text,
+            });
+            buckets[sIdx].allTexts.push(text);
+            buckets[sIdx].stats.paragraphs++;
+          }
+        }
+
+        const nextA4Sheets: PageMeta[] = buckets.map((b, idx) => {
+          const plainText = b.allTexts.join(' ');
+          const words = plainText ? plainText.split(/\s+/).filter(Boolean).length : 0;
+          b.stats.words = words;
+
+          let badgeText = 'Hoja vacía';
+          if (b.stats.tasks > 0) {
+            badgeText = `${b.stats.tasks} ${b.stats.tasks === 1 ? 'tarea' : 'tareas'}`;
+          } else if (b.stats.bullets > 0) {
+            badgeText = `${b.stats.bullets} ${b.stats.bullets === 1 ? 'punto' : 'puntos'}`;
+          } else if (b.stats.tables > 0) {
+            badgeText = `${b.stats.tables} ${b.stats.tables === 1 ? 'tabla' : 'tablas'}`;
+          } else if (words > 0) {
+            const pCount = b.stats.paragraphs || b.stats.headings || 1;
+            const pLabel = pCount === 1 ? 'párrafo' : 'párrafos';
+            const wLabel = words === 1 ? 'palabra' : 'pal';
+            badgeText = `${pCount} ${pLabel} · ${words} ${wLabel}`;
+          }
+
+          const snippet =
+            plainText.length > 25 ? plainText.slice(0, 25) + '...' : plainText || 'Sin contenido...';
+
+          return {
+            id: `a4-sheet-${idx}`,
+            index: idx,
+            title: b.headingTitle || `Hoja ${idx + 1}`,
+            snippet,
+            blocks: b.blocks,
+            paragraphCount: b.stats.paragraphs,
+            wordCount: words,
+            bulletCount: b.stats.bullets,
+            taskCount: b.stats.tasks,
+            badgeText,
+          };
+        });
+
+        const sig = nextA4Sheets
+          .map((s) => `${s.id}:${s.title}:${s.badgeText}:${s.blocks.length}:${s.snippet}`)
+          .join('|');
+        if (lastA4SheetsSignatureRef.current !== sig) {
+          lastA4SheetsSignatureRef.current = sig;
+          setA4SheetsMeta(nextA4Sheets);
+        }
+      } finally {
+        isCalculating = false;
+      }
+    };
+
+    let rafId: number | null = null;
+    const scheduleCalculate = () => {
+      if (rafId !== null) cancelAnimationFrame(rafId);
+      rafId = requestAnimationFrame(() => {
+        rafId = null;
+        calculateBreaks();
+      });
+    };
+
+    calculateBreaks();
+
+    const pmEl = sheetEl.querySelector('.ProseMirror') as HTMLElement | null;
+    const ro = new ResizeObserver(() => {
+      if (
+        sheetEl.offsetWidth === lastSettledW &&
+        sheetEl.offsetHeight === lastSettledH &&
+        (!pmEl || pmEl.offsetHeight === lastSettledPmH)
+      ) {
+        return;
+      }
+      scheduleCalculate();
+    });
+    ro.observe(sheetEl);
+    if (pmEl) ro.observe(pmEl);
+
+    if (editor) {
+      editor.on('update', scheduleCalculate);
+    }
+
+    return () => {
+      if (rafId !== null) cancelAnimationFrame(rafId);
+      ro.disconnect();
+      if (editor) {
+        editor.off('update', scheduleCalculate);
+      }
+    };
+  }, [pageFormat, activePageId, editor, a4HeaderFooterConfig]);
+
   // Handle Title changes: updates Yjs meta map + debounced sync to notes table
   const handleTitleChange = (newTitle: string) => {
     setTitle(newTitle);
@@ -893,8 +1663,6 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
     handleSelectPage(newPageId, po.toArray().length);
     triggerAutoSave();
   };
-
-  const currentPageIndex = Math.max(0, pages.indexOf(activePageId));
 
   // Breadcrumb de Ubicación Unificado (Jerarquía de Carpeta / Evento - Opción B)
   const breadcrumb = useMemo(() => {
@@ -980,240 +1748,192 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
 
       {/* Sleek Minimal Editor Header (Fase 3 & Fase 4) */}
       <div className="h-10 border-b border-veyra-border px-4 flex items-center justify-between text-xs shrink-0 select-none bg-veyra-card/30">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 min-w-0 flex-1 mr-4">
           {!isSidebarOpen && onToggleSidebar && (
             <button
               type="button"
               onClick={onToggleSidebar}
               title="Mostrar barra lateral (Ctrl+\)"
-              className="p-1 rounded text-veyra-muted hover:text-accent hover:bg-white/5 transition-colors cursor-pointer flex items-center justify-center mr-0.5"
+              className="p-1 rounded text-veyra-muted hover:text-accent hover:bg-white/5 transition-colors cursor-pointer flex items-center justify-center mr-0.5 shrink-0"
             >
               <PanelLeft className="w-4 h-4 text-accent" />
             </button>
           )}
 
-          {/* Left: Compact Page Indicator ‹ 3 / 15 › and + */}
-          <div className="relative flex items-center gap-1" ref={pageMenuRef}>
+          {/* Breadcrumb de Ubicación Unificado (Optimización de cabecera) */}
+          {breadcrumb && (
+            <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-white/[0.04] border border-veyra-border/60 text-[11px] text-veyra-muted max-w-[240px] sm:max-w-[360px] shrink-0">
+              {breadcrumb.parentLabel && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (breadcrumb.parentFolderId && onSelectFolder) {
+                        onSelectFolder(breadcrumb.parentFolderId);
+                      }
+                    }}
+                    className={cn(
+                      'flex items-center gap-1 text-veyra-muted hover:text-veyra-text transition-colors truncate',
+                      breadcrumb.parentFolderId && 'cursor-pointer hover:underline'
+                    )}
+                    title={
+                      breadcrumb.parentFolderId
+                        ? `Ver carpeta ${breadcrumb.parentLabel}`
+                        : breadcrumb.parentLabel
+                    }
+                  >
+                    {breadcrumb.parentIconType === 'graduation' ? (
+                      <GraduationCap className="w-3 h-3 text-accent shrink-0" />
+                    ) : (
+                      <FolderIcon
+                        className="w-3 h-3 shrink-0"
+                        style={{ color: breadcrumb.parentColor || 'var(--accent-primary)' }}
+                      />
+                    )}
+                    <span className="truncate max-w-[90px] font-medium">{breadcrumb.parentLabel}</span>
+                  </button>
 
-          <button
-            type="button"
-            onClick={() => {
-              if (currentPageIndex > 0) {
-                handleSelectPage(pages[currentPageIndex - 1]);
-              }
-            }}
-            disabled={currentPageIndex <= 0}
-            title="Página anterior"
-            className="p-1 rounded text-veyra-muted hover:text-veyra-text disabled:opacity-20 disabled:pointer-events-none transition-colors cursor-pointer"
-          >
-            <ChevronLeft className="w-3.5 h-3.5" />
-          </button>
+                  <span className="text-veyra-subtle select-none text-[10px]">/</span>
+                </>
+              )}
 
-          <button
-            type="button"
-            onClick={() => setIsPagesSidebarOpen(!isPagesSidebarOpen)}
-            className="px-2 py-0.5 rounded text-veyra-muted hover:text-veyra-text hover:bg-white/5 font-medium transition-colors cursor-pointer"
-            title="Mostrar / ocultar hojas"
-          >
-            {currentPageIndex + 1} / {pages.length}
-          </button>
-
-          <button
-            type="button"
-            onClick={() => {
-              if (currentPageIndex < pages.length - 1) {
-                handleSelectPage(pages[currentPageIndex + 1]);
-              }
-            }}
-            disabled={currentPageIndex >= pages.length - 1}
-            title="Página siguiente"
-            className="p-1 rounded text-veyra-muted hover:text-veyra-text disabled:opacity-20 disabled:pointer-events-none transition-colors cursor-pointer"
-          >
-            <ChevronRight className="w-3.5 h-3.5" />
-          </button>
-
-          <button
-            type="button"
-            onClick={handleAddPage}
-            title="Agregar nueva página"
-            className="p-1 rounded text-veyra-muted hover:text-accent hover:bg-white/5 transition-colors ml-0.5 cursor-pointer"
-          >
-            <Plus className="w-3.5 h-3.5" />
-          </button>
-
-          {/* Page Selection Popover */}
-          {isPageMenuOpen && (
-            <div className="absolute top-8 left-0 w-44 max-h-60 overflow-y-auto p-1 rounded-md bg-veyra-surface border border-veyra-border shadow-elevated z-50 animate-in fade-in zoom-in-95 duration-100">
-              <div className="px-2 py-1 text-[10px] font-semibold text-veyra-subtle uppercase tracking-wider">
-                Páginas ({pages.length})
-              </div>
-              <div className="space-y-0.5">
-                {pages.map((pid, idx) => {
-                  const isCurrent = pid === activePageId;
-                  const fragKey = resolvePageFragmentName(ydoc, pid);
-                  const frag = ydoc.getXmlFragment(fragKey);
-                  const hasContent = frag.length > 0;
-
-                  return (
-                    <button
-                      key={pid}
-                      type="button"
-                      onClick={() => {
-                        handleSelectPage(pid);
-                        setIsPageMenuOpen(false);
-                      }}
-                      className={cn(
-                        'w-full flex items-center justify-between px-2 py-1.5 rounded text-left text-xs transition-colors cursor-pointer',
-                        isCurrent
-                          ? 'bg-accent/15 text-accent font-semibold'
-                          : 'text-veyra-muted hover:text-veyra-text hover:bg-white/5'
-                      )}
-                    >
-                      <span>Página {idx + 1}</span>
-                      {hasContent && (
-                        <span
-                          className={cn(
-                            'w-1.5 h-1.5 rounded-full',
-                            isCurrent ? 'bg-accent' : 'bg-veyra-subtle'
-                          )}
-                        />
-                      )}
-                    </button>
-                  );
-                })}
-              </div>
+              {breadcrumb.type === 'event' ? (
+                <button
+                  type="button"
+                  onClick={() => onSelectEvent?.(breadcrumb.eventId)}
+                  className="flex items-center gap-1 text-veyra-text hover:text-accent transition-colors cursor-pointer group truncate"
+                  title="Abrir detalles de la materia/evento en agenda"
+                >
+                  <Calendar
+                    className="w-3 h-3 shrink-0 transition-transform group-hover:scale-110"
+                    style={{ color: breadcrumb.eventColor }}
+                  />
+                  <span
+                    className="font-semibold truncate max-w-[130px]"
+                    style={{ color: breadcrumb.eventColor }}
+                  >
+                    {breadcrumb.eventTitle}
+                  </span>
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => onSelectFolder?.(breadcrumb.folderId)}
+                  className="flex items-center gap-1 text-veyra-text hover:text-accent transition-colors cursor-pointer truncate"
+                  title="Ver carpeta"
+                >
+                  <FolderIcon
+                    className="w-3 h-3 shrink-0"
+                    style={{ color: breadcrumb.folderColor || 'var(--accent-primary)' }}
+                  />
+                  <span className="font-semibold truncate max-w-[130px]">
+                    {breadcrumb.folderName}
+                  </span>
+                </button>
+              )}
             </div>
+          )}
+
+          {/* Título editable en la barra superior cuando está activo el formato Hoja A4 */}
+          {pageFormat === 'a4' && (
+            <>
+              {breadcrumb && (
+                <span className="text-veyra-subtle select-none text-xs shrink-0">/</span>
+              )}
+              <HashtagInput
+                value={title}
+                onChange={(newTitle) => handleTitleChange(newTitle)}
+                availableTags={['clase', 'apuntes', 'deberes', 'taller', 'examen', 'universidad', 'trabajo', 'proyecto']}
+                placeholder="Sin título"
+                multiline={false}
+                onEnterPress={() => {
+                  if (editor) {
+                    editor.commands.focus('start');
+                  }
+                }}
+                containerClassName="flex-1 max-w-xs sm:max-w-md min-w-[140px]"
+                inputClassName="w-full bg-transparent hover:bg-black/5 dark:hover:bg-white/5 focus:bg-veyra-surface border border-transparent focus:border-accent/40 rounded-md px-2 py-1 text-xs sm:text-[13px] font-semibold text-veyra-text placeholder:text-veyra-muted/60 focus:outline-none transition-colors truncate"
+              />
+            </>
           )}
         </div>
 
-        {/* Breadcrumb de Ubicación Unificado (Optimización de cabecera) */}
-        {breadcrumb && (
-          <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-white/[0.04] border border-veyra-border/60 text-[11px] text-veyra-muted ml-1 max-w-[260px] sm:max-w-[420px]">
-            {breadcrumb.parentLabel && (
-              <>
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (breadcrumb.parentFolderId && onSelectFolder) {
-                      onSelectFolder(breadcrumb.parentFolderId);
-                    }
-                  }}
-                  className={cn(
-                    'flex items-center gap-1 text-veyra-muted hover:text-veyra-text transition-colors truncate',
-                    breadcrumb.parentFolderId && 'cursor-pointer hover:underline'
-                  )}
-                  title={
-                    breadcrumb.parentFolderId
-                      ? `Ver carpeta ${breadcrumb.parentLabel}`
-                      : breadcrumb.parentLabel
-                  }
-                >
-                  {breadcrumb.parentIconType === 'graduation' ? (
-                    <GraduationCap className="w-3 h-3 text-accent shrink-0" />
-                  ) : (
-                    <FolderIcon
-                      className="w-3 h-3 shrink-0"
-                      style={{ color: breadcrumb.parentColor || 'var(--accent-primary)' }}
-                    />
-                  )}
-                  <span className="truncate max-w-[90px] font-medium">{breadcrumb.parentLabel}</span>
-                </button>
-
-                <span className="text-veyra-subtle select-none text-[10px]">/</span>
-              </>
-            )}
-
-            {breadcrumb.type === 'event' ? (
-              <button
-                type="button"
-                onClick={() => onSelectEvent?.(breadcrumb.eventId)}
-                className="flex items-center gap-1 text-veyra-text hover:text-accent transition-colors cursor-pointer group truncate"
-                title="Abrir detalles de la materia/evento en agenda"
-              >
-                <Calendar
-                  className="w-3 h-3 shrink-0 transition-transform group-hover:scale-110"
-                  style={{ color: breadcrumb.eventColor }}
-                />
-                <span
-                  className="font-semibold truncate max-w-[130px]"
-                  style={{ color: breadcrumb.eventColor }}
-                >
-                  {breadcrumb.eventTitle}
-                </span>
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={() => onSelectFolder?.(breadcrumb.folderId)}
-                className="flex items-center gap-1 text-veyra-text hover:text-accent transition-colors cursor-pointer truncate"
-                title="Ver carpeta"
-              >
-                <FolderIcon
-                  className="w-3 h-3 shrink-0"
-                  style={{ color: breadcrumb.folderColor || 'var(--accent-primary)' }}
-                />
-                <span className="font-semibold truncate max-w-[130px]">
-                  {breadcrumb.folderName}
-                </span>
-              </button>
-            )}
-          </div>
-        )}
-      </div>
-
-      {/* Right: Presence Avatars, Status Dot & Saved Text */}
-        <div className="flex items-center gap-2.5">
+      {/* Right: Presence Avatars, Status Dot & Actions */}
+        <div className="flex items-center gap-2">
           <CollabPresence users={collabUsers} currentUserId={currentUserId} />
 
-          {/* Discreet 6px status dot */}
+          {/* Discreet 6px status dot (Combina estado de sincronización y guardado) */}
           <div
-            className="flex items-center justify-center p-0.5"
+            className="flex items-center justify-center p-1"
             title={
-              syncStatus === 'connected'
-                ? 'Colaboración en vivo activa'
+              saveStatus === 'error'
+                ? 'Error al guardar'
+                : saveStatus === 'saving'
+                ? 'Guardando cambios...'
+                : syncStatus === 'connected'
+                ? 'Guardado · Colaboración en vivo activa'
                 : syncStatus === 'connecting'
                 ? 'Conectando con Supabase Realtime...'
-                : 'Desconectado'
+                : 'Guardado localmente (Desconectado)'
             }
           >
             <span
               className={cn(
                 'w-1.5 h-1.5 rounded-full transition-colors',
-                syncStatus === 'connected'
-                  ? 'bg-emerald-500'
-                  : syncStatus === 'connecting'
+                saveStatus === 'error'
+                  ? 'bg-red-500'
+                  : saveStatus === 'saving' || syncStatus === 'connecting'
                   ? 'bg-amber-500 animate-pulse'
+                  : syncStatus === 'connected'
+                  ? 'bg-emerald-500'
                   : 'bg-zinc-600'
               )}
             />
           </div>
 
-          {/* Small gray saved status */}
-          <span className="text-[12px] text-veyra-subtle">
-            {saveStatus === 'saving'
-              ? 'Guardando...'
-              : saveStatus === 'error'
-              ? 'Error al guardar'
-              : 'Guardado'}
-          </span>
-
-          {/* Toggle Floating Pages Sidebar Button */}
+          {/* Toggle Page Format Button per Note (Infinita vs Hoja A4) */}
           <button
             type="button"
-            onClick={() => setIsPagesSidebarOpen(!isPagesSidebarOpen)}
-            title="Panel de hojas y previsualizaciones"
+            onClick={handleTogglePageFormat}
+            title={
+              pageFormat === 'a4'
+                ? 'Esta nota usa formato Hoja A4. Clic para cambiar esta nota a vista Infinita'
+                : 'Esta nota usa vista Infinita. Clic para cambiar esta nota a formato Hoja A4'
+            }
             className={cn(
               'flex items-center gap-1.5 px-2 py-0.5 rounded text-xs transition-colors cursor-pointer border',
-              isPagesSidebarOpen
+              pageFormat === 'a4'
                 ? 'bg-accent/15 border-accent/40 text-accent font-semibold'
                 : 'bg-white/5 border-veyra-border text-veyra-muted hover:text-veyra-text hover:bg-white/10'
             )}
           >
+            {pageFormat === 'a4' ? (
+              <>
+                <FileText className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Hoja A4</span>
+              </>
+            ) : (
+              <>
+                <ScrollText className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Infinita</span>
+              </>
+            )}
+          </button>
+
+          {/* Toggle Floating Pages Sidebar Button (Icon Only) */}
+          <button
+            type="button"
+            onClick={() => setIsPagesSidebarOpen(!isPagesSidebarOpen)}
+            title={isPagesSidebarOpen ? 'Ocultar panel de hojas' : 'Mostrar panel de hojas'}
+            aria-label="Panel de hojas"
+            className={cn(
+              'p-1.5 rounded transition-colors cursor-pointer border flex items-center justify-center',
+              isPagesSidebarOpen
+                ? 'bg-accent/15 border-accent/40 text-accent'
+                : 'bg-white/5 border-veyra-border text-veyra-muted hover:text-veyra-text hover:bg-white/10'
+            )}
+          >
             <Layers className="w-3.5 h-3.5" />
-            <span>Hojas</span>
-            <span className="px-1.5 py-0.2 rounded-full bg-accent/20 text-accent text-[10px] font-bold">
-              {pages.length}
-            </span>
           </button>
 
           {/* Export to PDF Button */}
@@ -1244,61 +1964,184 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
         </div>
       </div>
 
-      {/* Sleek Minimal Formatting Toolbar */}
-      <EditorToolbar editor={editor} onUploadImage={handleUploadImage} />
+      {/* Sleek Minimal Formatting Toolbar OR Word Header/Footer Design Ribbon */}
+      {pageFormat === 'a4' && activeHeaderFooterZone !== null ? (
+        <A4HeaderFooterRibbon
+          config={a4HeaderFooterConfig}
+          onChange={handleUpdateHeaderFooterConfig}
+          activeZone={activeHeaderFooterZone}
+          activeSheetIndex={activeHeaderFooterSheetIdx}
+          totalSheets={a4PageBreaks.length + 1}
+          activeSlot={activeHeaderFooterSlot}
+          onSelectZone={(zone) => {
+            setActiveHeaderFooterZone(zone);
+            scrollToHeaderFooterZone(zone, activeHeaderFooterSheetIdx);
+          }}
+          onNavigateSheet={(nextIdx) => {
+            setActiveHeaderFooterSheetIdx(nextIdx);
+            scrollToHeaderFooterZone(activeHeaderFooterZone, nextIdx);
+          }}
+          onInsertImageFile={async (file) => {
+            const sheetNum = activeHeaderFooterSheetIdx + 1;
+            const key = resolveSlotsKey(
+              a4HeaderFooterConfig,
+              activeHeaderFooterZone,
+              sheetNum
+            );
+            const currentImages = a4HeaderFooterConfig[key].images || [];
+            const newImg = await createHeaderFooterImageFromFile(file, currentImages);
+            handleUpdateHeaderFooterConfig({
+              ...a4HeaderFooterConfig,
+              [key]: {
+                ...a4HeaderFooterConfig[key],
+                images: [...currentImages, newImg],
+              },
+            });
+          }}
+          onClose={() => setActiveHeaderFooterZone(null)}
+        />
+      ) : (
+        <EditorToolbar editor={editor} onUploadImage={handleUploadImage} />
+      )}
 
       {/* Workspace Area: Main Note Canvas + Docked Right Pages Sidebar */}
       <div className="flex-1 flex overflow-hidden relative bg-[#e4e7ec] dark:bg-black">
         {/* Visual Resting Canvas Margins (Lienzo exterior: más oscuro que el documento) */}
         <div
+          ref={scrollContainerRef}
           className="flex-1 overflow-y-auto px-4 sm:px-8 py-6 sm:py-8 transition-all duration-300 bg-[#e4e7ec] dark:bg-[#030304]"
           onClick={(e) => {
             // Clicking anywhere in the outside margins focuses the editor at the end
             if (e.target === e.currentTarget && editor) {
+              if (activeHeaderFooterZone !== null) {
+                setActiveHeaderFooterZone(null);
+              }
               editor.commands.focus('end');
             }
           }}
         >
-          {/* Note Document Sheet (Documento central: gris carbón oscuro y sobrio) */}
-          <div className="max-w-[760px] mx-auto w-full bg-white dark:bg-[#161619] border border-slate-300/80 dark:border-white/8 rounded-2xl p-6 sm:p-12 shadow-2xl min-h-[calc(100vh-140px)] flex flex-col transition-colors">
-            {/* Note Title: autocompletado de #, multilínea con salto de línea automático y fuente discreta */}
-            <HashtagInput
-              value={title}
-              onChange={(newTitle) => handleTitleChange(newTitle)}
-              availableTags={['clase', 'apuntes', 'deberes', 'taller', 'examen', 'universidad', 'trabajo', 'proyecto']}
-              placeholder="Sin título"
-              multiline={true}
-              onEnterPress={() => {
-                if (editor) {
-                  editor.commands.focus('start');
-                }
-              }}
-              containerClassName="mb-6"
-              inputClassName="w-full bg-transparent text-lg sm:text-xl font-medium tracking-tight text-veyra-text/90 placeholder:text-slate-400/60 dark:placeholder:text-veyra-subtle/30 focus:outline-none border-0 p-0 leading-snug transition-colors resize-none overflow-hidden"
-            />
+          {/* Note Document Sheet (Documento central: gris carbón oscuro y sobrio / Hoja A4) */}
+          <div
+            ref={docSheetRef}
+            className={cn(
+              'mx-auto w-full flex flex-col transition-all duration-200 relative',
+              pageFormat === 'a4'
+                ? 'a4-page-mode max-w-[794px] min-h-[1123px] bg-white dark:bg-[#161619] border border-slate-300 dark:border-white/10 rounded-sm shadow-[0_8px_30px_rgb(0,0,0,0.12)] dark:shadow-[0_8px_30px_rgb(0,0,0,0.6)] px-6 sm:px-[30mm] pt-8 sm:pt-[25mm] pb-12 sm:pb-[25mm] mb-4'
+                : 'max-w-[760px] bg-white dark:bg-[#161619] border border-slate-300/80 dark:border-white/8 rounded-2xl p-6 sm:p-12 shadow-2xl min-h-[calc(100vh-140px)]'
+            )}
+          >
+            {pageFormat === 'a4' && <style ref={a4StyleRef} />}
 
-            {/* Tiptap Native DOM Editor + BubbleMenu + SlashMenu */}
+            {/* Zonas interactivas de Encabezado y Pie de página (1,25 cm desde el borde, estilo Word) */}
+            {pageFormat === 'a4' && (
+              <A4SheetHeaderFooterZones
+                config={a4HeaderFooterConfig}
+                onChange={handleUpdateHeaderFooterConfig}
+                totalSheets={a4PageBreaks.length + 1}
+                noteTitle={title || note.title || 'Sin título'}
+                authorName={displayName}
+                activeZone={activeHeaderFooterZone}
+                activeSheetIndex={activeHeaderFooterSheetIdx}
+                activeSlot={activeHeaderFooterSlot}
+                onActivateZone={(zone, sheetIdx) => {
+                  setActiveHeaderFooterZone(zone);
+                  setActiveHeaderFooterSheetIdx(sheetIdx);
+                }}
+                onSelectSlot={(slot) => setActiveHeaderFooterSlot(slot)}
+              />
+            )}
+
+            {/* Visual A4 Page Break Gap (Separación física con espacio real entre hojas y márgenes de 2.5cm) */}
+            {pageFormat === 'a4' &&
+              a4PageBreaks.map((breakTop, idx) => (
+                <div
+                  key={idx}
+                  style={{ top: `${breakTop}px` }}
+                  className="absolute -left-[1px] -right-[1px] h-[36px] pointer-events-none select-none z-20 flex flex-col justify-between"
+                >
+                  {/* Borde inferior de la hoja anterior + sombra de papel físico */}
+                  <div className="w-full h-[1px] bg-slate-300/90 dark:bg-white/10 shadow-[0_4px_12px_rgba(0,0,0,0.15)] dark:shadow-[0_4px_16px_rgba(0,0,0,0.8)]" />
+
+                  {/* Espacio real entre hojas: fondo exacto del lienzo exterior */}
+                  <div className="w-full flex-1 bg-[#e4e7ec] dark:bg-[#030304] flex items-center justify-center relative">
+                    <div className="flex items-center gap-2">
+                      <span className="px-3 py-0.5 rounded-full text-[10px] font-bold tracking-wider uppercase bg-white dark:bg-[#161619] text-slate-600 dark:text-zinc-300 border border-slate-300/80 dark:border-zinc-700 shadow-sm">
+                        Hoja {idx + 2}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Borde superior de la nueva hoja + sombra de papel físico */}
+                  <div className="w-full h-[1px] bg-slate-300/90 dark:bg-white/10 shadow-[0_-3px_10px_rgba(0,0,0,0.12)] dark:shadow-[0_-3px_14px_rgba(0,0,0,0.7)]" />
+                </div>
+              ))}
+
+            {/* Cuerpo del documento (se atenúa cuando se edita el encabezado/pie igual que en Word, o se oculta si se desmarca 'Mostrar texto del documento') */}
             <div
-              className="w-full flex-1 flex flex-col text-veyra-text"
+              className={cn(
+                'w-full flex-1 flex flex-col transition-opacity duration-200',
+                pageFormat === 'a4' &&
+                  activeHeaderFooterZone !== null &&
+                  (a4HeaderFooterConfig.showDocumentText
+                    ? 'opacity-45'
+                    : 'opacity-0 pointer-events-none')
+              )}
               onClick={() => {
-                if (editor && !editor.isFocused) {
-                  editor.commands.focus();
+                if (activeHeaderFooterZone !== null) {
+                  setActiveHeaderFooterZone(null);
                 }
               }}
             >
-              <EditorContent editor={editor} className="flex-1" />
-              <EditorBubbleMenu editor={editor} />
-              <EditorImageBubbleMenu editor={editor} currentUserId={currentUserIdRef.current} />
-              <EditorTableBubbleMenu editor={editor} />
-              <EditorSlashMenu editor={editor} />
-              <EditorListNumberTooltip editor={editor} />
+              {/* Note Title dentro de la hoja solo en vista Infinita */}
+              {pageFormat !== 'a4' && (
+                <HashtagInput
+                  value={title}
+                  onChange={(newTitle) => handleTitleChange(newTitle)}
+                  availableTags={['clase', 'apuntes', 'deberes', 'taller', 'examen', 'universidad', 'trabajo', 'proyecto']}
+                  placeholder="Sin título"
+                  multiline={true}
+                  onEnterPress={() => {
+                    if (editor) {
+                      editor.commands.focus('start');
+                    }
+                  }}
+                  containerClassName="mb-6"
+                  inputClassName="w-full bg-transparent text-lg sm:text-xl font-medium tracking-tight text-veyra-text/90 placeholder:text-slate-400/60 dark:placeholder:text-veyra-subtle/30 focus:outline-none border-0 p-0 leading-snug transition-colors resize-none overflow-hidden"
+                />
+              )}
+
+              {/* Tiptap Native DOM Editor + BubbleMenu + SlashMenu */}
+              <div
+                className="w-full flex-1 flex flex-col text-veyra-text"
+                onClick={() => {
+                  if (editor && !editor.isFocused) {
+                    editor.commands.focus();
+                  }
+                }}
+              >
+                <EditorContent editor={editor} className="flex-1" />
+                <EditorBubbleMenu editor={editor} />
+                <EditorImageBubbleMenu editor={editor} currentUserId={currentUserIdRef.current} />
+                <EditorTableBubbleMenu editor={editor} />
+                <EditorSlashMenu editor={editor} />
+                <EditorListNumberTooltip editor={editor} />
+              </div>
             </div>
 
-            {/* Contador de palabras y caracteres (Discreto al pie del documento) */}
-            <div className="mt-8 pt-4 border-t border-slate-200/60 dark:border-zinc-800/60 flex items-center justify-between text-xs">
-              <EditorWordCount editor={editor} />
-            </div>
+            {/* Contador de palabras y caracteres (Dentro de la hoja solo en vista Infinita) */}
+            {pageFormat !== 'a4' && (
+              <div className="mt-8 pt-4 border-t border-slate-200/60 dark:border-zinc-800/60 flex items-center justify-between text-xs">
+                <EditorWordCount editor={editor} pageFormat={pageFormat} />
+              </div>
+            )}
           </div>
+
+          {/* En modo Hoja A4, el contador de palabras va debajo de la última hoja para dejar libre el pie de página de 2.5cm */}
+          {pageFormat === 'a4' && (
+            <div className="mx-auto max-w-[794px] mb-10 px-2 flex items-center justify-between text-xs">
+              <EditorWordCount editor={editor} pageFormat={pageFormat} />
+            </div>
+          )}
         </div>
 
         {/* Docked Right Pages Sidebar: pushes the canvas so note is 100% visible */}
@@ -1318,6 +2161,10 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
               ydoc={ydoc}
               noteTitle={title}
               onSave={triggerAutoSave}
+              pageFormat={pageFormat}
+              a4Sheets={a4SheetsMeta}
+              activeA4SheetIndex={activeA4SheetIndex}
+              onSelectA4Sheet={handleSelectA4Sheet}
             />
           </div>
         </div>

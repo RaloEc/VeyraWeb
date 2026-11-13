@@ -1,13 +1,10 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { NodeViewWrapper } from '@tiptap/react';
 import type { NodeViewProps } from '@tiptap/react';
-import { Link2, Loader2 } from 'lucide-react';
-import { toast } from 'sonner';
-import { fetchLinkMetadata } from '../../../lib/link-metadata';
+import { Link2 } from 'lucide-react';
 
 export const BookmarkPromptNodeView: React.FC<NodeViewProps> = (props) => {
   const [url, setUrl] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
   const [onlyLink, setOnlyLink] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -19,7 +16,6 @@ export const BookmarkPromptNodeView: React.FC<NodeViewProps> = (props) => {
   }, []);
 
   const handleCancel = () => {
-    if (isLoading) return;
     const pos = props.getPos();
     if (typeof pos !== 'number') return;
     props.editor
@@ -30,10 +26,10 @@ export const BookmarkPromptNodeView: React.FC<NodeViewProps> = (props) => {
       .run();
   };
 
-  const handleSubmit = async () => {
+  const handleSubmit = () => {
     const cleanUrl = url.trim();
-    if (!cleanUrl || isLoading) {
-      if (!cleanUrl) handleCancel();
+    if (!cleanUrl) {
+      handleCancel();
       return;
     }
 
@@ -55,32 +51,32 @@ export const BookmarkPromptNodeView: React.FC<NodeViewProps> = (props) => {
       return;
     }
 
-    setIsLoading(true);
-
+    // Inserción inmediata con esqueleto animado: el BookmarkNodeView se encarga del fetch en segundo plano
+    let domain = cleanUrl;
+    let favicon = '';
     try {
-      const metadata = await fetchLinkMetadata(cleanUrl);
+      const parsed = new URL(fullUrl);
+      domain = parsed.hostname.replace(/^www\./, '');
+      favicon = `https://www.google.com/s2/favicons?domain=${domain}&sz=64`;
+    } catch {}
 
-      props.editor
-        .chain()
-        .focus()
-        .deleteRange({ from: pos, to: pos + 1 })
-        .insertContent({
-          type: 'bookmark',
-          attrs: {
-            url: metadata.url,
-            title: metadata.title,
-            domain: metadata.domain,
-            favicon: metadata.favicon,
-            description: metadata.description,
-            image: metadata.image || null,
-          },
-        })
-        .run();
-    } catch {
-      toast.error('URL no válida. Introduce un enlace web correcto.');
-      setIsLoading(false);
-      inputRef.current?.focus();
-    }
+    props.editor
+      .chain()
+      .focus()
+      .deleteRange({ from: pos, to: pos + 1 })
+      .insertContent({
+        type: 'bookmark',
+        attrs: {
+          url: fullUrl,
+          title: domain,
+          domain,
+          favicon,
+          description: '',
+          image: null,
+          isLoading: true,
+        },
+      })
+      .run();
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -129,9 +125,8 @@ export const BookmarkPromptNodeView: React.FC<NodeViewProps> = (props) => {
           onKeyDown={handleKeyDown}
           onMouseDown={(e) => e.stopPropagation()}
           onClick={(e) => e.stopPropagation()}
-          disabled={isLoading}
           placeholder={onlyLink ? "URL para enlace de texto (ej: https://...)" : "Pega o escribe la dirección web (ej: wikipedia.org)..."}
-          className="flex-1 bg-transparent border-none outline-none text-[13px] text-neutral-800 dark:text-neutral-200 placeholder:text-neutral-400 dark:placeholder:text-neutral-600 cursor-text disabled:opacity-60"
+          className="flex-1 bg-transparent border-none outline-none text-[13px] text-neutral-800 dark:text-neutral-200 placeholder:text-neutral-400 dark:placeholder:text-neutral-600 cursor-text"
         />
 
         {/* Switch Solo Enlace (para bibliografías, citas, etc.) */}
@@ -162,18 +157,11 @@ export const BookmarkPromptNodeView: React.FC<NodeViewProps> = (props) => {
           </div>
         </div>
 
-        {isLoading ? (
-          <div className="flex items-center gap-1.5 text-neutral-400 dark:text-neutral-500 shrink-0 select-none">
-            <Loader2 className="w-3 h-3 animate-spin" />
-            <span className="text-xs">Cargando...</span>
-          </div>
-        ) : (
-          <div className="flex items-center gap-1 text-[10px] text-neutral-400 dark:text-neutral-500 shrink-0 select-none">
-            <span className="px-1.5 py-0.5 rounded border border-neutral-200 dark:border-neutral-800 font-mono text-[9px]">
-              Enter ↵
-            </span>
-          </div>
-        )}
+        <div className="flex items-center gap-1 text-[10px] text-neutral-400 dark:text-neutral-500 shrink-0 select-none">
+          <span className="px-1.5 py-0.5 rounded border border-neutral-200 dark:border-neutral-800 font-mono text-[9px]">
+            Enter ↵
+          </span>
+        </div>
       </div>
     </NodeViewWrapper>
   );

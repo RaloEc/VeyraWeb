@@ -242,10 +242,10 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({ editor, onUploadIm
         };
       }
     };
-    editor.on('transaction', handleUpdate);
+    editor.on('update', handleUpdate);
     editor.on('selectionUpdate', handleUpdate);
     return () => {
-      editor.off('transaction', handleUpdate);
+      editor.off('update', handleUpdate);
       editor.off('selectionUpdate', handleUpdate);
     };
   }, [editor]);

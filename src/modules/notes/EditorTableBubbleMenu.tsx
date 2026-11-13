@@ -62,6 +62,11 @@ const BORDER_COLORS = [
   { label: 'Rojo suave', value: '#fca5a5', bgClass: 'bg-rose-300' },
 ];
 
+const TABLE_BUBBLE_MENU_OPTIONS = {
+  placement: 'top' as const,
+  offset: 10,
+};
+
 export const EditorTableBubbleMenu: React.FC<EditorTableBubbleMenuProps> = ({ editor }) => {
   if (!editor) return null;
 
@@ -83,19 +88,29 @@ export const EditorTableBubbleMenu: React.FC<EditorTableBubbleMenuProps> = ({ ed
   const mergeMenuRef = useRef<HTMLDivElement>(null);
   const deleteTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  const isColorMenuOpenRef = useRef(isColorMenuOpen);
+  isColorMenuOpenRef.current = isColorMenuOpen;
+  const isMergeMenuOpenRef = useRef(isMergeMenuOpen);
+  isMergeMenuOpenRef.current = isMergeMenuOpen;
+
+  const shouldShowTableBubbleMenu = useCallback(({ editor: ed }: { editor: Editor }) => {
+    if (isColorMenuOpenRef.current || isMergeMenuOpenRef.current) return true;
+    return ed.isActive('table');
+  }, []);
+
   // Forzar actualización inmediata del menú cuando cambia la selección o contenido
   const [, setTick] = useState(0);
 
   useEffect(() => {
     if (!editor) return;
-    const handleUpdate = () => {
+    const handleSelectionOrUpdate = () => {
       setTick((t) => t + 1);
     };
-    editor.on('selectionUpdate', handleUpdate);
-    editor.on('transaction', handleUpdate);
+    editor.on('selectionUpdate', handleSelectionOrUpdate);
+    editor.on('update', handleSelectionOrUpdate);
     return () => {
-      editor.off('selectionUpdate', handleUpdate);
-      editor.off('transaction', handleUpdate);
+      editor.off('selectionUpdate', handleSelectionOrUpdate);
+      editor.off('update', handleSelectionOrUpdate);
     };
   }, [editor]);
 
@@ -355,15 +370,9 @@ export const EditorTableBubbleMenu: React.FC<EditorTableBubbleMenuProps> = ({ ed
       <BubbleMenu
         editor={editor}
         pluginKey="tableBubbleMenu"
-        shouldShow={({ editor }) => {
-          if (isColorMenuOpen || isMergeMenuOpen) return true;
-          return editor.isActive('table');
-        }}
+        shouldShow={shouldShowTableBubbleMenu}
         getReferencedVirtualElement={getTableVirtualElement}
-        options={{
-          placement: 'top',
-          offset: 10,
-        }}
+        options={TABLE_BUBBLE_MENU_OPTIONS}
         className="flex items-center gap-1 p-1 rounded-xl bg-white dark:bg-[#18181b] border border-slate-200 dark:border-zinc-800 shadow-xl z-50 text-slate-700 dark:text-zinc-200 text-xs select-none"
       >
         {/* Botón Combinar Celdas */}

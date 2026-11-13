@@ -1232,3 +1232,46 @@ figcaption,
 .resize-cursor {
   cursor: col-resize;
 }
+
+/* ═══════════════════════════════════════════════════════════════
+   MODO HOJA A4 (Márgenes PDF: 2.5cm sup/inf, 3.0cm izq/der)
+   ═══════════════════════════════════════════════════════════════ */
+.a4-page-mode {
+  box-sizing: border-box;
+}
+
+.a4-page-mode .ProseMirror {
+  display: flow-root;
+}
+
+@media (min-width: 640px) {
+  .a4-page-mode {
+    padding-left: 30mm !important;
+    padding-right: 30mm !important;
+    padding-top: 25mm !important;
+    padding-bottom: 25mm !important;
+  }
+}
+
+.a4-page-mode .veyra-table {
+  margin: 1.5rem 0;
+}
+
+.a4-page-mode .veyra-table td,
+.a4-page-mode .veyra-table th {
+  padding: 8px 14px;
+}
+
+/* Divisor horizontal normal de sección dentro de la hoja */
+.a4-page-mode hr {
+  border: none;
+  border-top: 1px solid rgba(148, 163, 184, 0.45);
+  margin: 1.5rem 0;
+  height: 0;
+}
+
+.dark .a4-page-mode hr {
+  border-top-color: rgba(255, 255, 255, 0.12);
+}
+
+

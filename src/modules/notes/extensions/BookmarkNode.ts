@@ -9,6 +9,7 @@ export interface BookmarkAttributes {
   favicon?: string;
   domain?: string;
   image?: string | null;
+  isLoading?: boolean;
 }
 
 declare module '@tiptap/core' {
@@ -88,6 +89,16 @@ export const BookmarkNode = Node.create({
           if (!attributes.image) return {};
           return {
             'data-bookmark-image': attributes.image,
+          };
+        },
+      },
+      isLoading: {
+        default: false,
+        parseHTML: (element) => element.getAttribute('data-bookmark-loading') === 'true',
+        renderHTML: (attributes) => {
+          if (!attributes.isLoading) return {};
+          return {
+            'data-bookmark-loading': 'true',
           };
         },
       },

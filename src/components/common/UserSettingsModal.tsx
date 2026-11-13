@@ -1,5 +1,5 @@
-import React from 'react';
-import { LogOut, Check, Moon, Sun } from 'lucide-react';
+import React, { useState } from 'react';
+import { LogOut, Check, Moon, Sun, FileText, Scroll } from 'lucide-react';
 import { useTheme } from '../../theme/ThemeProvider';
 import { ACCENT_PALETTES, type AccentTheme } from '../../theme/accentColors';
 import { cn } from '../../lib/utils';
@@ -21,6 +21,21 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
   onSignOut,
 }) => {
   const { setMode, accentTheme, setAccentTheme, isDark } = useTheme();
+
+  const [notePageFormat, setNotePageFormatState] = useState<'infinite' | 'a4'>(() => {
+    if (typeof window !== 'undefined') {
+      return (localStorage.getItem('veyra_note_page_format') as 'infinite' | 'a4') || 'infinite';
+    }
+    return 'infinite';
+  });
+
+  const handleSetNotePageFormat = (format: 'infinite' | 'a4') => {
+    setNotePageFormatState(format);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('veyra_note_page_format', format);
+      window.dispatchEvent(new CustomEvent('veyra_note_page_format_changed', { detail: format }));
+    }
+  };
 
   const availableAccents: { theme: AccentTheme; label: string; hex: string }[] = [
     { theme: 'blue', label: 'Azul', hex: ACCENT_PALETTES.blue[isDark ? 'dark' : 'light'].primary },
@@ -73,6 +88,44 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
               <span>Modo Claro</span>
             </button>
           </div>
+        </div>
+
+        {/* Note Page Format */}
+        <div>
+          <label className="block text-[11px] font-medium text-veyra-muted mb-1.5 uppercase tracking-wider">
+            Formato por Defecto en Notas
+          </label>
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={() => handleSetNotePageFormat('infinite')}
+              className={cn(
+                'flex items-center justify-center gap-2 py-2 px-3 rounded-lg border text-xs font-medium transition-colors cursor-pointer',
+                notePageFormat === 'infinite'
+                  ? 'bg-accent/15 border-accent text-accent font-semibold'
+                  : 'bg-veyra-elevated border-veyra-border text-veyra-muted hover:text-veyra-text'
+              )}
+            >
+              <Scroll className="w-3.5 h-3.5" />
+              <span>Infinita</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => handleSetNotePageFormat('a4')}
+              className={cn(
+                'flex items-center justify-center gap-2 py-2 px-3 rounded-lg border text-xs font-medium transition-colors cursor-pointer',
+                notePageFormat === 'a4'
+                  ? 'bg-accent/15 border-accent text-accent font-semibold'
+                  : 'bg-veyra-elevated border-veyra-border text-veyra-muted hover:text-veyra-text'
+              )}
+            >
+              <FileText className="w-3.5 h-3.5" />
+              <span>Separación A4</span>
+            </button>
+          </div>
+          <p className="text-[10px] text-veyra-subtle mt-1">
+            Define el formato inicial para notas nuevas. Puedes cambiar cada nota individualmente desde la barra superior del editor.
+          </p>
         </div>
 
         {/* Accent color picker */}

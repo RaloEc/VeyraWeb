@@ -7,9 +7,10 @@ import { cn } from '../../../lib/utils';
 export interface EditorWordCountProps {
   editor: Editor | null;
   className?: string;
+  pageFormat?: 'infinite' | 'a4';
 }
 
-export const EditorWordCount: React.FC<EditorWordCountProps> = ({ editor, className }) => {
+export const EditorWordCount: React.FC<EditorWordCountProps> = ({ editor, className, pageFormat }) => {
   const stats = useEditorState({
     editor,
     selector: (ctx) => {
@@ -60,6 +61,13 @@ export const EditorWordCount: React.FC<EditorWordCountProps> = ({ editor, classN
         </strong>{' '}
         caracteres
       </span>
+
+      {pageFormat === 'a4' && (
+        <>
+          <span className="opacity-40">•</span>
+          <span className="text-accent font-medium">Hoja A4</span>
+        </>
+      )}
 
       {stats.words >= 50 && (
         <>
