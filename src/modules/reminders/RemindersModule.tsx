@@ -10,12 +10,14 @@ import type { Reminder, ReminderFilterTab, ReminderPriority, ReminderControlLeve
 
 export interface RemindersModuleProps {
   userId: string;
+  defaultControlLevel?: string | null;
   remindersHook?: ReturnType<typeof useReminders>;
   eventsHook?: ReturnType<typeof useEvents>;
 }
 
 export const RemindersModule: React.FC<RemindersModuleProps> = ({
   userId,
+  defaultControlLevel,
   remindersHook,
   eventsHook,
 }) => {
@@ -33,6 +35,7 @@ export const RemindersModule: React.FC<RemindersModuleProps> = ({
     createReminder,
     updateReminder,
     deleteReminder,
+    snoozeReminder,
   } = remindersHook || localHook;
 
   const [activeTab, setActiveTab] = useState<ReminderFilterTab>('today');
@@ -75,11 +78,12 @@ export const RemindersModule: React.FC<RemindersModuleProps> = ({
     const now = new Date();
     now.setHours(now.getHours() + 1);
 
+    const defaultLevel = (defaultControlLevel === 'gentle' ? 'normal' : defaultControlLevel) || 'normal';
     await createReminder({
       title: quickTitle.trim(),
       due_date_ms: now.getTime(),
-      control_level: 'normal',
-      priority: 1,
+      control_level: defaultLevel,
+      priority: defaultLevel === 'critical' ? 3 : defaultLevel === 'strict' ? 2 : 1,
     });
     setQuickTitle('');
   };
@@ -148,7 +152,7 @@ export const RemindersModule: React.FC<RemindersModuleProps> = ({
             Recordatorios
           </h1>
           <p className="text-xs text-veyra-muted mt-0.5">
-            Sincronización en vivo con tu teléfono móvil.
+            Organiza tus tareas y avisos prioritarios.
           </p>
         </div>
 
@@ -248,6 +252,7 @@ export const RemindersModule: React.FC<RemindersModuleProps> = ({
                 onToggleSubtask={toggleSubtask}
                 onEdit={handleOpenEditModal}
                 onDelete={deleteReminder}
+                onSnooze={snoozeReminder}
                 linkedEventTitle={linkedEvent?.title}
                 linkedEventColor={linkedEvent?.color || undefined}
                 linkedEventId={linkedEvent?.id}
@@ -263,6 +268,7 @@ export const RemindersModule: React.FC<RemindersModuleProps> = ({
         onClose={() => setIsModalOpen(false)}
         reminder={editingReminder}
         events={currentEventsHook?.events}
+        defaultControlLevel={defaultControlLevel}
         onSave={handleSaveModal}
         onDelete={deleteReminder}
       />

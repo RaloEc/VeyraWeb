@@ -6,12 +6,25 @@ export interface AIGeneratedNoteContent {
   summary: string;
 }
 
+export interface AIYouTubeVideoContext {
+  videoId: string;
+  title?: string;
+  author?: string;
+  url: string;
+  thumbnailUrl?: string;
+}
+
+export interface AINoteImageContext {
+  src: string;
+  mimeType?: string;
+  alt?: string;
+}
+
 export interface AINoteContext {
   textBefore?: string;
-  image?: {
-    src: string;
-    mimeType?: string;
-  };
+  image?: AINoteImageContext;
+  images?: AINoteImageContext[];
+  youtubeVideos?: AIYouTubeVideoContext[];
 }
 
 const SYSTEM_PROMPT = `Eres el asistente de IA integrado en el editor de notas de Veyra.
@@ -25,6 +38,12 @@ Tu objetivo es analizar la orden (y cualquier contexto de texto o imagen adjunta
 
 REGLAS DE CONTEXTO:
 - Si se proporciona un bloque de "Contexto del documento" o una imagen adjunta, úsalo como fuente principal de verdad para responder a órdenes como "resume lo anterior", "haz una tabla con los datos de arriba", "extrae la información de la imagen", etc.
+- Si el contexto incluye videos de YouTube incrustados (título, autor o URL), comprende a fondo el tema, los conceptos clave y la temática educativa/técnica de dichos videos para responder a preguntas o solicitudes del usuario.
+- REGLAS PARA VARIOS VIDEOS O MÚLTIPLES IMÁGENES:
+  1. Por tema o título: Si el usuario menciona el tema o creador (ej: "del video sobre finanzas", "de la imagen del gráfico"), atiende exclusivamente a ese recurso.
+  2. Por orden o posición: Si el usuario indica "el primer video", "el segundo video", "el último video", "la última imagen", "el video 1", etc., toma el elemento correspondiente.
+  3. Combinación o comparativa: Si el usuario pide "compara los dos videos", "resume ambos", o "integra las imágenes", sintetiza la información de todos los elementos indicados.
+  4. Por defecto: Si el usuario no especifica y hay varios, enfócate en el recurso más cercano inmediatamente anterior a la orden /ia.
 - Mantén el formato fiel a los datos del contexto.
 
 REGLAS ESTRICTAS DE HTML PARA TIPTAP:
@@ -143,49 +162,81 @@ export async function generateNoteContentWithAI(
     };
   }
 
-  // 2. Procesar contexto de imagen si existe
+  // 2. Procesar contexto de imágenes si existen (soporta una o varias imágenes)
   let attachments: any[] | undefined = undefined;
   let action = 'generateStructured';
 
-  if (context?.image?.src) {
+  const rawImages = context?.images || (context?.image ? [context.image] : []);
+  if (rawImages.length > 0) {
     try {
-      let base64 = '';
-      if (context.image.src.startsWith('data:')) {
-        base64 = context.image.src.replace(/^data:[^;]+;base64,/, '');
-      } else {
-        const imgRes = await fetch(context.image.src);
-        if (imgRes.ok) {
-          const blob = await imgRes.blob();
-          base64 = await new Promise<string>((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onloadend = () => {
-              const res = (reader.result as string) || '';
-              resolve(res.replace(/^data:[^;]+;base64,/, ''));
-            };
-            reader.onerror = reject;
-            reader.readAsDataURL(blob);
-          });
-        }
-      }
+      const processedAttachments = await Promise.all(
+        rawImages.slice(-4).map(async (img) => {
+          try {
+            let base64 = '';
+            if (img.src.startsWith('data:')) {
+              base64 = img.src.replace(/^data:[^;]+;base64,/, '');
+            } else {
+              const imgRes = await fetch(img.src);
+              if (imgRes.ok) {
+                const blob = await imgRes.blob();
+                base64 = await new Promise<string>((resolve, reject) => {
+                  const reader = new FileReader();
+                  reader.onloadend = () => {
+                    const res = (reader.result as string) || '';
+                    resolve(res.replace(/^data:[^;]+;base64,/, ''));
+                  };
+                  reader.onerror = reject;
+                  reader.readAsDataURL(blob);
+                });
+              }
+            }
+            if (base64) {
+              return {
+                base64Data: base64,
+                mimeType: img.mimeType || 'image/jpeg',
+              };
+            }
+          } catch (imgErr) {
+            console.warn('[AINotesService] Error processing image item:', imgErr);
+          }
+          return null;
+        })
+      );
 
-      if (base64) {
+      const valid = processedAttachments.filter(Boolean);
+      if (valid.length > 0) {
         action = 'generateMultimodal';
-        attachments = [
-          {
-            base64Data: base64,
-            mimeType: context.image.mimeType || 'image/jpeg',
-          },
-        ];
+        attachments = valid;
       }
-    } catch (imgErr) {
-      console.warn('[AINotesService] Could not process image attachment:', imgErr);
+    } catch (allImgErr) {
+      console.warn('[AINotesService] Error processing attachments:', allImgErr);
     }
   }
 
   // 3. Estructurar el texto de la petición incorporando el contexto
   let fullPromptText = cleanPrompt;
+  const contextSections: string[] = [];
+
+  if (context?.youtubeVideos && context.youtubeVideos.length > 0) {
+    const ytDescriptions = context.youtubeVideos
+      .map((yt, idx) => {
+        const parts = [
+          `Video #${idx + 1}: "${yt.title || 'Video de YouTube'}"`,
+          `- URL: ${yt.url}`,
+        ];
+        if (yt.author) parts.push(`- Canal / Creador: ${yt.author}`);
+        return parts.join('\n');
+      })
+      .join('\n\n');
+    contextSections.push(`Videos de YouTube incrustados en la nota:\n${ytDescriptions}`);
+  }
+
   if (context?.textBefore && context.textBefore.trim().length > 0) {
-    fullPromptText = `Contexto del documento:\n"""\n${context.textBefore.trim()}\n"""\n\nOrden del usuario:\n${cleanPrompt}`;
+    contextSections.push(`Contenido textual previo de la nota:\n"""\n${context.textBefore.trim()}\n"""`);
+  }
+
+  if (contextSections.length > 0) {
+    fullPromptText = `Contexto del documento:\n${contextSections.join('\n\n')}\n\nOrden del usuario:\n${cleanPrompt}`;
   }
 
   // Timeout de 30 segundos usando AbortController

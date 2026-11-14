@@ -35,6 +35,7 @@ export interface ReminderModalProps {
   reminder?: Reminder | null;
   events?: CalendarEvent[];
   defaultEventId?: string | null;
+  defaultControlLevel?: ReminderControlLevel | string | null;
   onSave: (payload: {
     id?: string;
     title: string;
@@ -70,14 +71,18 @@ export const ReminderModal: React.FC<ReminderModalProps> = ({
   reminder,
   events,
   defaultEventId,
+  defaultControlLevel,
   onSave,
   onDelete,
 }) => {
+  const initialDefaultLevel: ReminderControlLevel =
+    defaultControlLevel === 'gentle' ? 'normal' : (defaultControlLevel as ReminderControlLevel) || 'normal';
+
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [dateStr, setDateStr] = useState('');
   const [timeStr, setTimeStr] = useState('12:00');
-  const [controlLevel, setControlLevel] = useState<ReminderControlLevel>('normal');
+  const [controlLevel, setControlLevel] = useState<ReminderControlLevel>(initialDefaultLevel);
   const [selectedEventId, setSelectedEventId] = useState<string | null>(
     reminder?.event_id ?? defaultEventId ?? null
   );
@@ -162,7 +167,7 @@ export const ReminderModal: React.FC<ReminderModalProps> = ({
       setTitle('');
       setDescription('');
       setSelectedEventId(defaultEventId || null);
-      setControlLevel('normal');
+      setControlLevel(initialDefaultLevel);
       setSubtasks([]);
       setAttachments([]);
       setRecurrenceType('none');

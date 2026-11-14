@@ -4,6 +4,8 @@ import { NotesModule } from '../../modules/notes/NotesModule';
 import { useReminders } from '../../hooks/useReminders';
 import { useNotes } from '../../hooks/useNotes';
 import { useEvents } from '../../hooks/useEvents';
+import { useReminderScheduler } from '../../hooks/useReminderScheduler';
+import { InAppReminderAlertModal } from '../common/InAppReminderAlertModal';
 import type { User } from '@supabase/supabase-js';
 import type { Database } from '../../types/database';
 
@@ -86,6 +88,21 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ user, profile, onSignOut }
   const notesState = useNotes(user.id, initialRoute.noteId);
   const eventsState = useEvents(user.id);
 
+  // In-App Reminder Scheduler & Alert Coordination
+  const { activeAlert, handleComplete, handleSnooze, handleDismiss } = useReminderScheduler({
+    reminders: remindersState.reminders,
+    events: eventsState.events,
+    onCompleteReminder: async (id) => {
+      const r = remindersState.reminders.find((item) => item.id === id);
+      if (r && r.status !== 'completed') {
+        await remindersState.toggleReminder(id, r.status);
+      }
+    },
+    onSnoozeReminder: async (id, minutes) => {
+      await remindersState.snoozeReminder(id, minutes);
+    },
+  });
+
   // If a folder was requested in query params, select it
   useEffect(() => {
     if (initialRoute.folderId) {
@@ -138,7 +155,12 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ user, profile, onSignOut }
       {/* Main Workspace (Full width: Note editor and Folders sidebar have full stage) */}
       <main className="flex-1 flex overflow-hidden bg-veyra-canvas h-full">
         {activeModule === 'reminders' ? (
-          <RemindersModule userId={user.id} remindersHook={remindersState} eventsHook={eventsState} />
+          <RemindersModule
+            userId={user.id}
+            defaultControlLevel={profile?.default_control_level}
+            remindersHook={remindersState}
+            eventsHook={eventsState}
+          />
         ) : (
           <NotesModule
             userId={user.id}
@@ -154,6 +176,14 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ user, profile, onSignOut }
           />
         )}
       </main>
+
+      {/* In-App Interactive Alert Modal */}
+      <InAppReminderAlertModal
+        item={activeAlert}
+        onComplete={handleComplete}
+        onSnooze={handleSnooze}
+        onDismiss={handleDismiss}
+      />
     </div>
   );
 };

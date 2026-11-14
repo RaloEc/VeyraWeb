@@ -459,11 +459,11 @@ export const EditorSlashMenu: React.FC<EditorSlashMenuProps> = ({ editor }) => {
         maxHeight: coords.maxHeight,
       }}
       className={cn(
-        'fixed w-64 overflow-y-auto p-1 rounded-md bg-veyra-surface border border-veyra-border shadow-elevated z-50 animate-in fade-in zoom-in-95 duration-100 select-none backdrop-blur-md',
+        'fixed w-64 overflow-y-auto p-1 rounded-md bg-white dark:bg-[#18181b] border border-slate-200 dark:border-zinc-800 shadow-xl z-50 animate-in fade-in zoom-in-95 duration-100 select-none text-slate-800 dark:text-zinc-100',
         coords.showAbove && '-translate-y-full'
       )}
     >
-      <div className="px-2 py-1 text-[10px] font-semibold text-veyra-subtle uppercase tracking-wider">
+      <div className="px-2 py-1 text-[10px] font-semibold text-slate-500 dark:text-zinc-400 uppercase tracking-wider">
         Bloques de contenido
       </div>
       <div className="space-y-0.5">
@@ -476,21 +476,23 @@ export const EditorSlashMenu: React.FC<EditorSlashMenuProps> = ({ editor }) => {
             className={cn(
               'w-full flex items-center gap-2.5 px-2 py-1.5 rounded text-left transition-colors cursor-pointer',
               selectedIndex === index
-                ? 'bg-accent/15 text-accent'
-                : 'text-veyra-muted hover:text-veyra-text hover:bg-white/5'
+                ? 'bg-accent/15 text-accent font-medium'
+                : 'text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-zinc-100 hover:bg-slate-100 dark:hover:bg-zinc-800'
             )}
           >
             <div
               className={cn(
-                'w-6 h-6 rounded flex items-center justify-center shrink-0 border border-veyra-border',
-                selectedIndex === index ? 'bg-accent/20 text-accent border-accent/40' : 'bg-veyra-elevated text-veyra-muted'
+                'w-6 h-6 rounded flex items-center justify-center shrink-0 border',
+                selectedIndex === index
+                  ? 'bg-accent/20 text-accent border-accent/40'
+                  : 'bg-slate-100 dark:bg-zinc-800 border-slate-200 dark:border-zinc-700 text-slate-600 dark:text-zinc-400'
               )}
             >
               {item.icon}
             </div>
             <div className="flex-1 min-w-0">
-              <div className="text-xs font-medium truncate text-veyra-text">{item.title}</div>
-              <div className="text-[10px] text-veyra-subtle truncate">{item.description}</div>
+              <div className="text-xs font-medium truncate text-slate-800 dark:text-zinc-100">{item.title}</div>
+              <div className="text-[10.5px] text-slate-500 dark:text-zinc-400 truncate">{item.description}</div>
             </div>
           </button>
         ))}

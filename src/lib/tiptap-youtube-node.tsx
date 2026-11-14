@@ -7,7 +7,7 @@ import { AlignLeft, AlignCenter, AlignRight, Play, Link2, Trash2 } from 'lucide-
 import { cn } from './utils';
 
 export const YT_REGEX =
-  /^(?:https?:\/\/)?(?:www\.|m\.)?(?:youtube\.com\/(?:watch\?(?:.*&)?v=|shorts\/|embed\/|v\/)|youtu\.be\/)([a-zA-Z0-9_-]{11})(?:[?&#].*)?$/i;
+  /^(?:https?:\/\/)?(?:www\.|m\.)?(?:youtube\.com\/(?:watch\?(?:.*&)?v=|shorts\/|live\/|embed\/|v\/)|youtu\.be\/)([a-zA-Z0-9_-]{11})(?:[?&#].*)?$/i;
 
 declare module '@tiptap/core' {
   interface Commands<ReturnType> {
@@ -205,12 +205,12 @@ const YouTubeComponent: React.FC<NodeViewProps> = (props) => {
           selected && 'ProseMirror-selectednode is-selected'
         )}
       >
-        <span className="inline-flex items-center gap-2 py-0.5 px-2 rounded border border-veyra-border bg-veyra-card/60 text-sm">
+        <span className="inline-flex items-center gap-2 py-0.5 px-2 rounded border border-slate-300 dark:border-zinc-700/60 bg-slate-100/90 dark:bg-zinc-800/80 text-sm shadow-2xs">
           <a
             href={`https://www.youtube.com/watch?v=${videoId}`}
             target="_blank"
             rel="noopener noreferrer"
-            className="text-accent underline font-medium hover:text-accent-muted transition-colors truncate max-w-[420px]"
+            className="text-blue-600 dark:text-blue-400 underline font-medium hover:opacity-80 transition-opacity truncate max-w-[420px]"
             onClick={(e) => e.stopPropagation()}
           >
             https://www.youtube.com/watch?v={videoId}
@@ -221,7 +221,7 @@ const YouTubeComponent: React.FC<NodeViewProps> = (props) => {
               e.stopPropagation();
               updateAttributes({ embed: true });
             }}
-            className="px-1.5 py-0.5 text-[11px] font-medium text-veyra-text hover:text-accent bg-white/10 hover:bg-white/15 rounded transition-colors cursor-pointer"
+            className="px-1.5 py-0.5 text-[11px] font-medium text-slate-700 dark:text-zinc-200 hover:text-blue-600 dark:hover:text-blue-300 bg-white/70 dark:bg-white/10 hover:bg-white dark:hover:bg-white/15 border border-slate-200 dark:border-white/5 rounded transition-colors cursor-pointer"
             title="Mostrar como video"
           >
             Mostrar como video
@@ -232,7 +232,7 @@ const YouTubeComponent: React.FC<NodeViewProps> = (props) => {
               e.stopPropagation();
               deleteNode();
             }}
-            className="px-1.5 py-0.5 text-[11px] font-medium text-red-400 hover:text-red-300 bg-red-500/15 hover:bg-red-500/25 rounded transition-colors cursor-pointer"
+            className="px-1.5 py-0.5 text-[11px] font-medium text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 bg-red-50 dark:bg-red-500/15 hover:bg-red-100 dark:hover:bg-red-500/25 border border-red-200 dark:border-red-500/20 rounded transition-colors cursor-pointer"
             title="Eliminar enlace"
           >
             Eliminar
@@ -302,7 +302,7 @@ const YouTubeComponent: React.FC<NodeViewProps> = (props) => {
           {/* Overlay de controles flotante (Hover o Selección) */}
           <div
             className={cn(
-              'yt-overlay absolute top-2 right-2 flex items-center gap-1 z-30 p-1 rounded-md bg-black/85 backdrop-blur-md border border-white/10 shadow-lg pointer-events-auto',
+              'yt-overlay absolute top-2 right-2 flex items-center gap-1 z-30 p-1 rounded-md bg-zinc-900 border border-zinc-700 shadow-xl pointer-events-auto',
               selected && 'opacity-100'
             )}
             onClick={(e) => e.stopPropagation()}
@@ -474,7 +474,7 @@ const YouTubeComponent: React.FC<NodeViewProps> = (props) => {
           <>
             {/* Indicador de porcentaje flotante durante el redimensionamiento */}
             {isResizing && currentWidth && (
-              <div className="absolute top-2 left-1/2 -translate-x-1/2 bg-black/85 text-white text-[11px] font-medium px-2 py-0.5 rounded-full backdrop-blur-sm pointer-events-none z-40 shadow">
+              <div className="absolute top-2 left-1/2 -translate-x-1/2 bg-zinc-900 text-white text-[11px] font-medium px-2 py-0.5 rounded-full border border-zinc-700 pointer-events-none z-40 shadow-md">
                 {currentWidth}%
               </div>
             )}

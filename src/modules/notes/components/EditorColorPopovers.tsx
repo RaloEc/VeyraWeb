@@ -38,7 +38,7 @@ export const TextColorPopover: React.FC<TextColorPopoverProps> = ({
         left: coords.left,
         zIndex: 9999,
       }}
-      className="p-2.5 rounded-xl bg-veyra-card/98 border border-veyra-border shadow-elevated min-w-[215px] animate-in fade-in zoom-in-95 duration-100 select-none text-xs backdrop-blur-md"
+      className="p-2.5 rounded-xl bg-white dark:bg-[#18181b] border border-slate-200 dark:border-zinc-800 shadow-xl min-w-[215px] animate-in fade-in zoom-in-95 duration-100 select-none text-xs text-slate-800 dark:text-zinc-100"
     >
       <div className="flex items-center justify-between px-1 mb-2">
         <span className="text-[11px] font-semibold text-veyra-text">
@@ -172,7 +172,7 @@ export const HighlightColorPopover: React.FC<HighlightColorPopoverProps> = ({
         left: coords.left,
         zIndex: 9999,
       }}
-      className="p-2.5 rounded-xl bg-veyra-card/98 border border-veyra-border shadow-elevated min-w-[200px] animate-in fade-in zoom-in-95 duration-100 select-none text-xs backdrop-blur-md"
+      className="p-2.5 rounded-xl bg-white dark:bg-[#18181b] border border-slate-200 dark:border-zinc-800 shadow-xl min-w-[200px] animate-in fade-in zoom-in-95 duration-100 select-none text-xs text-slate-800 dark:text-zinc-100"
     >
       <div className="flex items-center justify-between px-1 mb-2">
         <span className="text-[11px] font-semibold text-veyra-text">

@@ -100,6 +100,12 @@ export function useAuth() {
     setProfile(null);
   };
 
+  const refreshProfile = async () => {
+    if (user) {
+      await fetchProfile(user.id);
+    }
+  };
+
   return {
     user,
     session,
@@ -107,5 +113,6 @@ export function useAuth() {
     loading,
     signInWithPassword,
     signOut,
+    refreshProfile,
   };
 }

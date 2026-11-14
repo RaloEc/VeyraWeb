@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase';
 import { ACCENT_PALETTES, type AccentTheme, type AccentPalette } from './accentColors';
 
 export type ThemeMode = 'light' | 'dark' | 'system';
+export type NotePaperMode = 'auto' | 'light';
 
 export interface ThemeContextType {
   mode: ThemeMode;
@@ -11,6 +12,9 @@ export interface ThemeContextType {
   setAccentTheme: (theme: AccentTheme) => Promise<void>;
   isDark: boolean;
   palette: AccentPalette;
+  notePaperMode: NotePaperMode;
+  setNotePaperMode: (mode: NotePaperMode) => void;
+  isPaperLight: boolean;
 }
 
 const ThemeContext = createContext<ThemeContextType | null>(null);
@@ -21,6 +25,20 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     if (typeof window === 'undefined') return 'dark';
     return (localStorage.getItem('veyra_web_theme_mode') as ThemeMode) || 'dark';
   });
+
+  // 1.1 Apariencia de la hoja en Modo Oscuro (auto = oscura como el tema, light = hoja blanca)
+  const [notePaperMode, setNotePaperModeState] = useState<NotePaperMode>(() => {
+    if (typeof window === 'undefined') return 'auto';
+    return (localStorage.getItem('veyra_note_paper_mode') as NotePaperMode) || 'auto';
+  });
+
+  const setNotePaperMode = (newMode: NotePaperMode) => {
+    setNotePaperModeState(newMode);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('veyra_note_paper_mode', newMode);
+      window.dispatchEvent(new CustomEvent('veyra_note_paper_mode_changed', { detail: newMode }));
+    }
+  };
 
   // 2. Color de acento: Sincronizado en tiempo real con el móvil
   const [accentTheme, setAccentThemeState] = useState<AccentTheme>('blue');
@@ -133,8 +151,22 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     }
   }, [accentTheme, isDark, palette]);
 
+  const isPaperLight = isDark && notePaperMode === 'light';
+
   return (
-    <ThemeContext.Provider value={{ mode, setMode, accentTheme, setAccentTheme, isDark, palette }}>
+    <ThemeContext.Provider
+      value={{
+        mode,
+        setMode,
+        accentTheme,
+        setAccentTheme,
+        isDark,
+        palette,
+        notePaperMode,
+        setNotePaperMode,
+        isPaperLight,
+      }}
+    >
       {children}
     </ThemeContext.Provider>
   );

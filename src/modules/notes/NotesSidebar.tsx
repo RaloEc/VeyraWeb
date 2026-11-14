@@ -71,6 +71,7 @@ export interface NotesSidebarProps {
   onSelectEvent?: (eventId: string) => void;
   selectedReminderId?: string | null;
   onSelectReminder?: (reminderId: string) => void;
+  userId?: string;
   userEmail?: string;
   userName?: string;
   onSignOut?: () => void;
@@ -195,6 +196,7 @@ export const NotesSidebar: React.FC<NotesSidebarProps> = ({
   onSelectEvent,
   selectedReminderId,
   onSelectReminder,
+  userId,
   userEmail,
   userName,
   onSignOut,
@@ -2011,6 +2013,7 @@ export const NotesSidebar: React.FC<NotesSidebarProps> = ({
       <UserSettingsModal
         isOpen={isSettingsOpen}
         onClose={() => setIsSettingsOpen(false)}
+        userId={userId}
         userEmail={userEmail}
         userName={userName}
         onSignOut={onSignOut}

@@ -2,6 +2,8 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import type { Folder, Note, NoteContentPaginated } from '../types/notes';
 import type { Database } from '../types/database';
+import { localDB } from '../lib/db/local-db';
+import { syncEngine } from '../lib/sync/syncEngine';
 
 export function useNotes(userId?: string, initialNoteId?: string | null) {
   const [folders, setFolders] = useState<Folder[]>([]);
@@ -21,10 +23,65 @@ export function useNotes(userId?: string, initialNoteId?: string | null) {
     }
   }, [initialNoteId]);
 
-  // Fetch initial data (only when userId changes, NOT on every route change)
+  // 1. Instant load from IndexedDB (0 ms offline start)
+  useEffect(() => {
+    let isMounted = true;
+    Promise.all([
+      localDB.folders.filter((f) => f.deleted === 0).toArray(),
+      localDB.notes.filter((n) => n.deleted === 0).toArray(),
+      localDB.notes.filter((n) => n.deleted === 1 && (!userId || n.user_id === userId)).toArray(),
+    ])
+      .then(([cachedFolders, cachedNotes, cachedDeleted]) => {
+        if (!isMounted) return;
+        if (cachedFolders.length > 0) {
+          setFolders(cachedFolders.sort((a, b) => a.name.localeCompare(b.name)));
+        }
+        if (cachedNotes.length > 0) {
+          const sorted = cachedNotes.sort((a, b) => Number(b.updated_at_ms) - Number(a.updated_at_ms));
+          setNotes(sorted);
+          if (!initialSelectionDoneRef.current) {
+            initialSelectionDoneRef.current = true;
+            const targetId = initialNoteIdRef.current;
+            if (targetId && sorted.some((n) => n.id === targetId)) {
+              setSelectedNoteId(targetId);
+            } else if (targetId === undefined && sorted.length > 0) {
+              setSelectedNoteId(sorted[0].id);
+            }
+          }
+        }
+        if (cachedDeleted.length > 0) {
+          setDeletedNotes(cachedDeleted);
+        }
+        if (cachedFolders.length > 0 || cachedNotes.length > 0) {
+          setLoading(false);
+        }
+      })
+      .catch((err) => {
+        console.warn('[useNotes] Error reading localDB:', err);
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [userId]);
+
+  // 2. Fetch data from Supabase or fallback to localDB
   const fetchData = useCallback(async () => {
     if (!userId) return;
     try {
+      if (!syncEngine.isOnline()) {
+        const [cachedFolders, cachedNotes, cachedDeleted] = await Promise.all([
+          localDB.folders.filter((f) => f.deleted === 0).toArray(),
+          localDB.notes.filter((n) => n.deleted === 0).toArray(),
+          localDB.notes.filter((n) => n.deleted === 1 && n.user_id === userId).toArray(),
+        ]);
+        setFolders(cachedFolders.sort((a, b) => a.name.localeCompare(b.name)));
+        setNotes(cachedNotes.sort((a, b) => Number(b.updated_at_ms) - Number(a.updated_at_ms)));
+        setDeletedNotes(cachedDeleted);
+        setLoading(false);
+        return;
+      }
+
       setLoading(true);
       const [foldersRes, notesRes, deletedNotesRes] = await Promise.all([
         supabase
@@ -45,7 +102,12 @@ export function useNotes(userId?: string, initialNoteId?: string | null) {
           .order('updated_at_ms', { ascending: false }),
       ]);
 
-      if (foldersRes.data) setFolders(foldersRes.data as unknown as Folder[]);
+      if (foldersRes.data) {
+        const fList = foldersRes.data as unknown as Folder[];
+        setFolders(fList);
+        await localDB.folders.bulkPut(fList);
+      }
+
       if (notesRes.data) {
         let fetchedNotes = (notesRes.data as unknown as Note[]).filter(
           (n) => !deletedNoteIdsRef.current.has(n.id) && n.deleted !== 1
@@ -75,6 +137,9 @@ export function useNotes(userId?: string, initialNoteId?: string | null) {
         }
 
         setNotes(fetchedNotes);
+        if (fetchedNotes.length > 0) {
+          await localDB.notes.bulkPut(fetchedNotes);
+        }
 
         // Auto select only ONCE on initial load
         if (!initialSelectionDoneRef.current) {
@@ -86,8 +151,13 @@ export function useNotes(userId?: string, initialNoteId?: string | null) {
           }
         }
       }
+
       if (deletedNotesRes.data) {
-        setDeletedNotes(deletedNotesRes.data as unknown as Note[]);
+        const dList = deletedNotesRes.data as unknown as Note[];
+        setDeletedNotes(dList);
+        if (dList.length > 0) {
+          await localDB.notes.bulkPut(dList);
+        }
       }
     } catch (err) {
       console.error('[useNotes] Error fetching notes/folders:', err);
@@ -100,7 +170,7 @@ export function useNotes(userId?: string, initialNoteId?: string | null) {
     fetchData();
   }, [fetchData]);
 
-  // Realtime subscription for notes and folders
+  // 3. Realtime subscription for notes and folders
   useEffect(() => {
     if (!userId) return;
 
@@ -110,7 +180,7 @@ export function useNotes(userId?: string, initialNoteId?: string | null) {
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'notes', filter: `user_id=eq.${userId}` },
-        (payload) => {
+        async (payload) => {
           const { eventType, new: newRec, old: oldRec } = payload;
           const note = newRec as Note;
 
@@ -119,51 +189,78 @@ export function useNotes(userId?: string, initialNoteId?: string | null) {
               setDeletedNotes((prev) => [note, ...prev.filter((n) => n.id !== note.id)]);
             } else {
               setNotes((prev) => {
-                if (deletedNoteIdsRef.current.has(note.id)) return prev;
-                if (prev.some((n) => n.id === note.id)) {
+                if (prev.some((n) => n.id === note.id)) return prev;
+                return [note, ...prev];
+              });
+            }
+            await localDB.notes.put(note);
+          }
+
+          if (eventType === 'UPDATE') {
+            if (Number(note.deleted) === 1) {
+              setNotes((prev) => prev.filter((n) => n.id !== note.id));
+              setDeletedNotes((prev) => [note, ...prev.filter((n) => n.id !== note.id)]);
+              if (selectedNoteId === note.id) {
+                setNotes((remaining) => {
+                  const next = remaining.filter((n) => n.id !== note.id);
+                  setSelectedNoteId(next.length > 0 ? next[0].id : null);
+                  return next;
+                });
+              }
+            } else {
+              setNotes((prev) => {
+                const exists = prev.some((n) => n.id === note.id);
+                if (exists) {
                   return prev.map((n) => (n.id === note.id ? note : n));
                 }
                 return [note, ...prev];
               });
-            }
-          } else if (eventType === 'UPDATE') {
-            if (Number(note.deleted) === 1 || deletedNoteIdsRef.current.has(note.id)) {
-              setNotes((prev) => prev.filter((n) => n.id !== note.id));
-              setDeletedNotes((prev) => [note, ...prev.filter((n) => n.id !== note.id)]);
-            } else {
               setDeletedNotes((prev) => prev.filter((n) => n.id !== note.id));
-              setNotes((prev) => prev.map((n) => (n.id === note.id ? { ...n, ...note } : n)));
             }
-          } else if (eventType === 'DELETE') {
-            setNotes((prev) => prev.filter((n) => n.id !== oldRec.id));
-            setDeletedNotes((prev) => prev.filter((n) => n.id !== oldRec.id));
+            await localDB.notes.put(note);
+          }
+
+          if (eventType === 'DELETE') {
+            const oldId = (oldRec as any)?.id;
+            if (oldId) {
+              setNotes((prev) => prev.filter((n) => n.id !== oldId));
+              setDeletedNotes((prev) => prev.filter((n) => n.id !== oldId));
+              await localDB.notes.delete(oldId);
+            }
           }
         }
       )
       .on(
         'postgres_changes',
-        { event: '*', schema: 'public', table: 'folders', filter: `user_id=eq.${userId}` },
-        (payload) => {
+        { event: '*', schema: 'public', table: 'folders' },
+        async (payload) => {
           const { eventType, new: newRec, old: oldRec } = payload;
-          setFolders((prev) => {
-            if (eventType === 'INSERT') {
-              const f = newRec as Folder;
-              if (f.deleted === 1) return prev;
-              if (prev.some((item) => item.id === f.id)) return prev;
-              return [...prev, f];
+          const folder = newRec as Folder;
+
+          if (eventType === 'INSERT') {
+            if (Number(folder.deleted) !== 1) {
+              setFolders((prev) => [...prev.filter((f) => f.id !== folder.id), folder]);
+              await localDB.folders.put(folder);
             }
-            if (eventType === 'UPDATE') {
-              const updated = newRec as Folder;
-              if (updated.deleted === 1) {
-                return prev.filter((f) => f.id !== updated.id);
-              }
-              return prev.map((f) => (f.id === updated.id ? { ...f, ...updated } : f));
+          }
+
+          if (eventType === 'UPDATE') {
+            if (Number(folder.deleted) === 1) {
+              setFolders((prev) => prev.filter((f) => f.id !== folder.id));
+              await localDB.folders.delete(folder.id);
+            } else {
+              setFolders((prev) => prev.map((f) => (f.id === folder.id ? folder : f)));
+              await localDB.folders.put(folder);
             }
-            if (eventType === 'DELETE') {
-              return prev.filter((f) => f.id !== oldRec.id);
+          }
+
+          if (eventType === 'DELETE') {
+            const oldId = (oldRec as any)?.id;
+            if (oldId) {
+              setFolders((prev) => prev.filter((f) => f.id !== oldId));
+              await localDB.folders.delete(oldId);
             }
-            return prev;
-          });
+          }
         }
       )
       .subscribe();
@@ -171,9 +268,9 @@ export function useNotes(userId?: string, initialNoteId?: string | null) {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [userId]);
+  }, [userId, selectedNoteId]);
 
-  // Create folder (supports optional parentId for subfolders)
+  // Create folder
   const createFolder = async (
     name: string,
     color = '#3ab0b0',
@@ -198,16 +295,11 @@ export function useNotes(userId?: string, initialNoteId?: string | null) {
     };
 
     setFolders((prev) => [...prev, newFolder]);
-
-    const { error } = await supabase.from('folders').insert(newFolder);
-    if (error) {
-      console.error('[useNotes] Failed to create folder:', error);
-      setFolders((prev) => prev.filter((f) => f.id !== id));
-      throw error;
-    }
+    await localDB.folders.put(newFolder);
+    await syncEngine.enqueue('folders', 'upsert', id, newFolder, nowMs);
   };
 
-  // Update folder (rename, change color)
+  // Update folder
   const updateFolder = async (
     folderId: string,
     updates: Partial<Pick<Folder, 'name' | 'color'>>
@@ -220,27 +312,21 @@ export function useNotes(userId?: string, initialNoteId?: string | null) {
           : f
       )
     );
-    try {
-      await supabase
-        .from('folders')
-        .update({
-          ...updates,
-          updated_at_ms: nowMs,
-          last_modified_ms: nowMs,
-        })
-        .eq('id', folderId);
-    } catch (err) {
-      console.error('[useNotes] Error updating folder:', err);
-    }
+
+    const updatePayload = {
+      ...updates,
+      updated_at_ms: nowMs,
+      last_modified_ms: nowMs,
+    };
+
+    await localDB.folders.update(folderId, updatePayload);
+    await syncEngine.enqueue('folders', 'upsert', folderId, updatePayload, nowMs);
   };
 
-  // Delete folder (soft delete, preserves notes by moving them to root)
+  // Delete folder
   const deleteFolder = async (folderId: string) => {
     const nowMs = Date.now();
-    // 1. Remove folder and its subfolders from state
     setFolders((prev) => prev.filter((f) => f.id !== folderId && f.parent_id !== folderId));
-
-    // 2. Unlink notes that were in this folder so they appear in root and aren't lost
     setNotes((prev) =>
       prev.map((n) =>
         n.folder_id === folderId
@@ -249,38 +335,12 @@ export function useNotes(userId?: string, initialNoteId?: string | null) {
       )
     );
 
-    // 3. Reset folder selection if active
     if (selectedFolderId === folderId) {
       setSelectedFolderId(null);
     }
 
-    try {
-      await Promise.all([
-        supabase
-          .from('folders')
-          .update({
-            deleted: 1,
-            last_modified_ms: nowMs,
-          })
-          .eq('id', folderId),
-        supabase
-          .from('notes')
-          .update({
-            folder_id: null,
-            last_modified_ms: nowMs,
-          })
-          .eq('folder_id', folderId),
-        supabase
-          .from('folders')
-          .update({
-            deleted: 1,
-            last_modified_ms: nowMs,
-          })
-          .eq('parent_id', folderId),
-      ]);
-    } catch (err) {
-      console.error('[useNotes] Error deleting folder:', err);
-    }
+    await localDB.folders.update(folderId, { deleted: 1, last_modified_ms: nowMs });
+    await syncEngine.enqueue('folders', 'delete', folderId, null, nowMs);
   };
 
   // Create note
@@ -294,7 +354,6 @@ export function useNotes(userId?: string, initialNoteId?: string | null) {
     const id = crypto.randomUUID();
     const pageId = crypto.randomUUID();
 
-    // Default paginated content compatible with Veyra mobile
     const initialPaginatedContent: NoteContentPaginated = {
       isPaginated: true,
       version: 2,
@@ -327,27 +386,23 @@ export function useNotes(userId?: string, initialNoteId?: string | null) {
     setNotes((prev) => [newNote, ...prev]);
     setSelectedNoteId(id);
 
-    const { error } = await supabase.from('notes').insert({
-      id: newNote.id,
-      user_id: newNote.user_id,
-      folder_id: newNote.folder_id,
-      event_id: newNote.event_id,
-      title: newNote.title,
-      content: newNote.content,
-      created_at_ms: nowMs,
-      updated_at_ms: nowMs,
-      is_pinned: 0,
-      deleted: 0,
-      last_modified_ms: nowMs,
-      sync_mode: 'rest',
-      preview_text: '',
-    });
+    await localDB.notes.put(newNote);
+    await syncEngine.enqueue('notes', 'upsert', id, newNote, nowMs);
 
-    if (error) {
-      console.error('[useNotes] Failed to create note:', error);
-      setNotes((prev) => prev.filter((n) => n.id !== id));
-      throw error;
+    // Si hay conexión, sincronizar de inmediato con Supabase para evitar condiciones de carrera con Yjs
+    if (syncEngine.isOnline()) {
+      (async () => {
+        try {
+          const { error } = await supabase
+            .from('notes')
+            .upsert(newNote, { onConflict: 'id' });
+          if (error) console.warn('[useNotes] Error en inserción inmediata de nota:', error);
+        } catch (err) {
+          console.warn('[useNotes] Fallo inserción inmediata de nota:', err);
+        }
+      })();
     }
+
     return newNote;
   };
 
@@ -367,13 +422,13 @@ export function useNotes(userId?: string, initialNoteId?: string | null) {
       is_pinned: 0,
       deleted: 0,
     };
+
     setNotes((prev) => [duplicated, ...prev]);
     setSelectedNoteId(newId);
-    try {
-      await supabase.from('notes').insert(duplicated);
-    } catch (err) {
-      console.error('[useNotes] Error duplicating note:', err);
-    }
+
+    await localDB.notes.put(duplicated);
+    await syncEngine.enqueue('notes', 'upsert', newId, duplicated, nowMs);
+
     return duplicated;
   };
 
@@ -396,7 +451,6 @@ export function useNotes(userId?: string, initialNoteId?: string | null) {
     if (updates.content !== undefined) {
       serializedContent = updates.content;
     } else if (updates.htmlContent !== undefined) {
-      // Build paginated content format for full cross-platform compatibility
       try {
         let parsed = currentNote.content ? JSON.parse(currentNote.content) : null;
         if (parsed && parsed.isPaginated && Array.isArray(parsed.pages) && parsed.pages.length > 0) {
@@ -435,8 +489,9 @@ export function useNotes(userId?: string, initialNoteId?: string | null) {
       prev.map((n) => (n.id === id ? { ...n, ...optimisticUpdates } : n))
     );
 
-    // If note is in 'yjs' mode, don't overwrite content via REST if forbidden by DB trigger
     const updatePayload: Database['public']['Tables']['notes']['Update'] = {
+      id,
+      user_id: currentNote.user_id || userId,
       ...(updates.title !== undefined && { title: updates.title }),
       ...(updates.previewText !== undefined && { preview_text: updates.previewText }),
       ...(updates.folder_id !== undefined && { folder_id: updates.folder_id }),
@@ -448,18 +503,8 @@ export function useNotes(userId?: string, initialNoteId?: string | null) {
       updatePayload.content = serializedContent;
     }
 
-    try {
-      const { error } = await supabase
-        .from('notes')
-        .update(updatePayload)
-        .eq('id', id);
-
-      if (error) {
-        console.error('[useNotes] Error saving note:', error);
-      }
-    } catch (err) {
-      console.error('[useNotes] Exception saving note:', err);
-    }
+    await localDB.notes.update(id, optimisticUpdates);
+    await syncEngine.enqueue('notes', 'upsert', id, updatePayload, nowMs);
   };
 
   // Delete note (soft delete)
@@ -480,18 +525,8 @@ export function useNotes(userId?: string, initialNoteId?: string | null) {
       setSelectedNoteId(remaining.length > 0 ? remaining[0].id : null);
     }
 
-    try {
-      await supabase
-        .from('notes')
-        .update({
-          deleted: 1,
-          last_modified_ms: nowMs,
-        })
-        .eq('id', id);
-    } catch (err) {
-      console.error('[useNotes] Error deleting note:', err);
-      deletedNoteIdsRef.current.delete(id);
-    }
+    await localDB.notes.update(id, { deleted: 1, last_modified_ms: nowMs });
+    await syncEngine.enqueue('notes', 'delete', id, null, nowMs);
   };
 
   // Restore note from trash
@@ -507,17 +542,8 @@ export function useNotes(userId?: string, initialNoteId?: string | null) {
     setNotes((prev) => [restoredNote, ...prev.filter((n) => n.id !== id)]);
     setSelectedNoteId(id);
 
-    try {
-      await supabase
-        .from('notes')
-        .update({
-          deleted: 0,
-          last_modified_ms: nowMs,
-        })
-        .eq('id', id);
-    } catch (err) {
-      console.error('[useNotes] Error restoring note:', err);
-    }
+    await localDB.notes.update(id, { deleted: 0, last_modified_ms: nowMs });
+    await syncEngine.enqueue('notes', 'upsert', id, { deleted: 0, last_modified_ms: nowMs }, nowMs);
   };
 
   // Permanently delete a note
@@ -530,12 +556,8 @@ export function useNotes(userId?: string, initialNoteId?: string | null) {
       setSelectedNoteId(remaining.length > 0 ? remaining[0].id : null);
     }
 
-    try {
-      await supabase.from('notes').delete().eq('id', id);
-    } catch (err) {
-      console.error('[useNotes] Error permanently deleting note:', err);
-      deletedNoteIdsRef.current.delete(id);
-    }
+    await localDB.notes.delete(id);
+    await syncEngine.enqueue('notes', 'delete', id, null, Date.now());
   };
 
   // Empty trash completely
@@ -544,6 +566,10 @@ export function useNotes(userId?: string, initialNoteId?: string | null) {
     setDeletedNotes([]);
     try {
       await supabase.from('notes').delete().eq('user_id', userId).eq('deleted', 1);
+      const toDelete = await localDB.notes.filter((n) => n.deleted === 1 && n.user_id === userId).toArray();
+      for (const d of toDelete) {
+        await localDB.notes.delete(d.id);
+      }
     } catch (err) {
       console.error('[useNotes] Error emptying trash:', err);
     }
@@ -560,20 +586,11 @@ export function useNotes(userId?: string, initialNoteId?: string | null) {
       prev.map((n) => (n.id === id ? { ...n, is_pinned: newPin, last_modified_ms: nowMs } : n))
     );
 
-    try {
-      await supabase
-        .from('notes')
-        .update({
-          is_pinned: newPin,
-          last_modified_ms: nowMs,
-        })
-        .eq('id', id);
-    } catch (err) {
-      console.error('[useNotes] Error toggling pin:', err);
-    }
+    await localDB.notes.update(id, { is_pinned: newPin, last_modified_ms: nowMs });
+    await syncEngine.enqueue('notes', 'upsert', id, { is_pinned: newPin, last_modified_ms: nowMs }, nowMs);
   };
 
-  // Move note to folder (or root)
+  // Move note to folder
   const moveNote = async (noteId: string, targetFolderId: string | null) => {
     const nowMs = Date.now();
     setNotes((prev) =>
@@ -584,25 +601,11 @@ export function useNotes(userId?: string, initialNoteId?: string | null) {
       )
     );
 
-    try {
-      const { error } = await supabase
-        .from('notes')
-        .update({
-          folder_id: targetFolderId,
-          updated_at_ms: nowMs,
-          last_modified_ms: nowMs,
-        })
-        .eq('id', noteId);
-
-      if (error) {
-        console.error('[useNotes] Error moving note:', error);
-      }
-    } catch (err) {
-      console.error('[useNotes] Exception moving note:', err);
-    }
+    await localDB.notes.update(noteId, { folder_id: targetFolderId, updated_at_ms: nowMs, last_modified_ms: nowMs });
+    await syncEngine.enqueue('notes', 'upsert', noteId, { folder_id: targetFolderId, updated_at_ms: nowMs, last_modified_ms: nowMs }, nowMs);
   };
 
-  // Move folder inside another folder (or to root)
+  // Move folder inside another folder
   const moveFolder = async (folderId: string, targetParentId: string | null) => {
     const nowMs = Date.now();
     setFolders((prev) =>
@@ -613,25 +616,11 @@ export function useNotes(userId?: string, initialNoteId?: string | null) {
       )
     );
 
-    try {
-      const { error } = await supabase
-        .from('folders')
-        .update({
-          parent_id: targetParentId,
-          updated_at_ms: nowMs,
-          last_modified_ms: nowMs,
-        })
-        .eq('id', folderId);
-
-      if (error) {
-        console.error('[useNotes] Error moving folder:', error);
-      }
-    } catch (err) {
-      console.error('[useNotes] Exception moving folder:', err);
-    }
+    await localDB.folders.update(folderId, { parent_id: targetParentId, updated_at_ms: nowMs, last_modified_ms: nowMs });
+    await syncEngine.enqueue('folders', 'upsert', folderId, { parent_id: targetParentId, updated_at_ms: nowMs, last_modified_ms: nowMs }, nowMs);
   };
 
-  // Move note to event (or clear event_id)
+  // Move note to event
   const moveNoteToEvent = async (noteId: string, targetEventId: string | null) => {
     const nowMs = Date.now();
     setNotes((prev) =>
@@ -642,22 +631,8 @@ export function useNotes(userId?: string, initialNoteId?: string | null) {
       )
     );
 
-    try {
-      const { error } = await supabase
-        .from('notes')
-        .update({
-          event_id: targetEventId,
-          updated_at_ms: nowMs,
-          last_modified_ms: nowMs,
-        })
-        .eq('id', noteId);
-
-      if (error) {
-        console.error('[useNotes] Error moving note to event:', error);
-      }
-    } catch (err) {
-      console.error('[useNotes] Exception moving note to event:', err);
-    }
+    await localDB.notes.update(noteId, { event_id: targetEventId, updated_at_ms: nowMs, last_modified_ms: nowMs });
+    await syncEngine.enqueue('notes', 'upsert', noteId, { event_id: targetEventId, updated_at_ms: nowMs, last_modified_ms: nowMs }, nowMs);
   };
 
   const allAvailableNotes = [...notes, ...deletedNotes];

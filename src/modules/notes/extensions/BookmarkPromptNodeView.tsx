@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { NodeViewWrapper } from '@tiptap/react';
 import type { NodeViewProps } from '@tiptap/react';
 import { Link2 } from 'lucide-react';
+import { YT_REGEX } from '../../../lib/tiptap-youtube-node';
 
 export const BookmarkPromptNodeView: React.FC<NodeViewProps> = (props) => {
   const [url, setUrl] = useState('');
@@ -47,6 +48,18 @@ export const BookmarkPromptNodeView: React.FC<NodeViewProps> = (props) => {
         .focus()
         .deleteRange({ from: pos, to: pos + 1 })
         .insertContent(`<p><a href="${fullUrl}" target="_blank" rel="noopener noreferrer nofollow">${cleanUrl}</a>&nbsp;</p>`)
+        .run();
+      return;
+    }
+
+    // Si es un enlace de YouTube, insertamos directamente el embed interactivo de YouTube
+    const ytMatch = cleanUrl.match(YT_REGEX) || fullUrl.match(YT_REGEX);
+    if (ytMatch && ytMatch[1]) {
+      props.editor
+        .chain()
+        .focus()
+        .deleteRange({ from: pos, to: pos + 1 })
+        .setYoutube({ videoId: ytMatch[1], embed: true })
         .run();
       return;
     }
@@ -110,7 +123,7 @@ export const BookmarkPromptNodeView: React.FC<NodeViewProps> = (props) => {
           inputRef.current?.focus();
         }}
         onMouseDown={(e) => e.stopPropagation()}
-        className="w-full flex items-center gap-2.5 px-3 py-1.5 rounded-md border border-neutral-200 dark:border-neutral-800 bg-neutral-50/60 dark:bg-neutral-900/50 text-neutral-800 dark:text-neutral-200 transition-colors cursor-text"
+        className="w-full flex items-center gap-2.5 px-3 py-1.5 rounded-md border border-slate-200 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-900 text-slate-800 dark:text-zinc-200 transition-colors cursor-text"
       >
         <div className="flex items-center gap-1 text-xs font-mono text-neutral-400 dark:text-neutral-500 select-none shrink-0">
           <Link2 className="w-3.5 h-3.5 text-accent" />

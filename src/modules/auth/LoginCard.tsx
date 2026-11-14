@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Mail, Lock, ArrowRight, ShieldCheck } from 'lucide-react';
+import { Mail, Lock, ArrowRight, ShieldCheck, ArrowLeft } from 'lucide-react';
 import { Input } from '../../components/common/Input';
 import { Button } from '../../components/common/Button';
 import { supabase } from '../../lib/supabase';
@@ -10,11 +10,40 @@ export interface LoginCardProps {
 
 export const LoginCard: React.FC<LoginCardProps> = ({ onSuccess }) => {
   const [isSignUp, setIsSignUp] = useState(false);
+  const [isForgotPassword, setIsForgotPassword] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [infoMsg, setInfoMsg] = useState<string | null>(null);
+
+  const handleResetPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!email) {
+      setErrorMsg('Por favor ingresa tu correo electrónico.');
+      return;
+    }
+
+    try {
+      setLoading(true);
+      setErrorMsg(null);
+      setInfoMsg(null);
+
+      const redirectUrl = `${window.location.origin}/reset-password`;
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: redirectUrl,
+      });
+
+      if (error) throw error;
+
+      setInfoMsg('Te hemos enviado un enlace a tu correo para restablecer tu contraseña.');
+    } catch (err: unknown) {
+      console.error('[LoginCard] Reset password error:', err);
+      setErrorMsg((err as Error).message);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -77,11 +106,17 @@ export const LoginCard: React.FC<LoginCardProps> = ({ onSuccess }) => {
           </svg>
         </div>
         <h2 className="text-xl font-bold tracking-tight text-veyra-text">
-          {isSignUp ? 'Crear cuenta en Veyra' : 'Bienvenido a Veyra'}
+          {isForgotPassword
+            ? 'Recuperar contraseña'
+            : isSignUp
+            ? 'Crear cuenta en Veyra'
+            : 'Bienvenido a Veyra'}
         </h2>
         <p className="text-xs text-veyra-muted mt-1">
-          {isSignUp
-            ? 'Regístrate para sincronizar con tu móvil'
+          {isForgotPassword
+            ? 'Te enviaremos las instrucciones a tu correo'
+            : isSignUp
+            ? 'Regístrate para organizar tu espacio de trabajo'
             : 'Inicia sesión con tu cuenta de Veyra'}
         </p>
       </div>
@@ -99,54 +134,109 @@ export const LoginCard: React.FC<LoginCardProps> = ({ onSuccess }) => {
         </div>
       )}
 
-      <form onSubmit={handleSubmit} className="space-y-4">
-        <Input
-          label="Correo electrónico"
-          type="email"
-          placeholder="tu@email.com"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          icon={<Mail className="w-4 h-4" />}
-          required
-        />
+      {isForgotPassword ? (
+        <form onSubmit={handleResetPassword} className="space-y-4">
+          <Input
+            label="Correo electrónico"
+            type="email"
+            placeholder="tu@email.com"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            icon={<Mail className="w-4 h-4" />}
+            required
+          />
 
-        <Input
-          label="Contraseña"
-          type="password"
-          placeholder="••••••••"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          icon={<Lock className="w-4 h-4" />}
-          required
-        />
+          <Button
+            type="submit"
+            loading={loading}
+            className="w-full mt-2"
+            size="md"
+          >
+            <span>Enviar enlace</span>
+            <ArrowRight className="w-4 h-4" />
+          </Button>
 
-        <Button
-          type="submit"
-          loading={loading}
-          className="w-full mt-2"
-          size="md"
-        >
-          <span>{isSignUp ? 'Registrarse' : 'Iniciar Sesión'}</span>
-          <ArrowRight className="w-4 h-4" />
-        </Button>
-      </form>
+          <button
+            type="button"
+            onClick={() => {
+              setIsForgotPassword(false);
+              setErrorMsg(null);
+              setInfoMsg(null);
+            }}
+            className="w-full flex items-center justify-center gap-1.5 text-xs text-veyra-muted hover:text-veyra-text transition-colors mt-2"
+          >
+            <ArrowLeft className="w-3.5 h-3.5" />
+            <span>Volver al inicio de sesión</span>
+          </button>
+        </form>
+      ) : (
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <Input
+            label="Correo electrónico"
+            type="email"
+            placeholder="tu@email.com"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            icon={<Mail className="w-4 h-4" />}
+            required
+          />
 
-      <div className="mt-6 pt-5 border-t border-veyra-border text-center">
-        <button
-          type="button"
-          onClick={() => {
-            setIsSignUp(!isSignUp);
-            setErrorMsg(null);
-            setInfoMsg(null);
-          }}
-          className="text-xs text-veyra-muted hover:text-teal-400 transition-colors"
-        >
-          {isSignUp
-            ? '¿Ya tienes una cuenta? Inicia sesión'
-            : '¿No tienes cuenta? Regístrate aquí'}
-        </button>
-      </div>
+          <div>
+            <Input
+              label="Contraseña"
+              type="password"
+              placeholder="••••••••"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              icon={<Lock className="w-4 h-4" />}
+              required
+            />
+            {!isSignUp && (
+              <div className="text-right mt-1.5">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsForgotPassword(true);
+                    setErrorMsg(null);
+                    setInfoMsg(null);
+                  }}
+                  className="text-[11px] text-veyra-muted hover:text-teal-400 transition-colors"
+                >
+                  ¿Olvidaste tu contraseña?
+                </button>
+              </div>
+            )}
+          </div>
+
+          <Button
+            type="submit"
+            loading={loading}
+            className="w-full mt-2"
+            size="md"
+          >
+            <span>{isSignUp ? 'Registrarse' : 'Iniciar Sesión'}</span>
+            <ArrowRight className="w-4 h-4" />
+          </Button>
+        </form>
+      )}
+
+      {!isForgotPassword && (
+        <div className="mt-6 pt-5 border-t border-veyra-border text-center">
+          <button
+            type="button"
+            onClick={() => {
+              setIsSignUp(!isSignUp);
+              setErrorMsg(null);
+              setInfoMsg(null);
+            }}
+            className="text-xs text-veyra-muted hover:text-teal-400 transition-colors"
+          >
+            {isSignUp
+              ? '¿Ya tienes una cuenta? Inicia sesión'
+              : '¿No tienes cuenta? Regístrate aquí'}
+          </button>
+        </div>
+      )}
     </div>
   );
 };
-

@@ -1,6 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import type { Editor } from '@tiptap/react';
-import { BubbleMenu } from '@tiptap/react/menus';
 import { findParentNode } from '@tiptap/core';
 import {
   Rows,
@@ -62,11 +61,6 @@ const BORDER_COLORS = [
   { label: 'Rojo suave', value: '#fca5a5', bgClass: 'bg-rose-300' },
 ];
 
-const TABLE_BUBBLE_MENU_OPTIONS = {
-  placement: 'top' as const,
-  offset: 10,
-};
-
 export const EditorTableBubbleMenu: React.FC<EditorTableBubbleMenuProps> = ({ editor }) => {
   if (!editor) return null;
 
@@ -80,6 +74,9 @@ export const EditorTableBubbleMenu: React.FC<EditorTableBubbleMenuProps> = ({ ed
   const [mergeCoords, setMergeCoords] = useState<{ top: number; left: number }>({ top: 0, left: 0 });
 
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [menuPos, setMenuPos] = useState<{ top: number; left: number; isSticky: boolean } | null>(null);
+
+  const menuRef = useRef<HTMLDivElement>(null);
   const colorBtnRef = useRef<HTMLButtonElement>(null);
   const colorMenuRef = useRef<HTMLDivElement>(null);
   const styleBtnRef = useRef<HTMLButtonElement>(null);
@@ -90,66 +87,10 @@ export const EditorTableBubbleMenu: React.FC<EditorTableBubbleMenuProps> = ({ ed
 
   const isColorMenuOpenRef = useRef(isColorMenuOpen);
   isColorMenuOpenRef.current = isColorMenuOpen;
+  const isStyleMenuOpenRef = useRef(isStyleMenuOpen);
+  isStyleMenuOpenRef.current = isStyleMenuOpen;
   const isMergeMenuOpenRef = useRef(isMergeMenuOpen);
   isMergeMenuOpenRef.current = isMergeMenuOpen;
-
-  const shouldShowTableBubbleMenu = useCallback(({ editor: ed }: { editor: Editor }) => {
-    if (isColorMenuOpenRef.current || isMergeMenuOpenRef.current) return true;
-    return ed.isActive('table');
-  }, []);
-
-  // Forzar actualización inmediata del menú cuando cambia la selección o contenido
-  const [, setTick] = useState(0);
-
-  useEffect(() => {
-    if (!editor) return;
-    const handleSelectionOrUpdate = () => {
-      setTick((t) => t + 1);
-    };
-    editor.on('selectionUpdate', handleSelectionOrUpdate);
-    editor.on('update', handleSelectionOrUpdate);
-    return () => {
-      editor.off('selectionUpdate', handleSelectionOrUpdate);
-      editor.off('update', handleSelectionOrUpdate);
-    };
-  }, [editor]);
-
-  // Cierra menús desplegables al hacer clic fuera
-  useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      const target = e.target as Node;
-      if (
-        colorMenuRef.current &&
-        !colorMenuRef.current.contains(target) &&
-        colorBtnRef.current &&
-        !colorBtnRef.current.contains(target)
-      ) {
-        setIsColorMenuOpen(false);
-      }
-      if (
-        styleMenuRef.current &&
-        !styleMenuRef.current.contains(target) &&
-        styleBtnRef.current &&
-        !styleBtnRef.current.contains(target)
-      ) {
-        setIsStyleMenuOpen(false);
-      }
-      if (
-        mergeMenuRef.current &&
-        !mergeMenuRef.current.contains(target) &&
-        mergeBtnRef.current &&
-        !mergeBtnRef.current.contains(target)
-      ) {
-        setIsMergeMenuOpen(false);
-      }
-    };
-    if (isColorMenuOpen || isStyleMenuOpen || isMergeMenuOpen) {
-      document.addEventListener('mousedown', handleClickOutside);
-    }
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-    };
-  }, [isColorMenuOpen, isStyleMenuOpen, isMergeMenuOpen]);
 
   const updateColorPosition = useCallback(() => {
     if (!colorBtnRef.current) return;
@@ -201,6 +142,191 @@ export const EditorTableBubbleMenu: React.FC<EditorTableBubbleMenuProps> = ({ ed
       left,
     });
   }, []);
+
+  /**
+   * Calcula la posición flotante del menú:
+   * - En reposo: arriba de la tabla.
+   * - Al hacer scroll (tabla grande): sticky flotante justo debajo de la barra de herramientas del editor.
+   * - Al salir de la vista: se oculta automáticamente.
+   */
+  const updateMenuPosition = useCallback(() => {
+    if (!editor || editor.isDestroyed) {
+      setMenuPos(null);
+      return;
+    }
+
+    const isTableActive = editor.isActive('table');
+    if (!isTableActive && !isColorMenuOpenRef.current && !isStyleMenuOpenRef.current && !isMergeMenuOpenRef.current) {
+      setMenuPos(null);
+      return;
+    }
+
+    try {
+      const tableParent = findParentNode((node) => node.type.name === 'table')(editor.state.selection);
+      if (!tableParent) {
+        if (!isColorMenuOpenRef.current && !isStyleMenuOpenRef.current && !isMergeMenuOpenRef.current) {
+          setMenuPos(null);
+        }
+        return;
+      }
+
+      const domNode = editor.view.nodeDOM(tableParent.pos);
+      const tableElement =
+        domNode instanceof HTMLElement
+          ? (domNode.tagName.toLowerCase() === 'table' ? domNode : domNode.querySelector('table') || domNode)
+          : null;
+
+      if (!tableElement) {
+        setMenuPos(null);
+        return;
+      }
+
+      const scrollContainer = editor.view.dom.closest('.overflow-y-auto') as HTMLElement | null;
+      const containerRect = scrollContainer
+        ? scrollContainer.getBoundingClientRect()
+        : {
+            top: 0,
+            bottom: window.innerHeight,
+            left: 0,
+            right: window.innerWidth,
+            width: window.innerWidth,
+            height: window.innerHeight,
+          };
+      const tableRect = tableElement.getBoundingClientRect();
+
+      // Margen superior para evitar solapar la barra de herramientas del editor
+      const minStickyTop = containerRect.top + 8;
+
+      // Si la tabla salió completamente de la vista por arriba o por abajo
+      if (tableRect.bottom <= minStickyTop + 24 || tableRect.top >= containerRect.bottom - 20) {
+        setMenuPos(null);
+        return;
+      }
+
+      const menuEl = menuRef.current;
+      const menuHeight = menuEl ? menuEl.offsetHeight : 38;
+      const menuWidth = menuEl ? menuEl.offsetWidth : 580;
+
+      // Posición normal: 8px encima de la tabla
+      const normalTop = tableRect.top - menuHeight - 8;
+      // Posición máxima: no descender más allá de la última fila de la tabla
+      const maxTop = tableRect.bottom - menuHeight - 8;
+
+      let top: number;
+      let isSticky = false;
+
+      if (normalTop >= minStickyTop) {
+        // La parte superior de la tabla está en la vista: el menú se posa sobre la tabla
+        top = normalTop;
+        isSticky = false;
+      } else {
+        // La tabla es muy grande y su inicio se desplazó arriba: se queda flotando ("sticky")
+        // justo debajo de la barra de herramientas sin superponerse a ella
+        top = Math.min(minStickyTop, maxTop);
+        isSticky = true;
+      }
+
+      // Centrado respecto al ancho de la tabla, acotado dentro de los bordes visibles
+      const tableCenter = tableRect.left + tableRect.width / 2;
+      let left = tableCenter - menuWidth / 2;
+      const minLeft = containerRect.left + 16;
+      const maxLeft = containerRect.right - menuWidth - 16;
+      left = Math.max(minLeft, Math.min(left, maxLeft));
+
+      setMenuPos({
+        top: Math.round(top),
+        left: Math.round(left),
+        isSticky,
+      });
+    } catch {
+      setMenuPos(null);
+    }
+  }, [editor]);
+
+  // Escuchar scroll del contenedor del editor, resize y cambios de selección
+  useEffect(() => {
+    if (!editor) return;
+
+    const scrollContainer = editor.view.dom.closest('.overflow-y-auto') as HTMLElement | null;
+
+    let rafId: number | null = null;
+    const onScrollOrUpdate = () => {
+      if (rafId) cancelAnimationFrame(rafId);
+      rafId = requestAnimationFrame(() => {
+        updateMenuPosition();
+      });
+    };
+
+    if (scrollContainer) {
+      scrollContainer.addEventListener('scroll', onScrollOrUpdate, { passive: true });
+    }
+    window.addEventListener('scroll', onScrollOrUpdate, { passive: true });
+    window.addEventListener('resize', onScrollOrUpdate, { passive: true });
+
+    editor.on('selectionUpdate', onScrollOrUpdate);
+    editor.on('update', onScrollOrUpdate);
+    editor.on('focus', onScrollOrUpdate);
+    editor.on('blur', onScrollOrUpdate);
+
+    onScrollOrUpdate();
+
+    return () => {
+      if (rafId) cancelAnimationFrame(rafId);
+      if (scrollContainer) {
+        scrollContainer.removeEventListener('scroll', onScrollOrUpdate);
+      }
+      window.removeEventListener('scroll', onScrollOrUpdate);
+      window.removeEventListener('resize', onScrollOrUpdate);
+      editor.off('selectionUpdate', onScrollOrUpdate);
+      editor.off('update', onScrollOrUpdate);
+      editor.off('focus', onScrollOrUpdate);
+      editor.off('blur', onScrollOrUpdate);
+    };
+  }, [editor, updateMenuPosition]);
+
+  // Actualizar la posición de los submenús emergentes si el menú principal se desplaza
+  useEffect(() => {
+    if (isColorMenuOpen) updateColorPosition();
+    if (isStyleMenuOpen) updateStylePosition();
+    if (isMergeMenuOpen) updateMergePosition();
+  }, [menuPos, isColorMenuOpen, isStyleMenuOpen, isMergeMenuOpen, updateColorPosition, updateStylePosition, updateMergePosition]);
+
+  // Cierra menús desplegables al hacer clic fuera
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      const target = e.target as Node;
+      if (
+        colorMenuRef.current &&
+        !colorMenuRef.current.contains(target) &&
+        colorBtnRef.current &&
+        !colorBtnRef.current.contains(target)
+      ) {
+        setIsColorMenuOpen(false);
+      }
+      if (
+        styleMenuRef.current &&
+        !styleMenuRef.current.contains(target) &&
+        styleBtnRef.current &&
+        !styleBtnRef.current.contains(target)
+      ) {
+        setIsStyleMenuOpen(false);
+      }
+      if (
+        mergeMenuRef.current &&
+        !mergeMenuRef.current.contains(target) &&
+        mergeBtnRef.current &&
+        !mergeBtnRef.current.contains(target)
+      ) {
+        setIsMergeMenuOpen(false);
+      }
+    };
+    if (isColorMenuOpen || isStyleMenuOpen || isMergeMenuOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [isColorMenuOpen, isStyleMenuOpen, isMergeMenuOpen]);
 
   const handleToggleColorMenu = () => {
     if (!isColorMenuOpen) {
@@ -335,64 +461,23 @@ export const EditorTableBubbleMenu: React.FC<EditorTableBubbleMenuProps> = ({ ed
     editor.chain().focus().splitCell().run();
   };
 
-  /**
-   * Obtiene la posición virtual para anclar el BubbleMenu en la parte superior
-   * de toda la tabla, en vez de sobre la celda seleccionada.
-   * Si la tabla es muy grande y el usuario hace scroll hacia abajo, se adapta de forma
-   * dinámica y pegada ("sticky") para no salirse de la vista.
-   */
-  const getTableVirtualElement = useCallback(() => {
-    if (!editor || editor.isDestroyed) return null;
-
-    try {
-      const tableParent = findParentNode((node) => node.type.name === 'table')(editor.state.selection);
-      if (!tableParent) return null;
-
-      const domNode = editor.view.nodeDOM(tableParent.pos);
-      const tableElement =
-        domNode instanceof HTMLElement
-          ? (domNode.tagName.toLowerCase() === 'table' ? domNode : domNode.querySelector('table') || domNode)
-          : null;
-
-      if (!tableElement) return null;
-
-      const rect = tableElement.getBoundingClientRect();
-      const topMargin = 72; // Margen superior para evitar solapar la barra de herramientas
-      const menuEstimatedHeight = 44;
-
-      // Si la parte superior de la tabla ya se desplazó fuera de la pantalla (scroll hacia abajo),
-      // mantenemos el menú flotando de forma visible y pegada sobre el cuerpo visible de la tabla.
-      let visibleTop = rect.top;
-      if (rect.top < topMargin && rect.bottom > topMargin + menuEstimatedHeight + 20) {
-        visibleTop = Math.min(topMargin, rect.bottom - menuEstimatedHeight - 16);
-      }
-
-      const virtualRect = new DOMRect(
-        rect.left,
-        visibleTop,
-        rect.width,
-        rect.height
-      );
-
-      return {
-        getBoundingClientRect: () => virtualRect,
-        getClientRects: () => [virtualRect],
-      };
-    } catch {
-      return null;
-    }
-  }, [editor]);
-
   return (
     <>
-      <BubbleMenu
-        editor={editor}
-        pluginKey="tableBubbleMenu"
-        shouldShow={shouldShowTableBubbleMenu}
-        getReferencedVirtualElement={getTableVirtualElement}
-        options={TABLE_BUBBLE_MENU_OPTIONS}
-        className="flex items-center gap-1 p-1 rounded-xl bg-veyra-card/95 border border-veyra-border shadow-elevated z-50 text-veyra-text text-xs select-none backdrop-blur-md"
-      >
+      {menuPos &&
+        createPortal(
+          <div
+            ref={menuRef}
+            style={{
+              position: 'fixed',
+              top: `${menuPos.top}px`,
+              left: `${menuPos.left}px`,
+              zIndex: 40,
+            }}
+            className={cn(
+              'flex items-center gap-1 p-1 rounded-xl bg-white dark:bg-[#18181b] border border-slate-200 dark:border-zinc-800 shadow-xl text-slate-800 dark:text-zinc-100 text-xs select-none transition-all duration-75',
+              menuPos.isSticky && 'border-accent/50 shadow-2xl ring-1 ring-accent/20'
+            )}
+          >
         {/* Botón Combinar Celdas */}
         {tableInfo.canMergeSelection ? (
           // Estado A: Varias celdas seleccionadas -> Botón primario sólido, perfecto y unificado
@@ -689,7 +774,9 @@ export const EditorTableBubbleMenu: React.FC<EditorTableBubbleMenuProps> = ({ ed
           <Trash2 className="w-3.5 h-3.5" />
           {confirmDelete && <span className="text-[10px]">¿Eliminar?</span>}
         </button>
-      </BubbleMenu>
+      </div>,
+      document.body
+    )}
 
       {/* Popover menú de combinación de celdas */}
       {isMergeMenuOpen &&
@@ -702,7 +789,7 @@ export const EditorTableBubbleMenu: React.FC<EditorTableBubbleMenuProps> = ({ ed
               left: `${mergeCoords.left}px`,
               zIndex: 9999,
             }}
-            className="p-2 w-[220px] rounded-xl bg-veyra-card/98 border border-veyra-border shadow-elevated text-xs space-y-1 text-veyra-text select-none animate-in fade-in zoom-in-95 duration-100 backdrop-blur-md"
+            className="p-2 w-[220px] rounded-xl bg-white dark:bg-[#18181b] border border-slate-200 dark:border-zinc-800 shadow-xl text-xs space-y-1 text-slate-800 dark:text-zinc-100 select-none animate-in fade-in zoom-in-95 duration-100"
           >
             <div className="px-2 pt-0.5 pb-1 text-[10px] font-bold text-accent uppercase tracking-wider">
               Combinar celdas
@@ -774,7 +861,7 @@ export const EditorTableBubbleMenu: React.FC<EditorTableBubbleMenuProps> = ({ ed
               left: `${colorCoords.left}px`,
               zIndex: 9999,
             }}
-            className="p-2 w-[190px] rounded-xl bg-veyra-card/98 border border-veyra-border shadow-elevated text-xs space-y-1.5 text-veyra-text select-none animate-in fade-in zoom-in-95 duration-100 backdrop-blur-md"
+            className="p-2 w-[190px] rounded-xl bg-white dark:bg-[#18181b] border border-slate-200 dark:border-zinc-800 shadow-xl text-xs space-y-1.5 text-slate-800 dark:text-zinc-100 select-none animate-in fade-in zoom-in-95 duration-100"
           >
             <div className="px-1 text-[10px] font-semibold text-veyra-muted uppercase tracking-wider">
               Fondo de celda
@@ -813,7 +900,7 @@ export const EditorTableBubbleMenu: React.FC<EditorTableBubbleMenuProps> = ({ ed
               left: `${styleCoords.left}px`,
               zIndex: 9999,
             }}
-            className="p-2.5 w-[250px] rounded-xl bg-veyra-card/98 border border-veyra-border shadow-elevated text-xs space-y-2 text-veyra-text select-none animate-in fade-in zoom-in-95 duration-100 backdrop-blur-md"
+            className="p-2.5 w-[250px] rounded-xl bg-white dark:bg-[#18181b] border border-slate-200 dark:border-zinc-800 shadow-xl text-xs space-y-2 text-slate-800 dark:text-zinc-100 select-none animate-in fade-in zoom-in-95 duration-100"
           >
             <div>
               <div className="px-1 pb-1 text-[10px] font-bold text-accent uppercase tracking-wider">
@@ -832,12 +919,12 @@ export const EditorTableBubbleMenu: React.FC<EditorTableBubbleMenuProps> = ({ ed
                         'w-full flex items-center justify-between px-2 py-1.5 rounded-lg transition-colors text-left cursor-pointer',
                         isActive
                           ? 'bg-accent/15 text-accent font-semibold'
-                          : 'hover:bg-black/5 dark:hover:bg-white/5 text-veyra-text'
+                          : 'hover:bg-slate-100 dark:hover:bg-zinc-800 text-slate-800 dark:text-zinc-200'
                       )}
                     >
                       <div>
-                        <div className="text-[12px] leading-tight">{preset.label}</div>
-                        <div className="text-[10px] text-veyra-muted leading-tight">
+                        <div className="text-[12px] font-medium leading-tight">{preset.label}</div>
+                        <div className="text-[10.5px] text-slate-500 dark:text-zinc-400 leading-tight mt-0.5">
                           {preset.desc}
                         </div>
                       </div>
@@ -848,10 +935,10 @@ export const EditorTableBubbleMenu: React.FC<EditorTableBubbleMenuProps> = ({ ed
               </div>
             </div>
 
-            <div className="h-[1px] bg-veyra-border my-1" />
+            <div className="h-[1px] bg-slate-200 dark:bg-zinc-800 my-1" />
 
             <div>
-              <div className="px-1 pb-1 text-[10px] font-semibold text-veyra-muted uppercase tracking-wider">
+              <div className="px-1 pb-1 text-[10px] font-semibold text-slate-500 dark:text-zinc-400 uppercase tracking-wider">
                 Alineación de la tabla
               </div>
               <div className="grid grid-cols-3 gap-1 pt-0.5">
@@ -872,7 +959,7 @@ export const EditorTableBubbleMenu: React.FC<EditorTableBubbleMenuProps> = ({ ed
                         'flex flex-col items-center justify-center gap-1 py-1.5 px-1 rounded-lg border text-xs transition-all cursor-pointer',
                         isActive
                           ? 'border-accent bg-accent/15 text-accent font-semibold'
-                          : 'border-veyra-border/60 hover:bg-black/5 dark:hover:bg-white/5 text-veyra-text'
+                          : 'border-slate-200 dark:border-zinc-700 hover:bg-slate-100 dark:hover:bg-zinc-800 text-slate-700 dark:text-zinc-300'
                       )}
                     >
                       <Icon className="w-4 h-4" />
@@ -883,10 +970,10 @@ export const EditorTableBubbleMenu: React.FC<EditorTableBubbleMenuProps> = ({ ed
               </div>
             </div>
 
-            <div className="h-[1px] bg-veyra-border my-1" />
+            <div className="h-[1px] bg-slate-200 dark:bg-zinc-800 my-1" />
 
             <div>
-              <div className="px-1 pb-1 text-[10px] font-semibold text-veyra-muted uppercase tracking-wider">
+              <div className="px-1 pb-1 text-[10px] font-semibold text-slate-500 dark:text-zinc-400 uppercase tracking-wider">
                 Color de bordes
               </div>
               <div className="grid grid-cols-4 gap-1.5 pt-0.5">
@@ -905,8 +992,8 @@ export const EditorTableBubbleMenu: React.FC<EditorTableBubbleMenuProps> = ({ ed
                         'w-8 h-8 rounded-lg border flex items-center justify-center transition-all hover:scale-105 active:scale-95 cursor-pointer relative',
                         border.bgClass,
                         isCurrent
-                          ? 'ring-2 ring-accent ring-offset-1 ring-offset-veyra-card border-accent'
-                          : 'border-veyra-border'
+                          ? 'ring-2 ring-accent ring-offset-1 ring-offset-white dark:ring-offset-[#18181b] border-accent'
+                          : 'border-slate-300 dark:border-zinc-700'
                       )}
                     >
                       {isCurrent && (

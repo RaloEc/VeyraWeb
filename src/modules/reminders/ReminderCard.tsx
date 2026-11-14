@@ -25,7 +25,7 @@ export interface ReminderCardProps {
   onEdit?: (reminder: Reminder, e?: React.MouseEvent) => void;
   onDoubleClick?: (reminder: Reminder) => void;
   onDelete?: (id: string) => void;
-  onSnooze?: (id: string) => void;
+  onSnooze?: (id: string, minutes?: number) => void;
   onSelectNote?: (noteId: string) => void;
   linkedNoteTitle?: string;
   linkedNoteId?: string;
@@ -36,9 +36,21 @@ export interface ReminderCardProps {
   isSelected?: boolean;
 }
 
-function getTimeStatus(dueDateMs: number, isCompleted: boolean) {
-  if (!dueDateMs) return null;
+function getTimeStatus(dueDateMs: number, isCompleted: boolean, snoozeUntilMs?: number | null) {
   const now = Date.now();
+  if (snoozeUntilMs && snoozeUntilMs > now && !isCompleted) {
+    const d = new Date(snoozeUntilMs);
+    const timeStr = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+    const diffMs = snoozeUntilMs - now;
+    const mins = Math.max(1, Math.round(diffMs / 60000));
+    return {
+      timeStr,
+      label: `• Pospuesto (${mins}m)`,
+      color: 'text-amber-400',
+    };
+  }
+
+  if (!dueDateMs) return null;
   const diffMs = dueDateMs - now;
 
   const d = new Date(dueDateMs);
@@ -109,6 +121,7 @@ export const ReminderCard: React.FC<ReminderCardProps> = ({
 }) => {
   const { palette } = useTheme();
   const [isSubtasksExpanded, setIsSubtasksExpanded] = useState(false);
+  const [showSnoozeMenu, setShowSnoozeMenu] = useState(false);
 
   const isCompleted = reminder.status === 'completed';
 
@@ -142,7 +155,7 @@ export const ReminderCard: React.FC<ReminderCardProps> = ({
   const isCritical = reminder.control_level === 'critical' || reminder.priority === 3;
   const isStrict = reminder.control_level === 'strict' || reminder.priority === 2;
 
-  const timeStatus = getTimeStatus(reminder.due_date_ms, isCompleted);
+  const timeStatus = getTimeStatus(reminder.due_date_ms, isCompleted, reminder.snooze_until_ms);
   const hasChips = Boolean(
     hasSubtasks ||
       reminder.repeat_rule ||
@@ -232,19 +245,69 @@ export const ReminderCard: React.FC<ReminderCardProps> = ({
           </div>
 
           {/* Quick Actions on Hover */}
-          <div className="hidden group-hover:flex items-center gap-0.5 shrink-0">
-            {onSnooze && (
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onSnooze(reminder.id);
-                }}
-                title="Posponer 1 día"
-                className="p-0.5 rounded text-slate-400 hover:text-accent transition-colors"
-              >
-                <CalendarPlus className="w-2.5 h-2.5" />
-              </button>
+          <div className="hidden group-hover:flex items-center gap-0.5 shrink-0 relative">
+            {onSnooze && !isCompleted && (
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setShowSnoozeMenu((prev) => !prev);
+                  }}
+                  title="Posponer"
+                  className="p-0.5 rounded text-slate-400 hover:text-accent transition-colors"
+                >
+                  <CalendarPlus className="w-2.5 h-2.5" />
+                </button>
+
+                {showSnoozeMenu && (
+                  <div
+                    onClick={(e) => e.stopPropagation()}
+                    className="absolute right-0 top-full mt-1 z-30 bg-veyra-card border border-veyra-border rounded-lg shadow-elevated p-1 min-w-[110px] space-y-0.5 text-[11px] animate-fade-in"
+                  >
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onSnooze(reminder.id, 15);
+                        setShowSnoozeMenu(false);
+                      }}
+                      className="w-full text-left px-2 py-1 rounded hover:bg-white/5 hover:text-accent text-veyra-text transition-colors"
+                    >
+                      +15 minutos
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onSnooze(reminder.id, 60);
+                        setShowSnoozeMenu(false);
+                      }}
+                      className="w-full text-left px-2 py-1 rounded hover:bg-white/5 hover:text-accent text-veyra-text transition-colors"
+                    >
+                      +1 hora
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onSnooze(reminder.id, 180);
+                        setShowSnoozeMenu(false);
+                      }}
+                      className="w-full text-left px-2 py-1 rounded hover:bg-white/5 hover:text-accent text-veyra-text transition-colors"
+                    >
+                      +3 horas
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onSnooze(reminder.id, 1440);
+                        setShowSnoozeMenu(false);
+                      }}
+                      className="w-full text-left px-2 py-1 rounded hover:bg-white/5 hover:text-accent text-veyra-text transition-colors"
+                    >
+                      Mañana (+24h)
+                    </button>
+                  </div>
+                )}
+              </div>
             )}
 
             {onDelete && (

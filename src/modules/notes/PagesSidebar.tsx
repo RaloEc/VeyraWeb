@@ -794,7 +794,7 @@ export const PagesSidebar: React.FC<PagesSidebarProps> = ({
                             {isMenuOpen && (
                               <div
                                 onClick={(e) => e.stopPropagation()}
-                                className="page-menu-dropdown absolute right-0 top-7 z-40 w-44 rounded-xl bg-veyra-elevated border border-veyra-border shadow-elevated p-1 flex flex-col gap-0.5 text-xs select-none"
+                                className="page-menu-dropdown absolute right-0 top-7 z-40 w-44 rounded-xl bg-white dark:bg-[#18181b] border border-slate-200 dark:border-zinc-800 shadow-xl p-1 flex flex-col gap-0.5 text-xs select-none text-slate-800 dark:text-zinc-100"
                               >
                                 <button
                                   type="button"

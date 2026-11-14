@@ -1,14 +1,17 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from './hooks/useAuth';
 import { AuthPage } from './modules/auth/AuthPage';
+import { ResetPasswordPage } from './modules/auth/ResetPasswordPage';
 import { JoinPage } from './modules/join/JoinPage';
 import { AppLayout } from './components/layout/AppLayout';
+import { OnboardingModal } from './components/common/OnboardingModal';
 import { ErrorBoundary } from './components/common/ErrorBoundary';
 import { ThemeProvider } from './theme/ThemeProvider';
+import { UserSettingsProvider } from './context/UserSettingsContext';
 import { Toaster } from 'sonner';
 
 function AppContent() {
-  const { user, profile, loading, signOut } = useAuth();
+  const { user, profile, loading, signOut, refreshProfile } = useAuth();
   const [currentPath, setCurrentPath] = useState<string>(() => {
     if (typeof window === 'undefined') return '/';
     return window.location.pathname;
@@ -21,6 +24,15 @@ function AppContent() {
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
   }, []);
+
+  // /reset-password route or recovery hash
+  if (currentPath.startsWith('/reset-password') || (typeof window !== 'undefined' && window.location.hash.includes('type=recovery'))) {
+    return (
+      <ErrorBoundary>
+        <ResetPasswordPage />
+      </ErrorBoundary>
+    );
+  }
 
   // /join route - Accessible with or without active user session
   if (currentPath.startsWith('/join')) {
@@ -59,10 +71,19 @@ function AppContent() {
     return <AuthPage />;
   }
 
-  // Authenticated -> Show Main App Layout with ErrorBoundary
+  // Authenticated -> Show Main App Layout with ErrorBoundary and check Onboarding
+  const needsOnboarding = profile && profile.onboarding_completed === false;
+
   return (
     <ErrorBoundary>
       <AppLayout user={user} profile={profile} onSignOut={signOut} />
+      {needsOnboarding && (
+        <OnboardingModal
+          userId={user.id}
+          userEmail={user.email || undefined}
+          onComplete={refreshProfile}
+        />
+      )}
     </ErrorBoundary>
   );
 }
@@ -70,20 +91,22 @@ function AppContent() {
 export function App() {
   return (
     <ThemeProvider>
-      <AppContent />
-      <Toaster
-        richColors={false}
-        closeButton
-        position="bottom-right"
-        toastOptions={{
-          duration: 5000,
-          classNames: {
-            toast: 'veyra-toast',
-            title: 'text-sm font-medium',
-            description: 'text-xs opacity-70',
-          },
-        }}
-      />
+      <UserSettingsProvider>
+        <AppContent />
+        <Toaster
+          richColors={false}
+          closeButton
+          position="bottom-right"
+          toastOptions={{
+            duration: 5000,
+            classNames: {
+              toast: 'veyra-toast',
+              title: 'text-sm font-medium',
+              description: 'text-xs opacity-70',
+            },
+          }}
+        />
+      </UserSettingsProvider>
     </ThemeProvider>
   );
 }

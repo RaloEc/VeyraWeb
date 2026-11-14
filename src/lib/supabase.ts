@@ -18,3 +18,15 @@ export const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey, {
   },
 });
 
+// Sincronizar token de autenticación con el socket de Supabase Realtime para canales privados (RLS)
+supabase.auth.onAuthStateChange((_event, session) => {
+  if (session?.access_token) {
+    supabase.realtime.setAuth(session.access_token).catch(() => {});
+  }
+});
+supabase.auth.getSession().then(({ data: { session } }) => {
+  if (session?.access_token) {
+    supabase.realtime.setAuth(session.access_token).catch(() => {});
+  }
+}).catch(() => {});
+

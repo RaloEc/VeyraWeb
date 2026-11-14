@@ -298,7 +298,7 @@ export const ImageNodeView: React.FC<NodeViewProps> = ({
               <>
                 {/* Indicador de porcentaje flotante durante el redimensionamiento */}
                 {isResizing && currentWidth && (
-                  <div className="absolute top-2 left-1/2 -translate-x-1/2 bg-black/80 text-white text-[11px] font-medium px-2 py-0.5 rounded-full backdrop-blur-sm pointer-events-none z-30 shadow">
+                  <div className="absolute top-2 left-1/2 -translate-x-1/2 bg-zinc-900 text-white text-[11px] font-medium px-2 py-0.5 rounded-full border border-zinc-700 pointer-events-none z-30 shadow-md">
                     {currentWidth}%
                   </div>
                 )}

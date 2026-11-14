@@ -303,6 +303,7 @@ export const NotesModule: React.FC<NotesModuleProps> = ({
             onToggleSidebar={onToggleSidebar}
             remindersHook={remindersHook}
             eventsHook={eventsHook}
+            userId={userId}
             userEmail={userEmail}
             userName={userName}
             onSignOut={onSignOut}

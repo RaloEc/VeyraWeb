@@ -4,6 +4,7 @@ import katex from 'katex';
 import { supabase } from './supabase';
 import { uint8ArrayToBase64, computeSha256 } from './crypto-utils';
 import { activateNoteYjsMode } from './yjs-activation';
+import { IndexeddbPersistence } from 'y-indexeddb';
 
 export interface YjsLoadedNote {
   noteId: string;
@@ -13,6 +14,7 @@ export interface YjsLoadedNote {
   metaTitle: string;
   syncMode: 'yjs' | 'rest';
   pageOrder: string[];
+  highestUpdateId?: number;
   destroy: () => void;
 }
 
@@ -398,9 +400,26 @@ export async function loadYjsNote(noteId: string): Promise<YjsLoadedNote> {
   const startTime = performance.now();
   const ydoc = new Y.Doc();
   const awareness = new awarenessProtocol.Awareness(ydoc);
+  let hasBinaryData = false;
+
+  // 0. Connect local IndexedDB persistence for instant offline restore
+  let idbPersistence: IndexeddbPersistence | null = null;
+  if (typeof window !== 'undefined') {
+    try {
+      idbPersistence = new IndexeddbPersistence(`veyra-yjs-${noteId}`, ydoc);
+      await idbPersistence.whenSynced;
+      const cachedPages = ydoc.getArray('pageOrder');
+      if (cachedPages.length > 0) {
+        hasBinaryData = true;
+        console.log(`💾 [yjs-loader] Nota recuperada de IndexedDB local (${cachedPages.length} páginas)`);
+      }
+    } catch (idbErr) {
+      console.warn('[yjs-loader] IndexedDB initialization failed:', idbErr);
+    }
+  }
 
   // 1. Fetch note row from notes table
-  const { data: noteRow, error: noteRowErr } = await supabase
+  let { data: noteRow, error: noteRowErr } = await supabase
     .from('notes')
     .select('id, title, content, sync_mode')
     .eq('id', noteId)
@@ -410,8 +429,24 @@ export async function loadYjsNote(noteId: string): Promise<YjsLoadedNote> {
     console.warn('⚠️ [NoteRow] Error al consultar datos de la nota:', noteRowErr);
   }
 
-  const syncMode = (noteRow?.sync_mode as 'yjs' | 'rest') || 'yjs';
-  let hasBinaryData = false;
+  if (!noteRow) {
+    try {
+      const { localDB } = await import('./db/local-db');
+      const local = await localDB.notes.get(noteId);
+      if (local) {
+        noteRow = {
+          id: local.id,
+          title: local.title,
+          content: local.content,
+          sync_mode: (local as any).sync_mode || 'rest',
+        };
+      }
+    } catch (e) {
+      console.warn('⚠️ [NoteRow] Error consultando localDB:', e);
+    }
+  }
+
+  const syncMode = (noteRow?.sync_mode as 'yjs' | 'rest') || 'rest';
 
   // 2. Fetch consolidated snapshot
   console.log('1️⃣ [Snapshot] Consultando tabla note_yjs_snapshots...');
@@ -458,10 +493,14 @@ export async function loadYjsNote(noteId: string): Promise<YjsLoadedNote> {
   }
 
   let totalDeltasBytes = 0;
+  let highestUpdateId = serverClock;
   if (updates && updates.length > 0) {
     hasBinaryData = true;
     console.log(`📦 [Deltas] Se encontraron ${updates.length} actualizaciones históricas.`);
     for (const up of updates) {
+      if (up.id > highestUpdateId) {
+        highestUpdateId = up.id;
+      }
       try {
         const bytes = Uint8Array.from(window.atob(up.update_data), (c) =>
           c.charCodeAt(0)
@@ -566,7 +605,11 @@ export async function loadYjsNote(noteId: string): Promise<YjsLoadedNote> {
     metaTitle,
     syncMode: resolvedSyncMode,
     pageOrder: allPageIds,
+    highestUpdateId,
     destroy: () => {
+      try {
+        idbPersistence?.destroy();
+      } catch (_) { }
       try {
         awareness.destroy();
       } catch (_) { }

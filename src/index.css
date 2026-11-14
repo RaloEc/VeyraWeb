@@ -652,6 +652,191 @@ html.dark .tiptap [style*="rgb(11, 11, 12)" i] {
   color: #EDEDEF !important;
 }
 
+/* ==========================================================================
+   Modo Papel Claro en la Hoja (Interfaz oscura con Hoja blanca)
+   ========================================================================== */
+html.dark .sheet-light-mode {
+  background-color: #FFFFFF !important;
+  border-color: #cbd5e1 !important;
+  color: #18181B !important;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.22) !important;
+}
+
+html.dark .sheet-light-mode .prose {
+  --tw-prose-body: #18181b !important;
+  --tw-prose-headings: #18181b !important;
+  --tw-prose-lead: #3f3f46 !important;
+  --tw-prose-links: var(--accent-primary, #3b82f6) !important;
+  --tw-prose-bold: #18181b !important;
+  --tw-prose-counters: #71717a !important;
+  --tw-prose-bullets: #a1a1aa !important;
+  --tw-prose-hr: #e4e4e7 !important;
+  --tw-prose-quotes: #27272a !important;
+  --tw-prose-quote-borders: var(--accent-primary, #3b82f6) !important;
+  --tw-prose-captions: #71717a !important;
+  --tw-prose-code: #0f172a !important;
+  --tw-prose-pre-code: #0f172a !important;
+  --tw-prose-pre-bg: #f8fafc !important;
+  --tw-prose-th-borders: #cbd5e1 !important;
+  --tw-prose-td-borders: #cbd5e1 !important;
+  color: #18181B !important;
+}
+
+html.dark .sheet-light-mode .tiptap {
+  color: #18181B !important;
+}
+
+html.dark .sheet-light-mode .tiptap p,
+html.dark .sheet-light-mode .tiptap h1,
+html.dark .sheet-light-mode .tiptap h2,
+html.dark .sheet-light-mode .tiptap h3,
+html.dark .sheet-light-mode .tiptap h4,
+html.dark .sheet-light-mode .tiptap h5,
+html.dark .sheet-light-mode .tiptap h6,
+html.dark .sheet-light-mode .tiptap li,
+html.dark .sheet-light-mode .tiptap td,
+html.dark .sheet-light-mode .tiptap th {
+  color: #18181B !important;
+}
+
+/* Evitar que texto negro o carbón se convierta en blanco dentro de la hoja clara */
+html.dark .sheet-light-mode .tiptap [style*="#18181B" i],
+html.dark .sheet-light-mode .tiptap [style*="#000000" i],
+html.dark .sheet-light-mode .tiptap [style*="#111113" i],
+html.dark .sheet-light-mode .tiptap [style*="#0B0B0C" i],
+html.dark .sheet-light-mode .tiptap [style*="#27272A" i],
+html.dark .sheet-light-mode .tiptap [style*="#3F3F46" i],
+html.dark .sheet-light-mode .tiptap [style*="color: black" i],
+html.dark .sheet-light-mode .tiptap [style*="color:black" i],
+html.dark .sheet-light-mode .tiptap [style*="rgb(24, 24, 27)" i],
+html.dark .sheet-light-mode .tiptap [style*="rgb(24,24,27)" i],
+html.dark .sheet-light-mode .tiptap [style*="rgb(0, 0, 0)" i],
+html.dark .sheet-light-mode .tiptap [style*="rgb(0,0,0)" i],
+html.dark .sheet-light-mode .tiptap [style*="rgb(17, 17, 19)" i],
+html.dark .sheet-light-mode .tiptap [style*="rgb(11, 11, 12)" i] {
+  color: #18181B !important;
+}
+
+/* Si un texto se guardó explícitamente en blanco en modo oscuro, convertirlo a oscuro para que sea legible en la hoja blanca */
+html.dark .sheet-light-mode .tiptap [style*="#F4F4F5" i],
+html.dark .sheet-light-mode .tiptap [style*="#EDEDEF" i],
+html.dark .sheet-light-mode .tiptap [style*="#FFFFFF" i],
+html.dark .sheet-light-mode .tiptap [style*="#FAFAFA" i],
+html.dark .sheet-light-mode .tiptap [style*="color: white" i],
+html.dark .sheet-light-mode .tiptap [style*="color:white" i],
+html.dark .sheet-light-mode .tiptap [style*="rgb(255" i] {
+  color: #18181B !important;
+}
+
+html.dark .sheet-light-mode .tiptap blockquote {
+  color: #475569 !important;
+  background: rgba(0, 0, 0, 0.03) !important;
+  border-left-color: var(--accent-primary) !important;
+}
+
+html.dark .sheet-light-mode .tiptap pre {
+  background-color: #f8fafc !important;
+  border-color: #e2e8f0 !important;
+  color: #0f172a !important;
+}
+
+html.dark .sheet-light-mode .tiptap :not(pre)>code {
+  background-color: rgba(0, 0, 0, 0.06) !important;
+  color: #0284c7 !important;
+}
+
+html.dark .sheet-light-mode .veyra-table {
+  border-color: var(--table-custom-border, #cbd5e1) !important;
+}
+
+html.dark .sheet-light-mode .veyra-table td,
+html.dark .sheet-light-mode .veyra-table th {
+  border-color: var(--table-custom-border, #cbd5e1) !important;
+}
+
+html.dark .sheet-light-mode .veyra-table th {
+  background-color: #f8fafc !important;
+  color: #18181B !important;
+}
+
+html.dark .sheet-light-mode .veyra-table[data-table-style="striped"] tr:nth-child(even) td {
+  background-color: #f8fafc !important;
+}
+
+html.dark .sheet-light-mode input,
+html.dark .sheet-light-mode textarea {
+  color: #18181B !important;
+}
+
+/* Enlaces y botones de enlaces dentro de la hoja blanca en modo oscuro */
+html.dark .sheet-light-mode .tiptap a,
+html.dark .sheet-light-mode .prose a,
+html.dark .sheet-light-mode a {
+  color: #1d4ed8 !important; /* Azul intenso y nítido para máximo contraste */
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+html.dark .sheet-light-mode .tiptap a:hover,
+html.dark .sheet-light-mode .prose a:hover,
+html.dark .sheet-light-mode a:hover {
+  color: #1e40af !important;
+}
+
+/* Enlace de YouTube cuando embed=false dentro de la hoja blanca */
+html.dark .sheet-light-mode [data-youtube-video][data-embed="false"] span,
+html.dark .sheet-light-mode .veyra-youtube-node[data-embed="false"] span {
+  background-color: #f1f5f9 !important;
+  border-color: #cbd5e1 !important;
+  color: #0f172a !important;
+}
+
+html.dark .sheet-light-mode [data-youtube-video][data-embed="false"] button,
+html.dark .sheet-light-mode .veyra-youtube-node[data-embed="false"] button {
+  background-color: #e2e8f0 !important;
+  color: #1e293b !important;
+  border: 1px solid #cbd5e1 !important;
+}
+
+html.dark .sheet-light-mode [data-youtube-video][data-embed="false"] button:hover,
+html.dark .sheet-light-mode .veyra-youtube-node[data-embed="false"] button:hover {
+  background-color: #cbd5e1 !important;
+  color: #0f172a !important;
+}
+
+html.dark .sheet-light-mode [data-youtube-video][data-embed="false"] button:last-child,
+html.dark .sheet-light-mode .veyra-youtube-node[data-embed="false"] button:last-child {
+  background-color: #fee2e2 !important;
+  color: #b91c1c !important;
+  border-color: #fca5a5 !important;
+}
+
+html.dark .sheet-light-mode [data-youtube-video][data-embed="false"] button:last-child:hover,
+html.dark .sheet-light-mode .veyra-youtube-node[data-embed="false"] button:last-child:hover {
+  background-color: #fecaca !important;
+  color: #991b1b !important;
+}
+
+/* Tarjetas de enlaces (Bookmark) en la hoja blanca */
+html.dark .sheet-light-mode .veyra-bookmark-card,
+html.dark .sheet-light-mode [data-bookmark-card] {
+  background-color: #ffffff !important;
+  border-color: #cbd5e1 !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08) !important;
+}
+
+html.dark .sheet-light-mode [data-bookmark-card] .veyra-bookmark-title {
+  color: #0f172a !important;
+}
+
+html.dark .sheet-light-mode [data-bookmark-card] .veyra-bookmark-desc {
+  color: #475569 !important;
+}
+
+html.dark .sheet-light-mode [data-bookmark-card] .veyra-bookmark-domain {
+  color: #64748b !important;
+}
+
 .tiptap p.is-editor-empty:first-child::before {
   content: attr(data-placeholder);
   float: left;
@@ -926,9 +1111,19 @@ html.dark .tiptap [style*="rgb(11, 11, 12)" i] {
 /* Enlace en embed=false */
 [data-youtube-video][data-embed="false"] a,
 .veyra-youtube-node[data-embed="false"] a {
-  color: var(--text-main, #fcfcfc);
+  color: #2563eb;
   text-decoration: underline;
   text-underline-offset: 2px;
+}
+
+html.dark [data-youtube-video][data-embed="false"] a,
+html.dark .veyra-youtube-node[data-embed="false"] a {
+  color: #60a5fa;
+}
+
+html.dark .sheet-light-mode [data-youtube-video][data-embed="false"] a,
+html.dark .sheet-light-mode .veyra-youtube-node[data-embed="false"] a {
+  color: #1d4ed8 !important;
 }
 
 /* Inline Image NodeView & Resize styling */

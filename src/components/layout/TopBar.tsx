@@ -3,10 +3,13 @@ import {
   LogOut,
   Check,
   PanelLeft,
+  CloudOff,
+  RefreshCw,
 } from 'lucide-react';
 import { MorphIcon } from 'morphicons/react';
 import { Sun, Moon } from 'lucide';
 import { useRealtimeConnection } from '../../hooks/useRealtimeConnection';
+import { useSyncStatus } from '../../hooks/useSyncStatus';
 import { useTheme } from '../../theme/ThemeProvider';
 import { ACCENT_PALETTES, type AccentTheme } from '../../theme/accentColors';
 import type { User } from '@supabase/supabase-js';
@@ -40,6 +43,7 @@ export const TopBar: React.FC<TopBarProps> = ({
   onToggleSidebar,
 }) => {
   const { isConnected, latency } = useRealtimeConnection();
+  const { status: syncStatus, pendingCount, isSyncing } = useSyncStatus();
   const { setMode, accentTheme, setAccentTheme, isDark } = useTheme();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -133,22 +137,46 @@ export const TopBar: React.FC<TopBarProps> = ({
 
       {/* Right: Live Status Dot & User Menu */}
       <div className="flex items-center gap-3">
-        {/* Connection status indicator (6px dot with tooltip) */}
-        <div
-          className="flex items-center justify-center p-1.5"
-          title={
-            isConnected
-              ? `Conectado (${latency ? `${latency}ms` : 'En vivo'})`
-              : 'Desconectado / Reconectando...'
-          }
-        >
-          <span
-            className={cn(
-              'w-1.5 h-1.5 rounded-full transition-colors',
-              isConnected ? 'bg-emerald-500' : 'bg-amber-500 animate-pulse'
-            )}
-          />
-        </div>
+        {/* Offline / Syncing badge */}
+        {syncStatus === 'offline' ? (
+          <div
+            className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/25 text-amber-400 text-[10.5px] font-medium"
+            title={
+              pendingCount > 0
+                ? `${pendingCount} cambio(s) guardados localmente para sincronizar al volver la conexión`
+                : 'Trabajando sin conexión a internet'
+            }
+          >
+            <CloudOff className="w-3 h-3" />
+            <span className="hidden sm:inline">
+              {pendingCount > 0 ? `Sin conexión (${pendingCount})` : 'Sin conexión'}
+            </span>
+          </div>
+        ) : isSyncing ? (
+          <div
+            className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-accent/10 border border-accent/25 text-accent text-[10.5px] font-medium animate-pulse"
+            title="Sincronizando cambios locales con la nube..."
+          >
+            <RefreshCw className="w-3 h-3 animate-spin" />
+            <span className="hidden sm:inline">Sincronizando</span>
+          </div>
+        ) : (
+          <div
+            className="flex items-center justify-center p-1.5"
+            title={
+              isConnected
+                ? `En línea (${latency ? `${latency}ms` : 'Sincronizado'})`
+                : 'Conectando...'
+            }
+          >
+            <span
+              className={cn(
+                'w-1.5 h-1.5 rounded-full transition-colors',
+                isConnected ? 'bg-emerald-500' : 'bg-amber-500 animate-pulse'
+              )}
+            />
+          </div>
+        )}
 
         {/* User Avatar & Dropdown Menu */}
         <div className="relative" ref={menuRef}>

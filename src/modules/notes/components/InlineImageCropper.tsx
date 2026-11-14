@@ -380,7 +380,7 @@ export const InlineImageCropper: React.FC<InlineImageCropperProps> = ({
       </div>
 
       {/* Barra de control inline (debajo de la foto) */}
-      <div className="flex flex-wrap items-center justify-between gap-2 mt-2 px-3 py-2 bg-veyra-card/95 border border-veyra-border text-veyra-text rounded-xl shadow-elevated backdrop-blur-md text-xs select-none z-30">
+      <div className="flex flex-wrap items-center justify-between gap-2 mt-2 px-3 py-2 bg-white dark:bg-[#18181b] border border-slate-200 dark:border-zinc-800 text-slate-800 dark:text-zinc-100 rounded-xl shadow-xl text-xs select-none z-30">
         <div className="flex items-center gap-1">
           <span className="text-[11px] text-veyra-muted font-medium mr-1 flex items-center gap-1">
             <Crop className="w-3.5 h-3.5 text-accent" /> Recorte:

@@ -1,7 +1,11 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { NodeViewWrapper, type NodeViewProps } from '@tiptap/react';
 import { Loader2 } from 'lucide-react';
-import { generateNoteContentWithAI, type AINoteContext } from '../../../lib/ai/ai-notes-service';
+import {
+  generateNoteContentWithAI,
+  type AINoteContext,
+  type AIYouTubeVideoContext,
+} from '../../../lib/ai/ai-notes-service';
 import { toast } from 'sonner';
 
 export const AIPromptNodeView: React.FC<NodeViewProps> = (props) => {
@@ -75,9 +79,9 @@ export const AIPromptNodeView: React.FC<NodeViewProps> = (props) => {
         // 1. Extraer los párrafos o texto antes de esta posición
         const textBefore = doc.textBetween(0, pos, '\n', '\n').slice(-6000);
 
-        // 2. Buscar si hay una imagen/captura previa en la nota
-        let nearbyImage: { src: string; mimeType: string } | undefined;
-        doc.nodesBetween(Math.max(0, pos - 1500), pos, (node) => {
+        // 2. Buscar si hay imágenes previas en la nota
+        const nearbyImages: Array<{ src: string; mimeType: string }> = [];
+        doc.nodesBetween(Math.max(0, pos - 3000), pos, (node) => {
           if (node.type.name === 'image' && node.attrs.src) {
             const src = String(node.attrs.src);
             let mimeType = 'image/jpeg';
@@ -85,13 +89,67 @@ export const AIPromptNodeView: React.FC<NodeViewProps> = (props) => {
             else if (src.includes('.webp') || src.startsWith('data:image/webp')) mimeType = 'image/webp';
             else if (src.includes('.gif') || src.startsWith('data:image/gif')) mimeType = 'image/gif';
 
-            nearbyImage = { src, mimeType };
+            nearbyImages.push({ src, mimeType });
           }
         });
 
+        // 3. Buscar si hay videos de YouTube en la nota previos al cursor
+        const ytVideoIds: string[] = [];
+        doc.nodesBetween(0, pos, (node) => {
+          if (node.type.name === 'youtube' && node.attrs.videoId) {
+            const vid = String(node.attrs.videoId);
+            if (!ytVideoIds.includes(vid)) {
+              ytVideoIds.push(vid);
+            }
+          }
+        });
+
+        let nearbyYouTubeVideos: AIYouTubeVideoContext[] = [];
+        if (ytVideoIds.length > 0) {
+          setStepText('Analizando video de YouTube...');
+          // Tomar los videos más recientes antes de la posición
+          const targetIds = ytVideoIds.slice(-3);
+          nearbyYouTubeVideos = await Promise.all(
+            targetIds.map(async (vid) => {
+              const videoUrl = `https://www.youtube.com/watch?v=${vid}`;
+              try {
+                const res = await fetch(
+                  `https://www.youtube.com/oembed?url=${encodeURIComponent(videoUrl)}&format=json`
+                );
+                if (res.ok) {
+                  const data = await res.json();
+                  return {
+                    videoId: vid,
+                    url: videoUrl,
+                    title: data.title || undefined,
+                    author: data.author_name || undefined,
+                    thumbnailUrl: data.thumbnail_url || `https://img.youtube.com/vi/${vid}/hqdefault.jpg`,
+                  };
+                }
+              } catch {}
+              return {
+                videoId: vid,
+                url: videoUrl,
+                thumbnailUrl: `https://img.youtube.com/vi/${vid}/hqdefault.jpg`,
+              };
+            })
+          );
+        }
+
+        // Si no hay imágenes previas pero hay videos de YouTube, usamos la miniatura del primer video
+        // como adjunto visual para que Gemini pueda analizarla multimodalmente
+        if (nearbyImages.length === 0 && nearbyYouTubeVideos.length > 0 && nearbyYouTubeVideos[0].thumbnailUrl) {
+          nearbyImages.push({
+            src: nearbyYouTubeVideos[0].thumbnailUrl,
+            mimeType: 'image/jpeg',
+          });
+        }
+
         context = {
           textBefore,
-          image: nearbyImage,
+          image: nearbyImages[nearbyImages.length - 1],
+          images: nearbyImages,
+          youtubeVideos: nearbyYouTubeVideos,
         };
       }
 
@@ -133,7 +191,7 @@ export const AIPromptNodeView: React.FC<NodeViewProps> = (props) => {
           inputRef.current?.focus();
         }}
         onMouseDown={(e) => e.stopPropagation()}
-        className="w-full flex items-center gap-2.5 px-3 py-1.5 rounded-md border border-neutral-200 dark:border-neutral-800 bg-neutral-50/60 dark:bg-neutral-900/50 text-neutral-800 dark:text-neutral-200 transition-colors cursor-text"
+        className="w-full flex items-center gap-2.5 px-3 py-1.5 rounded-md border border-slate-200 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-900 text-slate-800 dark:text-zinc-200 transition-colors cursor-text"
       >
         <span className="text-xs font-mono text-neutral-400 dark:text-neutral-500 select-none shrink-0">
           /ia

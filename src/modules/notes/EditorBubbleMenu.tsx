@@ -339,7 +339,7 @@ export const EditorBubbleMenu: React.FC<EditorBubbleMenuProps> = ({ editor }) =>
         'p-1.5 rounded-lg text-xs transition-colors cursor-pointer flex items-center justify-center',
         isActive
           ? 'text-accent bg-accent/15 font-semibold'
-          : 'text-veyra-muted hover:text-veyra-text hover:bg-black/5 dark:hover:bg-white/5'
+          : 'text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-zinc-100 hover:bg-slate-100 dark:hover:bg-zinc-800'
       )}
     >
       {icon}
@@ -352,7 +352,7 @@ export const EditorBubbleMenu: React.FC<EditorBubbleMenuProps> = ({ editor }) =>
         editor={editor}
         pluginKey="textBubbleMenu"
         shouldShow={shouldShowTextBubbleMenu}
-        className="flex items-center gap-0.5 p-1 rounded-xl bg-veyra-card/95 border border-veyra-border shadow-elevated z-50 text-veyra-text select-none backdrop-blur-md"
+        className="flex items-center gap-0.5 p-1 rounded-xl bg-white dark:bg-[#18181b] border border-slate-200 dark:border-zinc-800 shadow-xl z-50 text-slate-800 dark:text-zinc-100 select-none"
       >
         {btn(
           editor.isActive('bold'),

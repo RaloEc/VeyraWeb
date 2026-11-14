@@ -229,7 +229,7 @@ export const EditorImageBubbleMenu: React.FC<EditorImageBubbleMenuProps> = ({
       editor={editor}
       pluginKey="imageBubbleMenu"
       shouldShow={shouldShowImageBubbleMenu}
-      className="flex items-center gap-0.5 p-1 rounded-xl bg-veyra-card/95 border border-veyra-border shadow-elevated z-50 text-veyra-text text-xs select-none backdrop-blur-md"
+      className="flex items-center gap-0.5 p-1 rounded-xl bg-white dark:bg-[#18181b] border border-slate-200 dark:border-zinc-800 shadow-xl z-50 text-slate-800 dark:text-zinc-100 text-xs select-none"
     >
       <input
         ref={fileInputRef}

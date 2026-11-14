@@ -44,7 +44,6 @@ import {
   FONT_SIZES,
   getNextLargerFontSize,
   getNextSmallerFontSize,
-  DEFAULT_FONT_SIZE,
 } from './extensions/FontSize';
 import { useRecentEditorColors } from './hooks/useRecentEditorColors';
 import {
@@ -364,8 +363,27 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({ editor, onUploadIm
     setIsOrderedListMenuOpen(false);
   };
 
-  // Encontrar opción de tamaño actual
-  const activeFontSizeOption = FONT_SIZES.find((s) => s.value === currentFontSize);
+  // Encontrar opción de tamaño actual o calcular tamaño efectivo según el bloque (H1/H2/H3/Párrafo)
+  const getEffectiveFontSize = (): { value: string; size: number } => {
+    if (currentFontSize) {
+      const num = parseInt(currentFontSize, 10);
+      return { value: currentFontSize, size: isNaN(num) ? 14 : num };
+    }
+    if (!editor) return { value: '14px', size: 14 };
+
+    if (editor.isActive('heading', { level: 1 })) {
+      return { value: '30px', size: 30 };
+    }
+    if (editor.isActive('heading', { level: 2 })) {
+      return { value: '24px', size: 24 };
+    }
+    if (editor.isActive('heading', { level: 3 })) {
+      return { value: '19px', size: 19 };
+    }
+    return { value: '14px', size: 14 };
+  };
+
+  const effectiveFontSize = getEffectiveFontSize();
 
   // Encontrar opción de fuente actual
   const activeFontOption = NOTE_FONTS.find(
@@ -433,7 +451,7 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({ editor, onUploadIm
     if (editor.state.selection.empty && lastSelectionRef.current) {
       chain = chain.setTextSelection(lastSelectionRef.current);
     }
-    if (!size || size === 'default' || size === DEFAULT_FONT_SIZE) {
+    if (!size || size === 'default') {
       chain.unsetFontSize().run();
     } else {
       chain.setFontSize(size).run();
@@ -448,14 +466,14 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({ editor, onUploadIm
 
   const handleIncreaseFontSize = () => {
     if (!editor) return;
-    const nextSize = getNextLargerFontSize(currentFontSize);
+    const nextSize = getNextLargerFontSize(effectiveFontSize.value);
     applyFontSize(nextSize);
   };
 
   const handleDecreaseFontSize = () => {
     if (!editor) return;
-    const prevSize = getNextSmallerFontSize(currentFontSize);
-    applyFontSize(prevSize === DEFAULT_FONT_SIZE ? null : prevSize);
+    const prevSize = getNextSmallerFontSize(effectiveFontSize.value);
+    applyFontSize(prevSize);
   };
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -793,7 +811,7 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({ editor, onUploadIm
             type="button"
             onMouseDown={(e) => e.preventDefault()}
             onClick={handleIncreaseFontSize}
-            title={`Aumentar tamaño de texto (${currentFontSize || '14px'} → ${getNextLargerFontSize(currentFontSize)})`}
+            title={`Aumentar tamaño de texto (${effectiveFontSize.value} → ${getNextLargerFontSize(effectiveFontSize.value)})`}
             className="h-6 px-1.5 rounded flex items-center justify-center cursor-pointer transition-colors text-veyra-muted hover:text-veyra-text hover:bg-black/10 dark:hover:bg-white/10"
           >
             <AArrowUp className="w-3.5 h-3.5" />
@@ -802,7 +820,7 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({ editor, onUploadIm
             type="button"
             onMouseDown={(e) => e.preventDefault()}
             onClick={handleDecreaseFontSize}
-            title={`Disminuir tamaño de texto (${currentFontSize || '14px'} → ${getNextSmallerFontSize(currentFontSize)})`}
+            title={`Disminuir tamaño de texto (${effectiveFontSize.value} → ${getNextSmallerFontSize(effectiveFontSize.value)})`}
             className="h-6 px-1.5 rounded flex items-center justify-center cursor-pointer transition-colors text-veyra-muted hover:text-veyra-text hover:bg-black/10 dark:hover:bg-white/10"
           >
             <AArrowDown className="w-3.5 h-3.5" />
@@ -818,7 +836,7 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({ editor, onUploadIm
               isFontSizeMenuOpen && 'bg-black/10 dark:bg-white/10 text-veyra-text'
             )}
           >
-            <span>{activeFontSizeOption ? activeFontSizeOption.size : (currentFontSize ? parseInt(currentFontSize, 10) : 14)}</span>
+            <span>{effectiveFontSize.size}</span>
             <ChevronDown
               className={cn(
                 'w-2.5 h-2.5 transition-transform duration-150',
@@ -1183,16 +1201,20 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({ editor, onUploadIm
               }}
               className={cn(
                 'w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs transition-colors cursor-pointer mb-1',
-                !currentFontSize || currentFontSize === DEFAULT_FONT_SIZE
+                !currentFontSize
                   ? 'bg-accent/10 dark:bg-accent/15 text-accent font-semibold'
                   : 'text-slate-700 dark:text-zinc-300 hover:bg-slate-100 dark:hover:bg-zinc-800'
               )}
             >
               <span className="flex items-center gap-2">
                 <RotateCcw className="w-3.5 h-3.5 text-accent" />
-                <span className="font-medium">Normal (14px - Por defecto)</span>
+                <span className="font-medium">
+                  {editor.isActive('heading')
+                    ? `Restablecer (${effectiveFontSize.size}px por defecto)`
+                    : 'Normal (14px - Por defecto)'}
+                </span>
               </span>
-              {(!currentFontSize || currentFontSize === DEFAULT_FONT_SIZE) && (
+              {!currentFontSize && (
                 <Check className="w-3.5 h-3.5 text-accent" />
               )}
             </button>
@@ -1206,7 +1228,7 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({ editor, onUploadIm
             {FONT_SIZES.map((size) => {
               const isSelected =
                 currentFontSize === size.value ||
-                (!currentFontSize && size.value === DEFAULT_FONT_SIZE);
+                (!currentFontSize && size.size === effectiveFontSize.size);
               return (
                 <button
                   key={size.value}
@@ -1250,10 +1272,10 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({ editor, onUploadIm
               left: `${orderedListCoords.left}px`,
               zIndex: 9999,
             }}
-            className="p-3 w-[268px] rounded-xl bg-[#202024] dark:bg-[#18181B] border border-slate-700/60 dark:border-zinc-800 shadow-2xl text-xs space-y-2.5 text-slate-100 select-none animate-in fade-in zoom-in-95 duration-100"
+            className="p-3 w-[268px] rounded-xl bg-white dark:bg-[#18181B] border border-slate-200 dark:border-zinc-800 shadow-2xl text-xs space-y-2.5 text-slate-800 dark:text-zinc-100 select-none animate-in fade-in zoom-in-95 duration-100"
           >
             {/* Título Biblioteca de numeración */}
-            <div className="px-1 text-[13px] font-semibold text-white tracking-tight">
+            <div className="px-1 text-[13px] font-semibold text-slate-900 dark:text-white tracking-tight">
               Biblioteca de numeración
             </div>
 

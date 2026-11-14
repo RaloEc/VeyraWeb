@@ -487,3 +487,85 @@ export function isEventOccurringOnDate(event: RecurrenceEventInput, targetDate: 
   return occurrences.length > 0;
 }
 
+/**
+ * Calcula la próxima fecha de vencimiento de un recordatorio recurrente.
+ * Siempre calcula desde la fecha vencida original para preservar la hora exacta (e.g. 14:30),
+ * avanzando iterativamente hasta encontrar la siguiente ocurrencia estrictamente posterior a `now`.
+ */
+export function computeNextReminderOccurrence(
+  dueDateMs: number,
+  repeatRuleRaw: string | null | undefined,
+  nowMs: number = Date.now()
+): number | null {
+  if (!repeatRuleRaw) return null;
+  const rule = parseRecurrenceRule(repeatRuleRaw);
+  if (!rule || rule.type === 'none') return null;
+
+  const date = new Date(dueDateMs);
+  if (isNaN(date.getTime())) return null;
+
+  const MAX_ITERATIONS = 1000;
+  let iterations = 0;
+
+  switch (rule.type) {
+    case 'daily': {
+      const interval = Math.max(1, rule.interval || 1);
+      do {
+        date.setDate(date.getDate() + interval);
+        iterations++;
+      } while (date.getTime() <= nowMs && iterations < MAX_ITERATIONS);
+      break;
+    }
+
+    case 'weekdays': {
+      do {
+        date.setDate(date.getDate() + 1);
+        iterations++;
+      } while ((date.getTime() <= nowMs || date.getDay() === 0 || date.getDay() === 6) && iterations < MAX_ITERATIONS);
+      break;
+    }
+
+    case 'weekly': {
+      const interval = Math.max(1, rule.interval || 1);
+      const byWeekday = rule.by_weekday && rule.by_weekday.length > 0 ? rule.by_weekday : null;
+      if (!byWeekday) {
+        do {
+          date.setDate(date.getDate() + 7 * interval);
+          iterations++;
+        } while (date.getTime() <= nowMs && iterations < MAX_ITERATIONS);
+      } else {
+        do {
+          date.setDate(date.getDate() + 1);
+          iterations++;
+        } while ((date.getTime() <= nowMs || !byWeekday.includes(date.getDay())) && iterations < MAX_ITERATIONS);
+      }
+      break;
+    }
+
+    case 'monthly': {
+      const interval = Math.max(1, rule.interval || 1);
+      do {
+        date.setMonth(date.getMonth() + interval);
+        iterations++;
+      } while (date.getTime() <= nowMs && iterations < MAX_ITERATIONS);
+      break;
+    }
+
+    case 'yearly': {
+      const interval = Math.max(1, rule.interval || 1);
+      do {
+        date.setFullYear(date.getFullYear() + interval);
+        iterations++;
+      } while (date.getTime() <= nowMs && iterations < MAX_ITERATIONS);
+      break;
+    }
+
+    default:
+      return null;
+  }
+
+  if (iterations >= MAX_ITERATIONS) return null;
+  return date.getTime();
+}
+
+

@@ -10,6 +10,7 @@ export interface YjsSupabaseProviderOptions {
   doc: Y.Doc;
   awareness: awarenessProtocol.Awareness;
   syncMode?: 'yjs' | 'rest';
+  initialServerClock?: number;
   currentUser: {
     id: string;
     email: string;
@@ -30,6 +31,9 @@ export class YjsSupabaseProvider {
   private options: YjsSupabaseProviderOptions;
   private isDestroyed = false;
   private awarenessHeartbeatInterval: number | null = null;
+  private catchUpInterval: number | null = null;
+  private lastProcessedReadId = 0;
+  private isCatchingUp = false;
 
   constructor(options: YjsSupabaseProviderOptions) {
     this.options = options;
@@ -37,12 +41,14 @@ export class YjsSupabaseProvider {
     this.doc = options.doc;
     this.awareness = options.awareness;
     this.clientId = 'web-' + crypto.randomUUID();
+    this.lastProcessedReadId = options.initialServerClock || 0;
 
     console.log('[AWARENESS-TRACE-WEB-V2] Provider inicializado', {
       noteId: this.noteId,
       clientId: this.clientId,
       awarenessClientID: this.awareness.clientID,
       status: this.status,
+      initialClock: this.lastProcessedReadId,
     });
 
     // Ensure local user metadata is updated in Awareness
@@ -52,14 +58,15 @@ export class YjsSupabaseProvider {
       id: options.currentUser.id || null,
       userId: options.currentUser.id || null,
       name: `${displayName} • PC`,
-      color: options.currentUser.color || '#00D2D3', // Acento distintivo de Veyra Web
+      color: options.currentUser.color || '#00D2D3',
       isEditing: true,
     });
 
     this.init();
+    this.setupWindowListeners();
   }
 
-  private init() {
+  private async init() {
     this.setStatus('connecting');
 
     // Subscribe to local doc updates to persist via RPC and broadcast
@@ -68,6 +75,18 @@ export class YjsSupabaseProvider {
     // Exact mobile specification channel: note_yjs_${noteId}
     const channelName = `note_yjs_${this.noteId}`;
     console.log(`🔌 [Yjs Realtime Provider] Conectando a canal: ${channelName}`);
+
+    // Asegurar autenticación del socket antes de unirse al canal privado
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.access_token) {
+        await supabase.realtime.setAuth(session.access_token);
+      }
+    } catch (authErr) {
+      console.warn('⚠️ [Yjs Realtime Provider] Error configurando auth de realtime:', authErr);
+    }
+
+    if (this.isDestroyed) return;
 
     // Clean up any lingering channel with this topic before creating a new one
     const existing = supabase
@@ -149,6 +168,9 @@ export class YjsSupabaseProvider {
         if (status === 'SUBSCRIBED') {
           this.setStatus('connected');
 
+          // Catch-up inmediato de cualquier delta que haya llegado a Supabase mientras nos conectábamos
+          this.catchUpRemoteUpdates();
+
           // Transmitir estado inicial de awareness local inmediatamente al unirse al canal
           try {
             const updateBytes = awarenessProtocol.encodeAwarenessUpdate(this.awareness, [this.awareness.clientID]);
@@ -211,6 +233,69 @@ export class YjsSupabaseProvider {
           this.setStatus('disconnected');
         }
       });
+
+    // Iniciar intervalo de sincronización catch-up continuo (cada 2.5s)
+    if (this.catchUpInterval) {
+      window.clearInterval(this.catchUpInterval);
+    }
+    this.catchUpInterval = window.setInterval(() => {
+      if (!this.isDestroyed) {
+        this.catchUpRemoteUpdates();
+      }
+    }, 2500);
+  }
+
+  public async catchUpRemoteUpdates(): Promise<void> {
+    if (this.isCatchingUp || this.isDestroyed) return;
+    this.isCatchingUp = true;
+    try {
+      const { data: updates, error } = await supabase
+        .from('note_yjs_updates')
+        .select('id, update_data, client_id')
+        .eq('note_id', this.noteId)
+        .gt('id', this.lastProcessedReadId)
+        .order('id', { ascending: true });
+
+      if (error) {
+        console.warn('⚠️ [Yjs Realtime Provider] Error en catch-up:', error);
+        return;
+      }
+
+      if (updates && updates.length > 0) {
+        console.log(`📦 [Yjs Realtime Provider] Catch-up: aplicando ${updates.length} deltas remotos`);
+        for (const u of updates) {
+          if (u.id > this.lastProcessedReadId) {
+            this.lastProcessedReadId = u.id;
+          }
+          if (u.client_id === this.clientId) {
+            continue;
+          }
+          try {
+            const bytes = Uint8Array.from(window.atob(u.update_data), (c) => c.charCodeAt(0));
+            Y.applyUpdate(this.doc, bytes, 'remote-catchup');
+          } catch (err) {
+            console.error('❌ [Yjs CatchUp] Error aplicando update id', u.id, err);
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('⚠️ [Yjs CatchUp] Excepción en catchUpRemoteUpdates:', e);
+    } finally {
+      this.isCatchingUp = false;
+    }
+  }
+
+  private handleWindowFocus = () => {
+    if (!this.isDestroyed) {
+      this.catchUpRemoteUpdates();
+    }
+  };
+
+  private setupWindowListeners() {
+    if (typeof window !== 'undefined') {
+      window.addEventListener('focus', this.handleWindowFocus);
+      document.addEventListener('visibilitychange', this.handleWindowFocus);
+    }
   }
 
   private handleLocalAwarenessUpdate = (
@@ -219,7 +304,10 @@ export class YjsSupabaseProvider {
   ) => {
     if (origin === 'remote') return;
     const changedClients = added.concat(updated, removed);
-    const updateBytes = awarenessProtocol.encodeAwarenessUpdate(this.awareness, changedClients.length > 0 ? changedClients : [this.awareness.clientID]);
+    const updateBytes = awarenessProtocol.encodeAwarenessUpdate(
+      this.awareness,
+      changedClients.length > 0 ? changedClients : [this.awareness.clientID]
+    );
     const base64Awareness = uint8ArrayToBase64(updateBytes);
 
     if (this.channel && this.status === 'connected') {
@@ -245,7 +333,12 @@ export class YjsSupabaseProvider {
 
   private handleLocalDocUpdate = async (update: Uint8Array, origin: unknown) => {
     // Only persist and broadcast local user changes (ignore remote updates)
-    if (origin === 'remote-broadcast' || origin === 'remote-snapshot' || origin === 'remote-update') {
+    if (
+      origin === 'remote-broadcast' ||
+      origin === 'remote-snapshot' ||
+      origin === 'remote-update' ||
+      origin === 'remote-catchup'
+    ) {
       return;
     }
 
@@ -270,6 +363,9 @@ export class YjsSupabaseProvider {
           console.error('❌ [Yjs RPC Error] append_note_yjs_update falló:', error);
         } else {
           console.log('✅ [Yjs RPC Success] append_note_yjs_update guardado:', data);
+          if (typeof data === 'number' && data > this.lastProcessedReadId) {
+            this.lastProcessedReadId = data;
+          }
         }
       } catch (err) {
         console.error('❌ [Yjs RPC Exception]:', err);
@@ -301,6 +397,14 @@ export class YjsSupabaseProvider {
     if (this.awarenessHeartbeatInterval) {
       window.clearInterval(this.awarenessHeartbeatInterval);
       this.awarenessHeartbeatInterval = null;
+    }
+    if (this.catchUpInterval) {
+      window.clearInterval(this.catchUpInterval);
+      this.catchUpInterval = null;
+    }
+    if (typeof window !== 'undefined') {
+      window.removeEventListener('focus', this.handleWindowFocus);
+      document.removeEventListener('visibilitychange', this.handleWindowFocus);
     }
     this.doc.off('update', this.handleLocalDocUpdate);
     this.awareness.off('update', this.handleLocalAwarenessUpdate);

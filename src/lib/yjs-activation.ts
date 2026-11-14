@@ -23,13 +23,32 @@ export interface ActivateYjsResult {
 export async function activateNoteYjsMode(noteId: string, ydoc: Y.Doc): Promise<ActivateYjsResult> {
   try {
     // 1. Fetch fresh note row
-    const { data: noteRow, error: fetchErr } = await supabase
+    let { data: noteRow, error: fetchErr } = await supabase
       .from('notes')
       .select('id, user_id, content, sync_mode, updated_at_ms, last_modified_ms')
       .eq('id', noteId)
       .maybeSingle();
 
-    if (fetchErr || !noteRow) {
+    if (!noteRow) {
+      try {
+        const { localDB } = await import('./db/local-db');
+        const local = await localDB.notes.get(noteId);
+        if (local) {
+          // Asegurar que la fila exista en Supabase antes de invocar la RPC
+          await supabase.from('notes').upsert(local, { onConflict: 'id' });
+          const { data: freshRow } = await supabase
+            .from('notes')
+            .select('id, user_id, content, sync_mode, updated_at_ms, last_modified_ms')
+            .eq('id', noteId)
+            .maybeSingle();
+          noteRow = freshRow || null;
+        }
+      } catch (localErr) {
+        console.warn('⚠️ [activateNoteYjsMode] Error recuperando nota local:', localErr);
+      }
+    }
+
+    if (!noteRow) {
       console.warn('⚠️ [activateNoteYjsMode] Error consultando nota:', fetchErr);
       return { success: false, error: fetchErr?.message || 'Nota no encontrada' };
     }
@@ -69,6 +88,11 @@ export async function activateNoteYjsMode(noteId: string, ydoc: Y.Doc): Promise<
       console.warn('⚠️ [activateNoteYjsMode] Error en activate_note_yjs_mode RPC:', error);
       return { success: false, error: error.message };
     }
+
+    try {
+      const { localDB } = await import('./db/local-db');
+      await localDB.notes.update(noteId, { sync_mode: 'yjs' });
+    } catch (_) {}
 
     console.log('✅ [activateNoteYjsMode] Nota convertida a modo Yjs exitosamente:', data);
     return { success: true, noteId };

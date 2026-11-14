@@ -20,7 +20,7 @@ import {
   cleanAiClipboardArtifacts,
   hydrateMathInHtml,
 } from './extensions/mathUtils';
-import { YoutubeNode } from '../../lib/tiptap-youtube-node';
+import { YoutubeNode, YT_REGEX } from '../../lib/tiptap-youtube-node';
 import TextAlign from '@tiptap/extension-text-align';
 import { TextStyle } from '@tiptap/extension-text-style';
 import { Color } from '@tiptap/extension-color';
@@ -111,6 +111,7 @@ interface YjsActiveEditorProps {
   initialActivePageId: string;
   initialPages: string[];
   initialMetaTitle: string;
+  initialServerClock?: number;
   currentUserId: string;
   userEmail: string;
   userName?: string;
@@ -141,6 +142,7 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
   initialActivePageId,
   initialPages,
   initialMetaTitle,
+  initialServerClock,
   currentUserId,
   userEmail,
   userName,
@@ -352,7 +354,7 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
   const triggerAutoSaveRef = useRef<() => void>(() => {});
 
   const displayName = userName || userEmail.split('@')[0] || 'Usuario';
-  const { palette } = useTheme();
+  const { palette, isPaperLight } = useTheme();
 
   // Keep refs up to date
   useEffect(() => {
@@ -622,6 +624,7 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
       doc: ydoc,
       awareness,
       syncMode: note.sync_mode,
+      initialServerClock,
       currentUser: {
         id: currentUserId,
         email: userEmail,
@@ -941,9 +944,25 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
             return true;
           }
 
+          const trimmedPlain = plainText.trim();
+
+          // Si es un enlace de YouTube, insertamos directamente el reproductor interactivo embebido
+          const ytMatch = trimmedPlain.match(YT_REGEX);
+          if (ytMatch && ytMatch[1] && !html.includes('<img')) {
+            event.preventDefault();
+            const currentEditor = (_view as any).editor || editorRef.current;
+            if (currentEditor && !currentEditor.isDestroyed) {
+              currentEditor
+                .chain()
+                .focus()
+                .setYoutube({ videoId: ytMatch[1], embed: true })
+                .run();
+              return true;
+            }
+          }
+
           // Si es una URL web solitaria y válida (que no sea YouTube ya capturado arriba),
           // insertamos de inmediato la tarjeta de enlace con esqueleto animado (0ms) y cargamos metadatos en segundo plano.
-          const trimmedPlain = plainText.trim();
           const isSingleUrl = /^https?:\/\/[^\s$.?#].[^\s]*$/i.test(trimmedPlain) && !trimmedPlain.includes('\n');
           if (isSingleUrl && !html.includes('<img')) {
             event.preventDefault();
@@ -2023,11 +2042,23 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
           {/* Note Document Sheet (Documento central: gris carbón oscuro y sobrio / Hoja A4) */}
           <div
             ref={docSheetRef}
+            data-sheet-theme={isPaperLight ? 'light' : undefined}
             className={cn(
               'mx-auto w-full flex flex-col transition-all duration-200 relative',
+              isPaperLight && 'sheet-light-mode',
               pageFormat === 'a4'
-                ? 'a4-page-mode max-w-[794px] min-h-[1123px] bg-white dark:bg-[#161619] border border-slate-300 dark:border-white/10 rounded-sm shadow-[0_8px_30px_rgb(0,0,0,0.12)] dark:shadow-[0_8px_30px_rgb(0,0,0,0.6)] px-6 sm:px-[30mm] pt-8 sm:pt-[25mm] pb-12 sm:pb-[25mm] mb-4'
-                : 'max-w-[760px] bg-white dark:bg-[#161619] border border-slate-300/80 dark:border-white/8 rounded-2xl p-6 sm:p-12 shadow-2xl min-h-[calc(100vh-140px)]'
+                ? cn(
+                    'a4-page-mode max-w-[794px] min-h-[1123px] rounded-sm px-6 sm:px-[30mm] pt-8 sm:pt-[25mm] pb-12 sm:pb-[25mm] mb-4',
+                    isPaperLight
+                      ? 'bg-white border border-slate-300 shadow-[0_8px_30px_rgb(0,0,0,0.12)]'
+                      : 'bg-white dark:bg-[#161619] border border-slate-300 dark:border-white/10 shadow-[0_8px_30px_rgb(0,0,0,0.12)] dark:shadow-[0_8px_30px_rgb(0,0,0,0.6)]'
+                  )
+                : cn(
+                    'max-w-[760px] rounded-2xl p-6 sm:p-12 shadow-2xl min-h-[calc(100vh-140px)]',
+                    isPaperLight
+                      ? 'bg-white border border-slate-300/80 shadow-2xl'
+                      : 'bg-white dark:bg-[#161619] border border-slate-300/80 dark:border-white/8 shadow-2xl'
+                  )
             )}
           >
             {pageFormat === 'a4' && <style ref={a4StyleRef} />}
@@ -2060,19 +2091,40 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
                   className="absolute -left-[1px] -right-[1px] h-[36px] pointer-events-none select-none z-20 flex flex-col justify-between"
                 >
                   {/* Borde inferior de la hoja anterior + sombra de papel físico */}
-                  <div className="w-full h-[1px] bg-slate-300/90 dark:bg-white/10 shadow-[0_4px_12px_rgba(0,0,0,0.15)] dark:shadow-[0_4px_16px_rgba(0,0,0,0.8)]" />
+                  <div
+                    className={cn(
+                      'w-full h-[1px]',
+                      isPaperLight
+                        ? 'bg-slate-300 shadow-[0_4px_12px_rgba(0,0,0,0.15)]'
+                        : 'bg-slate-300/90 dark:bg-white/10 shadow-[0_4px_12px_rgba(0,0,0,0.15)] dark:shadow-[0_4px_16px_rgba(0,0,0,0.8)]'
+                    )}
+                  />
 
                   {/* Espacio real entre hojas: fondo exacto del lienzo exterior */}
                   <div className="w-full flex-1 bg-[#e4e7ec] dark:bg-[#030304] flex items-center justify-center relative">
                     <div className="flex items-center gap-2">
-                      <span className="px-3 py-0.5 rounded-full text-[10px] font-bold tracking-wider uppercase bg-white dark:bg-[#161619] text-slate-600 dark:text-zinc-300 border border-slate-300/80 dark:border-zinc-700 shadow-sm">
+                      <span
+                        className={cn(
+                          'px-3 py-0.5 rounded-full text-[10px] font-bold tracking-wider uppercase border shadow-sm',
+                          isPaperLight
+                            ? 'bg-white text-slate-700 border-slate-300'
+                            : 'bg-white dark:bg-[#161619] text-slate-600 dark:text-zinc-300 border border-slate-300/80 dark:border-zinc-700'
+                        )}
+                      >
                         Hoja {idx + 2}
                       </span>
                     </div>
                   </div>
 
                   {/* Borde superior de la nueva hoja + sombra de papel físico */}
-                  <div className="w-full h-[1px] bg-slate-300/90 dark:bg-white/10 shadow-[0_-3px_10px_rgba(0,0,0,0.12)] dark:shadow-[0_-3px_14px_rgba(0,0,0,0.7)]" />
+                  <div
+                    className={cn(
+                      'w-full h-[1px]',
+                      isPaperLight
+                        ? 'bg-slate-300 shadow-[0_-3px_10px_rgba(0,0,0,0.12)]'
+                        : 'bg-slate-300/90 dark:bg-white/10 shadow-[0_-3px_10px_rgba(0,0,0,0.12)] dark:shadow-[0_-3px_14px_rgba(0,0,0,0.7)]'
+                    )}
+                  />
                 </div>
               ))}
 
@@ -2106,13 +2158,21 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
                     }
                   }}
                   containerClassName="mb-6"
-                  inputClassName="w-full bg-transparent text-lg sm:text-xl font-medium tracking-tight text-veyra-text/90 placeholder:text-slate-400/60 dark:placeholder:text-veyra-subtle/30 focus:outline-none border-0 p-0 leading-snug transition-colors resize-none overflow-hidden"
+                  inputClassName={cn(
+                    'w-full bg-transparent text-lg sm:text-xl font-medium tracking-tight focus:outline-none border-0 p-0 leading-snug transition-colors resize-none overflow-hidden',
+                    isPaperLight
+                      ? 'text-slate-900 placeholder:text-slate-400'
+                      : 'text-veyra-text/90 placeholder:text-slate-400/60 dark:placeholder:text-veyra-subtle/30'
+                  )}
                 />
               )}
 
               {/* Tiptap Native DOM Editor + BubbleMenu + SlashMenu */}
               <div
-                className="w-full flex-1 flex flex-col text-veyra-text"
+                className={cn(
+                  'w-full flex-1 flex flex-col',
+                  isPaperLight ? 'text-slate-900' : 'text-veyra-text'
+                )}
                 onClick={() => {
                   if (editor && !editor.isFocused) {
                     editor.commands.focus();
@@ -2375,6 +2435,7 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
       initialActivePageId={loadedData.activePageId}
       initialPages={loadedData.pageOrder}
       initialMetaTitle={loadedData.metaTitle}
+      initialServerClock={loadedData.highestUpdateId}
       currentUserId={currentUserId}
       userEmail={userEmail}
       userName={userName}

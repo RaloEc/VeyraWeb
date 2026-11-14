@@ -1,9 +1,10 @@
 import React, { useEffect } from 'react';
 import { NodeViewWrapper } from '@tiptap/react';
 import type { NodeViewProps } from '@tiptap/react';
-import { ExternalLink, Globe, Loader2 } from 'lucide-react';
+import { ExternalLink, Globe, Loader2, Video } from 'lucide-react';
 import { cn } from '../../../lib/utils';
 import { fetchLinkMetadata } from '../../../lib/link-metadata';
+import { YT_REGEX } from '../../../lib/tiptap-youtube-node';
 
 export const BookmarkNodeView: React.FC<NodeViewProps> = ({
   node,
@@ -77,6 +78,25 @@ export const BookmarkNodeView: React.FC<NodeViewProps> = ({
       .focus()
       .deleteRange({ from: pos, to: pos + nodeSize })
       .insertContent(`<p><a href="${fullUrl}" target="_blank" rel="noopener noreferrer nofollow">${url}</a>&nbsp;</p>`)
+      .run();
+  };
+
+  const ytMatch = url ? url.trim().match(YT_REGEX) : null;
+
+  const handleConvertToVideo = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    e.preventDefault();
+    if (!editor.isEditable || !ytMatch || !ytMatch[1]) return;
+    const pos = typeof getPos === 'function' ? getPos() : undefined;
+    if (typeof pos !== 'number') return;
+
+    const nodeSize = node?.nodeSize || 1;
+
+    editor
+      .chain()
+      .focus()
+      .deleteRange({ from: pos, to: pos + nodeSize })
+      .setYoutube({ videoId: ytMatch[1], embed: true })
       .run();
   };
 
@@ -212,6 +232,19 @@ export const BookmarkNodeView: React.FC<NodeViewProps> = ({
 
               {editor.isEditable && (
                 <div className="flex items-center gap-2.5 ml-auto">
+                  {/* Botón para convertir a reproductor interactivo si es enlace de YouTube */}
+                  {ytMatch && (
+                    <button
+                      type="button"
+                      onClick={handleConvertToVideo}
+                      title="Convertir esta tarjeta en reproductor de YouTube incrustado"
+                      className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] font-medium text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors cursor-pointer"
+                    >
+                      <Video className="w-3 h-3" />
+                      <span>Incrustar video</span>
+                    </button>
+                  )}
+
                   {/* Switch Minimalista para cambiar a solo texto */}
                   <button
                     type="button"

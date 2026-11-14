@@ -3,6 +3,8 @@ import { supabase } from '../lib/supabase';
 import type { Database } from '../types/database';
 import { isDateToday } from '../lib/utils';
 import { expandOccurrences } from '../services/recurrence/recurrenceEngine';
+import { localDB } from '../lib/db/local-db';
+import { syncEngine } from '../lib/sync/syncEngine';
 
 export type CalendarEvent = Database['public']['Tables']['events']['Row'];
 
@@ -11,9 +13,40 @@ export function useEvents(userId?: string) {
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
+  // 1. Initial instant load from IndexedDB (0 ms offline start)
+  useEffect(() => {
+    let isMounted = true;
+    localDB.events
+      .filter((e) => e.deleted === 0 && (!userId || e.user_id === userId))
+      .sortBy('start_time_ms')
+      .then((cached) => {
+        if (isMounted && cached.length > 0) {
+          setEvents(cached);
+          setLoading(false);
+        }
+      })
+      .catch((err) => {
+        console.warn('[useEvents] Error reading from localDB:', err);
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [userId]);
+
+  // 2. Fetch events from Supabase or fallback to localDB
   const fetchEvents = useCallback(async () => {
     if (!userId) return;
     try {
+      if (!syncEngine.isOnline()) {
+        const cached = await localDB.events
+          .filter((e) => e.deleted === 0 && e.user_id === userId)
+          .sortBy('start_time_ms');
+        setEvents(cached);
+        setLoading(false);
+        return;
+      }
+
       setLoading(true);
       const { data, error } = await supabase
         .from('events')
@@ -31,10 +64,20 @@ export function useEvents(userId?: string) {
         updated_at_ms: Number(e.updated_at_ms || 0),
         last_modified_ms: Number(e.last_modified_ms || 0),
       }));
+
+      if (mapped.length > 0) {
+        await localDB.events.bulkPut(mapped);
+      }
       setEvents(mapped);
     } catch (err: unknown) {
       console.error('[useEvents] Error fetching:', err);
       setError((err as Error).message);
+      const cached = await localDB.events
+        .filter((e) => e.deleted === 0 && (!userId || e.user_id === userId))
+        .sortBy('start_time_ms');
+      if (cached.length > 0) {
+        setEvents(cached);
+      }
     } finally {
       setLoading(false);
     }
@@ -44,7 +87,7 @@ export function useEvents(userId?: string) {
     fetchEvents();
   }, [fetchEvents]);
 
-  // Real-time subscription for events
+  // 3. Real-time subscription for events
   useEffect(() => {
     if (!userId) return;
 
@@ -59,45 +102,56 @@ export function useEvents(userId?: string) {
           table: 'events',
           filter: `user_id=eq.${userId}`,
         },
-        (payload) => {
+        async (payload) => {
           const { eventType, new: newRecord, old: oldRecord } = payload;
 
-          setEvents((prev) => {
-            if (eventType === 'INSERT') {
-              const raw = newRecord as CalendarEvent;
-              if (raw.deleted === 1) return prev;
-              const item: CalendarEvent = {
-                ...raw,
-                start_time_ms: Number(raw.start_time_ms),
-                end_time_ms: Number(raw.end_time_ms),
-              };
+          if (eventType === 'INSERT') {
+            const raw = newRecord as CalendarEvent;
+            if (raw.deleted === 1) {
+              await localDB.events.delete(raw.id);
+              setEvents((prev) => prev.filter((e) => e.id !== raw.id));
+              return;
+            }
+            const item: CalendarEvent = {
+              ...raw,
+              start_time_ms: Number(raw.start_time_ms),
+              end_time_ms: Number(raw.end_time_ms),
+            };
+            await localDB.events.put(item);
+            setEvents((prev) => {
               if (prev.some((e) => e.id === item.id)) {
                 return prev.map((e) => (e.id === item.id ? item : e));
               }
               return [...prev, item].sort((a, b) => a.start_time_ms - b.start_time_ms);
-            }
+            });
+          }
 
-            if (eventType === 'UPDATE') {
-              const raw = newRecord as CalendarEvent;
-              if (raw.deleted === 1) {
-                return prev.filter((e) => e.id !== raw.id);
-              }
-              const updated: CalendarEvent = {
-                ...raw,
-                start_time_ms: Number(raw.start_time_ms),
-                end_time_ms: Number(raw.end_time_ms),
-              };
-              return prev
+          if (eventType === 'UPDATE') {
+            const raw = newRecord as CalendarEvent;
+            if (raw.deleted === 1) {
+              await localDB.events.delete(raw.id);
+              setEvents((prev) => prev.filter((e) => e.id !== raw.id));
+              return;
+            }
+            const updated: CalendarEvent = {
+              ...raw,
+              start_time_ms: Number(raw.start_time_ms),
+              end_time_ms: Number(raw.end_time_ms),
+            };
+            await localDB.events.put(updated);
+            setEvents((prev) =>
+              prev
                 .map((e) => (e.id === updated.id ? { ...e, ...updated } : e))
-                .sort((a, b) => a.start_time_ms - b.start_time_ms);
-            }
+                .sort((a, b) => a.start_time_ms - b.start_time_ms)
+            );
+          }
 
-            if (eventType === 'DELETE') {
-              return prev.filter((e) => e.id !== oldRecord.id);
+          if (eventType === 'DELETE') {
+            if (oldRecord && oldRecord.id) {
+              await localDB.events.delete(oldRecord.id);
+              setEvents((prev) => prev.filter((e) => e.id !== oldRecord.id));
             }
-
-            return prev;
-          });
+          }
         }
       )
       .subscribe();
@@ -198,20 +252,16 @@ export function useEvents(userId?: string) {
         last_modified_ms: nowMs,
       };
 
+      // 1. In-memory
       setEvents((prev) => [...prev, newEvent].sort((a, b) => a.start_time_ms - b.start_time_ms));
 
-      try {
-        const { error } = await supabase.from('events').insert(insertData);
-        if (error) {
-          console.error('[useEvents] Insert error:', error);
-          setEvents((prev) => prev.filter((e) => e.id !== newId));
-          throw error;
-        }
-        return newId;
-      } catch (err) {
-        console.error('[useEvents] Exception inserting:', err);
-        throw err;
-      }
+      // 2. Local IndexedDB
+      await localDB.events.put(newEvent);
+
+      // 3. Outbox
+      await syncEngine.enqueue('events', 'upsert', newId, insertData, nowMs);
+
+      return newId;
     },
     [userId]
   );
@@ -219,6 +269,8 @@ export function useEvents(userId?: string) {
   const updateEvent = useCallback(
     async (id: string, updates: Partial<CalendarEvent>) => {
       const nowMs = Date.now();
+
+      // 1. In-memory
       setEvents((prev) =>
         prev
           .map((e) =>
@@ -229,75 +281,53 @@ export function useEvents(userId?: string) {
           .sort((a, b) => a.start_time_ms - b.start_time_ms)
       );
 
-      try {
-        const updateData: Database['public']['Tables']['events']['Update'] = {
-          updated_at_ms: nowMs,
-          last_modified_ms: nowMs,
-        };
+      // 2. Local IndexedDB & payload
+      const updateData: Database['public']['Tables']['events']['Update'] = {
+        updated_at_ms: nowMs,
+        last_modified_ms: nowMs,
+      };
 
-        if (updates.title !== undefined) updateData.title = updates.title.trim();
-        if (updates.description !== undefined) updateData.description = updates.description?.trim() || null;
-        if (updates.start_time_ms !== undefined) updateData.start_time_ms = updates.start_time_ms;
-        if (updates.end_time_ms !== undefined) updateData.end_time_ms = updates.end_time_ms;
-        if (updates.repeat_rule !== undefined) updateData.repeat_rule = updates.repeat_rule;
-        if (updates.recurrence_rule !== undefined) updateData.recurrence_rule = updates.recurrence_rule;
-        if (updates.location !== undefined) updateData.location = updates.location?.trim() || null;
-        if (updates.color !== undefined) updateData.color = updates.color;
-        if (updates.note_id !== undefined) updateData.note_id = updates.note_id;
-        if (updates.deleted !== undefined) updateData.deleted = updates.deleted;
-        if (updates.is_all_day !== undefined) updateData.is_all_day = Boolean(updates.is_all_day);
-        if (updates.all_day_date !== undefined) updateData.all_day_date = updates.all_day_date;
-        if (updates.timezone !== undefined) updateData.timezone = updates.timezone;
-        if (updates.is_birthday_like !== undefined) updateData.is_birthday_like = Boolean(updates.is_birthday_like);
-        if (updates.notification_offset_min !== undefined) updateData.notification_offset_min = updates.notification_offset_min;
-        if (updates.notification_offsets !== undefined) updateData.notification_offsets = updates.notification_offsets;
-        if (updates.attachments !== undefined) updateData.attachments = updates.attachments;
-        if (updates.tags !== undefined) {
-          if (Array.isArray(updates.tags)) {
-            updateData.tags = updates.tags;
-          } else if (typeof updates.tags === 'string' && updates.tags.trim()) {
-            try {
-              updateData.tags = JSON.parse(updates.tags);
-            } catch {
-              updateData.tags = [updates.tags.trim()];
-            }
-          } else {
-            updateData.tags = (updates.tags as any) || [];
-          }
-        }
+      if (updates.title !== undefined) updateData.title = updates.title.trim();
+      if (updates.description !== undefined) updateData.description = updates.description?.trim() || null;
+      if (updates.start_time_ms !== undefined) updateData.start_time_ms = updates.start_time_ms;
+      if (updates.end_time_ms !== undefined) updateData.end_time_ms = updates.end_time_ms;
+      if (updates.repeat_rule !== undefined) updateData.repeat_rule = updates.repeat_rule;
+      if (updates.recurrence_rule !== undefined) updateData.recurrence_rule = updates.recurrence_rule;
+      if (updates.location !== undefined) updateData.location = updates.location?.trim() || null;
+      if (updates.color !== undefined) updateData.color = updates.color;
+      if (updates.note_id !== undefined) updateData.note_id = updates.note_id;
+      if (updates.tags !== undefined) updateData.tags = updates.tags;
+      if (updates.is_all_day !== undefined) updateData.is_all_day = updates.is_all_day;
+      if (updates.all_day_date !== undefined) updateData.all_day_date = updates.all_day_date;
+      if (updates.timezone !== undefined) updateData.timezone = updates.timezone;
+      if (updates.is_birthday_like !== undefined) updateData.is_birthday_like = updates.is_birthday_like;
+      if (updates.notification_offset_min !== undefined) updateData.notification_offset_min = updates.notification_offset_min;
+      if (updates.notification_offsets !== undefined) updateData.notification_offsets = updates.notification_offsets;
+      if (updates.attachments !== undefined) updateData.attachments = updates.attachments;
 
-        const { error } = await supabase
-          .from('events')
-          .update(updateData)
-          .eq('id', id);
+      await localDB.events.update(id, updateData);
 
-        if (error) {
-          console.error('[useEvents] Update error:', error);
-          throw error;
-        }
-      } catch (err) {
-        console.error('[useEvents] Exception updating:', err);
-        throw err;
-      }
+      // 3. Outbox
+      await syncEngine.enqueue('events', 'upsert', id, updateData, nowMs);
     },
     []
   );
 
   const deleteEvent = useCallback(async (id: string) => {
     const nowMs = Date.now();
+
+    // 1. In-memory
     setEvents((prev) => prev.filter((e) => e.id !== id));
-    try {
-      await supabase
-        .from('events')
-        .update({
-          deleted: 1,
-          last_modified_ms: nowMs,
-          updated_at_ms: nowMs,
-        })
-        .eq('id', id);
-    } catch (err) {
-      console.error('[useEvents] Delete error:', err);
-    }
+
+    // 2. Local IndexedDB
+    await localDB.events.update(id, {
+      deleted: 1,
+      last_modified_ms: nowMs,
+      updated_at_ms: nowMs,
+    });
+
+    // 3. Outbox
+    await syncEngine.enqueue('events', 'delete', id, null, nowMs);
   }, []);
 
   const todayEvents = useMemo(() => {
@@ -318,73 +348,51 @@ export function useEvents(userId?: string) {
           list.push(e);
         }
       } else {
-        const occs = expandOccurrences(e, todayStart, todayEnd);
-        for (const occ of occs) {
+        const occurrences = expandOccurrences(
+          {
+            id: e.id,
+            start_time_ms: Number(e.start_time_ms),
+            end_time_ms: Number(e.end_time_ms),
+            repeat_rule: e.repeat_rule,
+            recurrence_rule: e.recurrence_rule,
+            timezone: e.timezone,
+            is_all_day: e.is_all_day,
+            all_day_date: e.all_day_date,
+          },
+          todayStart,
+          todayEnd
+        );
+
+        if (occurrences.length > 0) {
+          const firstOcc = occurrences[0];
           list.push({
             ...e,
-            start_time_ms: occ.startTimeMs,
-            end_time_ms: occ.endTimeMs,
+            start_time_ms: firstOcc.startTimeMs,
+            end_time_ms: firstOcc.endTimeMs,
           });
         }
       }
     }
 
-    return list.sort((a, b) => a.start_time_ms - b.start_time_ms);
+    return list.sort((a, b) => Number(a.start_time_ms) - Number(b.start_time_ms));
   }, [events]);
 
   const upcomingEvents = useMemo(() => {
     const now = new Date();
-    const tomorrowStart = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 0, 0);
-    // Project 30 days ahead for recurring events
-    const upcomingLimit = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 30, 23, 59, 59, 999);
+    const todayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
 
-    const list: CalendarEvent[] = [];
-
-    for (const e of events) {
-      const isRecurring = Boolean(
-        (e.repeat_rule && e.repeat_rule !== 'none' && e.repeat_rule !== 'null') ||
-        (e.recurrence_rule && e.recurrence_rule !== 'none' && e.recurrence_rule !== 'null')
-      );
-
-      if (!isRecurring) {
-        if (Number(e.start_time_ms) >= tomorrowStart.getTime()) {
-          list.push(e);
-        }
-      } else {
-        let occs = expandOccurrences(e, tomorrowStart, upcomingLimit);
-        // Fallback: If no occurrences in 30 days, check next 365 days and take the next upcoming occurrence
-        if (occs.length === 0) {
-          const nextYearLimit = new Date(now.getFullYear() + 1, now.getMonth(), now.getDate(), 23, 59, 59, 999);
-          const nextOccs = expandOccurrences(e, tomorrowStart, nextYearLimit);
-          if (nextOccs.length > 0) {
-            occs = [nextOccs[0]];
-          }
-        }
-        for (const occ of occs) {
-          list.push({
-            ...e,
-            start_time_ms: occ.startTimeMs,
-            end_time_ms: occ.endTimeMs,
-          });
-        }
-      }
-    }
-
-    return list.sort((a, b) => a.start_time_ms - b.start_time_ms);
+    return events
+      .filter((e) => Number(e.start_time_ms) > todayEnd.getTime())
+      .sort((a, b) => Number(a.start_time_ms) - Number(b.start_time_ms));
   }, [events]);
 
   const pastEvents = useMemo(() => {
     const now = new Date();
     const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
 
-    return events.filter((e) => {
-      const isRecurring = Boolean(
-        (e.repeat_rule && e.repeat_rule !== 'none' && e.repeat_rule !== 'null') ||
-        (e.recurrence_rule && e.recurrence_rule !== 'none' && e.recurrence_rule !== 'null')
-      );
-      if (isRecurring) return false;
-      return Number(e.start_time_ms) < todayStart.getTime() && !isDateToday(Number(e.start_time_ms));
-    });
+    return events
+      .filter((e) => Number(e.end_time_ms || e.start_time_ms) < todayStart.getTime())
+      .sort((a, b) => Number(b.start_time_ms) - Number(a.start_time_ms));
   }, [events]);
 
   return {
@@ -400,4 +408,3 @@ export function useEvents(userId?: string) {
     refresh: fetchEvents,
   };
 }
-
