@@ -188,7 +188,12 @@ export const ExportPdfModal: React.FC<ExportPdfModalProps> = ({
       setIsExporting(true);
       const printHtml = buildPdfDocumentHtml(title, pages, config, { isForPrint: true });
       await printHtmlDocument(printHtml);
-      toast.success('Documento preparado en alta definición vectorial');
+      const toastId = toast.success('Documento preparado en alta definición vectorial', {
+        duration: 3500,
+      });
+      setTimeout(() => {
+        toast.dismiss(toastId);
+      }, 3500);
       onClose();
     } catch (err: any) {
       console.error('[ExportPdfModal] Error exportando PDF:', err);

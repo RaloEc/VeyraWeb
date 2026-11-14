@@ -100,17 +100,24 @@ export const ImageNode = Image.extend({
       width: {
         default: null,
         parseHTML: (element: HTMLElement) => {
-          const widthAttr = element.getAttribute('width');
-          if (widthAttr) {
-            const parsed = parseInt(widthAttr, 10);
-            if (!isNaN(parsed) && parsed > 0 && parsed <= 100) {
-              return parsed;
-            }
-          }
           const style = element.getAttribute('style') || '';
           const match = style.match(/width:\s*(\d+)%/i);
           if (match && match[1]) {
             const parsed = parseInt(match[1], 10);
+            if (!isNaN(parsed) && parsed > 0 && parsed <= 100) {
+              return parsed;
+            }
+          }
+          const dataWidth = element.getAttribute('data-width');
+          if (dataWidth) {
+            const parsed = parseInt(dataWidth, 10);
+            if (!isNaN(parsed) && parsed > 0 && parsed <= 100) {
+              return parsed;
+            }
+          }
+          const widthAttr = element.getAttribute('width');
+          if (widthAttr) {
+            const parsed = parseInt(widthAttr, 10);
             if (!isNaN(parsed) && parsed > 0 && parsed <= 100) {
               return parsed;
             }
@@ -122,7 +129,8 @@ export const ImageNode = Image.extend({
             return {};
           }
           return {
-            width: String(attributes.width),
+            'data-width': String(attributes.width),
+            style: `width: ${attributes.width}%;`,
           };
         },
       },

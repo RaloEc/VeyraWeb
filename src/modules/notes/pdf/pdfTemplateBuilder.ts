@@ -9,7 +9,7 @@ const KATEX_INLINE_CSS = katexCssRaw.replace(
   'url(https://cdn.jsdelivr.net/npm/katex@0.19.1/dist/fonts/'
 );
 
-const GOOGLE_FONTS_IMPORT = `@import url('https://fonts.googleapis.com/css2?family=Caveat:wght@500;700&family=Fira+Sans:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&family=JetBrains+Mono:wght@400;600&family=Lora:ital,wght@0,400;0,600;1,400&family=Plus+Jakarta+Sans:ital,wght@0,400;0,600;0,700;1,400;1,600;1,700&family=Quicksand:wght@500;700&display=swap');`;
+const GOOGLE_FONTS_IMPORT = `@import url('https://fonts.googleapis.com/css2?family=Caveat:wght@500;700&family=Fira+Sans:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&family=Lora:ital,wght@0,400;0,600;1,400&family=Plus+Jakarta+Sans:ital,wght@0,400;0,600;0,700;1,400;1,600;1,700&family=Quicksand:wght@500;700&display=swap');`;
 
 const UNICODE_FONT_FALLBACKS = `'Plus Jakarta Sans', Roboto, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', 'Apple Color Emoji', 'Segoe UI Emoji', sans-serif`;
 
@@ -35,7 +35,7 @@ export function getFontFamilyStack(fontFamily: PdfExportConfig['fontFamily']): s
       return `'Quicksand', 'Nunito', ${UNICODE_FONT_FALLBACKS}`;
     case 'sans':
     default:
-      return `'Plus Jakarta Sans', ${UNICODE_FONT_FALLBACKS}`;
+      return `'Inter', 'Plus Jakarta Sans', ${UNICODE_FONT_FALLBACKS}`;
   }
 }
 
@@ -91,12 +91,12 @@ export function buildDynamicPdfCss(
   const { widthMm, heightMm } = getEffectivePaperDimensions(config);
   const fontStack = getFontFamilyStack(config.fontFamily);
 
-  const paragraphMarginBottom =
+  const paragraphMarginRule =
     config.paragraphSpacing === 'compact'
-      ? '5px'
+      ? '0.15rem 0 0.35rem 0'
       : config.paragraphSpacing === 'relaxed'
-        ? '14px'
-        : '9px';
+        ? '0.4rem 0 0.8rem 0'
+        : '0.25rem 0 0.5rem 0';
 
   return `
     @page {
@@ -228,11 +228,39 @@ export function buildDynamicPdfCss(
     }
 
     p {
-      margin: 0 0 ${paragraphMarginBottom} 0;
+      margin: ${paragraphMarginRule};
+      line-height: ${config.lineHeight};
       text-align: ${config.textAlign};
       ${config.firstLineIndentMm > 0 ? `text-indent: ${config.firstLineIndentMm}mm;` : ''}
     }
   `;
+}
+
+/**
+ * Normaliza las etiquetas <img> en el HTML para asegurar que los anchos porcentuales
+ * (ej. presets 25%, 50%, 75%, 100%) se apliquen vía CSS (`width: X%`) y no como píxeles HTML (`width="75"` = 75px).
+ */
+export function normalizeImagesInHtml(html: string): string {
+  if (!html) return html;
+  return html.replace(/<img\b([^>]*?)(\/?)>/gi, (match, attrs, selfClose) => {
+    // Si ya tiene ancho porcentual en su atributo style, mantenerlo
+    if (/style=["'][^"']*width:\s*\d+%/i.test(attrs)) {
+      return match;
+    }
+
+    const widthAttrMatch = attrs.match(/\b(?:data-)?width=["']?(\d+)%?["']?/i);
+    if (widthAttrMatch) {
+      const val = parseInt(widthAttrMatch[1], 10);
+      if (val > 0 && val <= 100) {
+        if (/style=["']/i.test(attrs)) {
+          return `<img ${attrs.replace(/style=["']([^"']*)["']/i, `style="$1; width: ${val}%;"`)}${selfClose ? ' /' : ''}>`;
+        } else {
+          return `<img ${attrs.trim()} style="width: ${val}%;"${selfClose ? ' /' : ''}>`;
+        }
+      }
+    }
+    return match;
+  });
 }
 
 /**
@@ -259,7 +287,7 @@ export function buildPdfDocumentHtml(
     .map(
       (p, idx) => `
       <div class="raw-hoja" data-hoja-index="${idx}">
-        ${hydrateMathInHtml(p.content || '<p></p>')}
+        ${normalizeImagesInHtml(hydrateMathInHtml(p.content || '<p></p>'))}
       </div>
     `
     )
@@ -527,6 +555,24 @@ export function buildPdfDocumentHtml(
       display: block;
     }
 
+    img[style*="text-align: left"],
+    img[data-text-align="left"] {
+      margin-left: 0 !important;
+      margin-right: auto !important;
+    }
+
+    img[style*="text-align: right"],
+    img[data-text-align="right"] {
+      margin-left: auto !important;
+      margin-right: 0 !important;
+    }
+
+    img[style*="text-align: center"],
+    img[data-text-align="center"] {
+      margin-left: auto !important;
+      margin-right: auto !important;
+    }
+
     code {
       background-color: #F1F5F9;
       color: #9333EA;
@@ -706,6 +752,30 @@ export function buildPdfDocumentHtml(
         }
 
         createNewSheet();
+
+        // Normalizar anchos y alineación de imágenes
+        Array.from(rawDoc.querySelectorAll('img')).forEach(function(img) {
+          var widthAttr = img.getAttribute('width');
+          var dataWidth = img.getAttribute('data-width');
+          var w = dataWidth || widthAttr;
+          if (w && !isNaN(Number(w))) {
+            var num = Number(w);
+            if (num > 0 && num <= 100 && (!img.style.width || !img.style.width.includes('%'))) {
+              img.style.width = num + '%';
+            }
+          }
+          var textAlign = img.getAttribute('data-text-align') || img.style.textAlign;
+          if (textAlign === 'left') {
+            img.style.marginLeft = '0';
+            img.style.marginRight = 'auto';
+          } else if (textAlign === 'right') {
+            img.style.marginLeft = 'auto';
+            img.style.marginRight = '0';
+          } else {
+            img.style.marginLeft = 'auto';
+            img.style.marginRight = 'auto';
+          }
+        });
 
         var rawHojas = Array.from(rawDoc.querySelectorAll('.raw-hoja'));
 

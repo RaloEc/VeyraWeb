@@ -124,8 +124,8 @@ export const DEFAULT_PDF_CONFIG: PdfExportConfig = {
   margins: { top: 25, right: 30, bottom: 25, left: 30 },
 
   fontFamily: 'sans',
-  fontSizePt: 11,
-  lineHeight: 1.25,
+  fontSizePt: 10.5,
+  lineHeight: 1.7,
   firstLineIndentMm: 0,
   paragraphSpacing: 'normal',
   textAlign: 'left',

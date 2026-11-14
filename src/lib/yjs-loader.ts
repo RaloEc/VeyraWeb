@@ -719,9 +719,22 @@ export function yElementToHtml(el: Y.XmlElement | Y.XmlText): string {
       const src = el.getAttribute('src') || '';
       const alt = el.getAttribute('alt') || '';
       const title = el.getAttribute('title') || '';
+      const width = el.getAttribute('width');
+      const textAlign = el.getAttribute('textAlign');
+      const caption = el.getAttribute('caption');
       const altAttr = alt ? ` alt="${alt.replace(/"/g, '&quot;')}"` : '';
       const titleAttr = title ? ` title="${title.replace(/"/g, '&quot;')}"` : '';
-      return `<img src="${src}"${altAttr}${titleAttr} />`;
+      const dataWidthAttr = width ? ` data-width="${width}"` : '';
+      const dataCaptionAttr = caption ? ` data-caption="${caption.replace(/"/g, '&quot;')}"` : '';
+      const styleParts: string[] = [];
+      if (width) {
+        styleParts.push(`width: ${width}%;`);
+      }
+      if (textAlign) {
+        styleParts.push(`text-align: ${textAlign};`);
+      }
+      const styleAttr = styleParts.length > 0 ? ` style="${styleParts.join(' ')}"` : '';
+      return `<img src="${src}"${altAttr}${titleAttr}${dataWidthAttr}${dataCaptionAttr}${styleAttr} />`;
     }
     if (nodeName === 'codeblock' || nodeName === 'pre') {
       return `<pre><code>${childrenHtml}</code></pre>`;
