@@ -1,4 +1,5 @@
 import katex from 'katex';
+import { MD_TABLE_SEP_REGEX, convertMarkdownTableToHtml } from '../utils/tableClipboardUtils';
 
 /**
  * Escapar atributos HTML para almacenar LaTeX de forma segura
@@ -196,6 +197,9 @@ export function hasMarkdownContent(text: string): boolean {
   // 9. Separadores horizontales: ---, ***, ___
   if (/^(?:---|\*\*\*|___)\s*$/m.test(text)) return true;
 
+  // 10. Tablas Markdown: | Col 1 | Col 2 | seguido de | --- | --- |
+  if (/\|[^\n]+\|\r?\n\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)+\|?/.test(text)) return true;
+
   return false;
 }
 
@@ -351,6 +355,20 @@ export function convertMarkdownWithMathToHtml(text: string): string {
     if (trimmed.startsWith('@@VEYRA-MATH_BLOCK-') || trimmed.startsWith('@@VEYRA-CODE_BLOCK-')) {
       closeCurrentBlock();
       htmlParts.push(trimmed);
+      continue;
+    }
+
+    // Tabla Markdown (| Col 1 | Col 2 | seguido de fila de guiones | --- | --- |)
+    if (trimmed.includes('|') && i + 1 < rawLines.length && MD_TABLE_SEP_REGEX.test(rawLines[i + 1].trim())) {
+      closeCurrentBlock();
+      const tableLines: string[] = [trimmed, rawLines[i + 1].trim()];
+      i += 1;
+      while (i + 1 < rawLines.length && rawLines[i + 1].trim().includes('|')) {
+        i++;
+        tableLines.push(rawLines[i].trim());
+      }
+      const tableHtml = convertMarkdownTableToHtml(tableLines.join('\n'));
+      htmlParts.push(tableHtml);
       continue;
     }
 

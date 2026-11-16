@@ -165,7 +165,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ user, profile, onSignOut }
           <NotesModule
             userId={user.id}
             userEmail={user.email || ''}
-            userName={profile?.user_profile || user.email?.split('@')[0]}
+            userName={user.user_metadata?.full_name || user.user_metadata?.name || user.email?.split('@')[0]}
             notesHook={notesState}
             remindersHook={remindersState}
             initialEventId={initialRoute.eventId}

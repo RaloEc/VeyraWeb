@@ -19,7 +19,6 @@ export interface SoundSettings {
 export interface GlobalUserSettings {
   // Perfil & Cuenta
   userName: string;
-  userProfile: UserProfileType;
   defaultControlLevel: ControlLevel;
 
   // Apariencia
@@ -46,7 +45,6 @@ export interface GlobalUserSettings {
 
 export const DEFAULT_USER_SETTINGS: GlobalUserSettings = {
   userName: '',
-  userProfile: 'personal',
   defaultControlLevel: 'normal',
 
   accentTheme: 'blue',
@@ -155,10 +153,10 @@ export const UserSettingsProvider: React.FC<{ children: React.ReactNode }> = ({ 
         const remoteSettings = user.user_metadata?.settings || {};
         const profileName = user.user_metadata?.full_name || user.user_metadata?.name || '';
 
-        // B) Leer tabla profiles para default_control_level y user_profile
+        // B) Leer tabla profiles para default_control_level
         const { data: profileRow } = await supabase
           .from('profiles')
-          .select('user_profile, default_control_level')
+          .select('default_control_level')
           .eq('id', user.id)
           .maybeSingle();
 
@@ -167,7 +165,6 @@ export const UserSettingsProvider: React.FC<{ children: React.ReactNode }> = ({ 
             ...prev,
             ...remoteSettings,
             userName: remoteSettings.userName || profileName || prev.userName,
-            userProfile: (profileRow?.user_profile as UserProfileType) || remoteSettings.userProfile || prev.userProfile,
             defaultControlLevel: (profileRow?.default_control_level as ControlLevel) || remoteSettings.defaultControlLevel || prev.defaultControlLevel,
             accentTheme: remoteSettings.accentTheme || prev.accentTheme,
             themeMode: remoteSettings.theme || prev.themeMode,
@@ -208,7 +205,7 @@ export const UserSettingsProvider: React.FC<{ children: React.ReactNode }> = ({ 
     return () => {
       authListener?.subscription?.unsubscribe();
       if (activeChannel) {
-        supabase.removeChannel(activeChannel).catch(() => {});
+        supabase.removeChannel(activeChannel).catch(() => { });
       }
     };
   }, []);
@@ -226,7 +223,6 @@ export const UserSettingsProvider: React.FC<{ children: React.ReactNode }> = ({ 
       const settingsPayload = {
         ...currentRemoteSettings,
         userName: newSettings.userName,
-        userProfile: newSettings.userProfile,
         defaultControlLevel: newSettings.defaultControlLevel,
         accentTheme: newSettings.accentTheme,
         theme: newSettings.themeMode,
@@ -258,7 +254,6 @@ export const UserSettingsProvider: React.FC<{ children: React.ReactNode }> = ({ 
       await supabase.from('profiles').upsert(
         {
           id: currentUserId,
-          user_profile: newSettings.userProfile,
           default_control_level: newSettings.defaultControlLevel,
           updated_at: new Date().toISOString(),
         },
@@ -273,7 +268,7 @@ export const UserSettingsProvider: React.FC<{ children: React.ReactNode }> = ({ 
           event: 'SETTINGS_CHANGED',
           payload: { settings: settingsPayload },
         })
-        .catch(() => {});
+        .catch(() => { });
 
       // Si cambió el color de acento, emitir también el evento THEME_CHANGED que escucha nativamente la app móvil
       if (newSettings.accentTheme) {
@@ -284,7 +279,7 @@ export const UserSettingsProvider: React.FC<{ children: React.ReactNode }> = ({ 
             event: 'THEME_CHANGED',
             payload: { accentTheme: newSettings.accentTheme },
           })
-          .catch(() => {});
+          .catch(() => { });
       }
     } catch (err: any) {
       console.error('[UserSettings] Error saving settings to cloud:', err);

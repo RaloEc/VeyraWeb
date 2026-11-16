@@ -1294,16 +1294,46 @@ figcaption,
 .tableWrapper {
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
-  margin: 1.25rem 0;
+  margin: 10px 0 0 0 !important;
   max-width: 100%;
-  padding: 0.25rem 0;
+  padding: 0 !important;
+}
+
+.tableWrapper + h1,
+.tiptap .tableWrapper + h1,
+.ProseMirror .tableWrapper + h1 {
+  margin-top: 16px !important;
+}
+
+.tableWrapper + h2,
+.tiptap .tableWrapper + h2,
+.ProseMirror .tableWrapper + h2 {
+  margin-top: 14px !important;
+}
+
+.tableWrapper + h3,
+.tiptap .tableWrapper + h3,
+.ProseMirror .tableWrapper + h3 {
+  margin-top: 12px !important;
+}
+
+.tableWrapper + p,
+.tiptap .tableWrapper + p,
+.ProseMirror .tableWrapper + p {
+  margin-top: 10px !important;
+}
+
+.tableWrapper + .tableWrapper,
+.tiptap .tableWrapper + .tableWrapper,
+.ProseMirror .tableWrapper + .tableWrapper {
+  margin-top: 10px !important;
 }
 
 .veyra-table {
   border-collapse: collapse;
   table-layout: fixed;
   width: 100%;
-  margin: 0;
+  margin: 0 !important;
   overflow: hidden;
   border: 1.5px solid var(--table-custom-border, #cbd5e1);
 }
@@ -1481,12 +1511,12 @@ figcaption,
 }
 
 .a4-page-mode .veyra-table {
-  margin: 1.5rem 0;
+  margin: 0 !important;
 }
 
 .a4-page-mode .veyra-table td,
 .a4-page-mode .veyra-table th {
-  padding: 8px 14px;
+  padding: 5px 9px;
 }
 
 /* Divisor horizontal normal de sección dentro de la hoja */

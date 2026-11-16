@@ -32,7 +32,6 @@ import { useTheme } from '../../theme/ThemeProvider';
 import { cn } from '../../lib/utils';
 import {
   useUserSettings,
-  type UserProfileType,
   type ControlLevel,
   type EditorFontFamily,
 } from '../../context/UserSettingsContext';
@@ -179,27 +178,6 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
     { theme: 'pink', label: 'Rosa', hex: ACCENT_PALETTES.pink[isDark ? 'dark' : 'light'].primary },
   ];
 
-  const profileOptions: { id: UserProfileType; label: string; desc: string; impact: string }[] = [
-    {
-      id: 'personal',
-      label: 'Vida Personal',
-      desc: 'Hábitos diarios, listas de compras, salud y proyectos personales.',
-      impact: 'Prioriza vistas simplificadas de notas y recordatorios directos sin sobrecarga de fechas corporativas.',
-    },
-    {
-      id: 'work',
-      label: 'Profesional / Trabajo',
-      desc: 'Proyectos con entregables, reuniones de equipo y tareas de alto impacto.',
-      impact: 'Enfoca la agenda en plazos de entrega, filtros estrictos por proyecto y seguimiento de colaboraciones.',
-    },
-    {
-      id: 'student',
-      label: 'Estudiante / Académico',
-      desc: 'Clases, materias, exámenes y entregas de tareas escolares o universitarias.',
-      impact: 'En la app móvil habilita la integración con el Widget de Horario de Clases y organización por asignaturas.',
-    },
-  ];
-
   const controlLevelOptions: { id: ControlLevel; label: string; desc: string; color: string }[] = [
     { id: 'normal', label: 'Normal', desc: 'Alerta sutil y no invasiva', color: '#10B981' },
     { id: 'strict', label: 'Estricto', desc: 'Aviso prioritario y sonoro para no olvidar', color: '#F59E0B' },
@@ -329,44 +307,6 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
                 <p className="text-[10px] text-veyra-subtle">
                   Email vinculado: <span className="text-veyra-text font-mono">{userEmail || 'Sin email'}</span>
                 </p>
-              </div>
-
-              {/* Modo de uso / Enfoque */}
-              <div>
-                <div className="flex items-center justify-between mb-1.5">
-                  <label className="block text-[11px] font-semibold text-veyra-muted uppercase tracking-wider">
-                    Enfoque de uso principal
-                  </label>
-                  <span className="text-[10px] text-veyra-subtle italic">Adapta sugerencias y módulos prioritarios</span>
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-                  {profileOptions.map((opt) => (
-                    <button
-                      key={opt.id}
-                      type="button"
-                      onClick={() => updateSetting('userProfile', opt.id)}
-                      className={cn(
-                        'p-3.5 rounded-lg border text-left transition-all cursor-pointer flex flex-col justify-between',
-                        settings.userProfile === opt.id
-                          ? 'bg-accent/10 border-accent shadow-xs ring-1 ring-accent/30'
-                          : 'bg-veyra-card/60 border-veyra-border hover:border-veyra-subtle'
-                      )}
-                    >
-                      <div>
-                        <div className="flex items-center justify-between mb-1.5">
-                          <span className="font-semibold text-xs text-veyra-text">{opt.label}</span>
-                          {settings.userProfile === opt.id && <Check className="w-3.5 h-3.5 text-accent" />}
-                        </div>
-                        <p className="text-[11px] text-veyra-muted leading-relaxed mb-2">{opt.desc}</p>
-                      </div>
-                      <div className="pt-2 border-t border-veyra-border/50">
-                        <p className="text-[9.5px] text-veyra-subtle leading-normal">
-                          <span className="font-medium text-veyra-muted">Diferencial:</span> {opt.impact}
-                        </p>
-                      </div>
-                    </button>
-                  ))}
-                </div>
               </div>
 
               {/* Nivel de Control por Defecto */}

@@ -31,12 +31,15 @@ import { printHtmlDocument } from './pdfPrintService';
 import { useTheme } from '../../../theme/ThemeProvider';
 import { cn } from '../../../lib/utils';
 import { toast } from 'sonner';
+import type { A4HeaderFooterConfig } from '../components/A4HeaderFooterTypes';
 
 export interface ExportPdfModalProps {
   isOpen: boolean;
   onClose: () => void;
   title: string;
   pages: NotePage[];
+  headerFooterConfig?: A4HeaderFooterConfig | null;
+  userName?: string;
 }
 
 export const ExportPdfModal: React.FC<ExportPdfModalProps> = ({
@@ -44,6 +47,8 @@ export const ExportPdfModal: React.FC<ExportPdfModalProps> = ({
   onClose,
   title,
   pages,
+  headerFooterConfig,
+  userName,
 }) => {
   const { isDark } = useTheme();
   const [config, setConfig] = useState<PdfExportConfig>(DEFAULT_PDF_CONFIG);
@@ -90,8 +95,10 @@ export const ExportPdfModal: React.FC<ExportPdfModalProps> = ({
       isForPrint: false,
       isDarkCanvas: isDark,
       zoom: previewZoom,
+      headerFooterConfig,
+      authorName: userName,
     });
-  }, [isOpen, title, pages, config, isDark, previewZoom]);
+  }, [isOpen, title, pages, config, isDark, previewZoom, headerFooterConfig, userName]);
 
   const isIframeLoadedRef = useRef(false);
 
@@ -118,6 +125,8 @@ export const ExportPdfModal: React.FC<ExportPdfModalProps> = ({
         isForPrint: false,
         isDarkCanvas: isDark,
         zoom: previewZoom,
+        headerFooterConfig,
+        authorName: userName,
       });
       win.__updatePdfPreview(dynamicCss, config);
       return;
@@ -186,7 +195,11 @@ export const ExportPdfModal: React.FC<ExportPdfModalProps> = ({
   const handleExecuteExport = async () => {
     try {
       setIsExporting(true);
-      const printHtml = buildPdfDocumentHtml(title, pages, config, { isForPrint: true });
+      const printHtml = buildPdfDocumentHtml(title, pages, config, {
+        isForPrint: true,
+        headerFooterConfig,
+        authorName: userName,
+      });
       await printHtmlDocument(printHtml);
       const toastId = toast.success('Documento preparado en alta definición vectorial', {
         duration: 3500,
@@ -616,11 +629,105 @@ export const ExportPdfModal: React.FC<ExportPdfModalProps> = ({
               {/* SEPARADOR FLAT */}
               <div className="border-t border-slate-200 dark:border-zinc-800" />
 
-              {/* SECCIÓN 4: ESTRUCTURA Y OPCIONES */}
+              {/* SECCIÓN 4: ESTRUCTURA Y ENCABEZADO */}
               <div className="space-y-2.5">
                 <span className="block text-[10px] font-bold text-slate-400 dark:text-zinc-500 uppercase tracking-wider">
-                  4. Estructura y Encabezado
+                  4. Encabezado y Pie de página
                 </span>
+
+                <label className="flex items-center justify-between p-2 rounded-lg bg-white dark:bg-[#1B1B1F] border border-slate-200 dark:border-zinc-800 cursor-pointer">
+                  <div className="pr-2">
+                    <span className="block text-[11px] font-medium text-slate-700 dark:text-zinc-200">
+                      Incluir encabezado de página
+                    </span>
+                    <span className="block text-[10px] text-slate-400 dark:text-zinc-500">
+                      {headerFooterConfig && headerFooterConfig.headerPreset !== 'none'
+                        ? 'Aplica el encabezado configurado en la nota'
+                        : 'Muestra logotipos o título en la parte superior'}
+                    </span>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={config.includeHeader}
+                    onChange={(e) => setConfig((prev) => ({ ...prev, includeHeader: e.target.checked }))}
+                    className="w-3.5 h-3.5 rounded accent-accent cursor-pointer"
+                  />
+                </label>
+
+                {config.includeHeader && (
+                  <div className="pl-3 space-y-2 border-l-2 border-accent/40 my-1">
+                    <label className="flex items-center justify-between p-1.5 rounded-md bg-slate-50 dark:bg-[#161619] border border-slate-200/60 dark:border-zinc-800/60 cursor-pointer">
+                      <span className="text-[10.5px] font-medium text-slate-600 dark:text-zinc-300">
+                        Mostrar título de la nota
+                      </span>
+                      <input
+                        type="checkbox"
+                        checked={config.includeHeaderTitle ?? false}
+                        onChange={(e) => setConfig((prev) => ({ ...prev, includeHeaderTitle: e.target.checked }))}
+                        className="w-3.5 h-3.5 rounded accent-accent cursor-pointer"
+                      />
+                    </label>
+
+                    <label className="flex items-center justify-between p-1.5 rounded-md bg-slate-50 dark:bg-[#161619] border border-slate-200/60 dark:border-zinc-800/60 cursor-pointer">
+                      <span className="text-[10.5px] font-medium text-slate-600 dark:text-zinc-300">
+                        Mostrar fecha en encabezado
+                      </span>
+                      <input
+                        type="checkbox"
+                        checked={config.includeHeaderDate ?? false}
+                        onChange={(e) => setConfig((prev) => ({ ...prev, includeHeaderDate: e.target.checked }))}
+                        className="w-3.5 h-3.5 rounded accent-accent cursor-pointer"
+                      />
+                    </label>
+                  </div>
+                )}
+
+                <label className="flex items-center justify-between p-2 rounded-lg bg-white dark:bg-[#1B1B1F] border border-slate-200 dark:border-zinc-800 cursor-pointer">
+                  <div className="pr-2">
+                    <span className="block text-[11px] font-medium text-slate-700 dark:text-zinc-200">
+                      Incluir pie de página
+                    </span>
+                    <span className="block text-[10px] text-slate-400 dark:text-zinc-500">
+                      {headerFooterConfig && headerFooterConfig.footerPreset !== 'none'
+                        ? 'Aplica el pie de página configurado en la nota'
+                        : 'Muestra numeración y fecha en parte inferior'}
+                    </span>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={config.includeFooter}
+                    onChange={(e) => setConfig((prev) => ({ ...prev, includeFooter: e.target.checked }))}
+                    className="w-3.5 h-3.5 rounded accent-accent cursor-pointer"
+                  />
+                </label>
+
+                {config.includeFooter && (
+                  <div className="pl-3 space-y-2 border-l-2 border-accent/40 my-1">
+                    <label className="flex items-center justify-between p-1.5 rounded-md bg-slate-50 dark:bg-[#161619] border border-slate-200/60 dark:border-zinc-800/60 cursor-pointer">
+                      <span className="text-[10.5px] font-medium text-slate-600 dark:text-zinc-300">
+                        Numeración de páginas (Pág. X de Y)
+                      </span>
+                      <input
+                        type="checkbox"
+                        checked={config.includePageNumbers}
+                        onChange={(e) => setConfig((prev) => ({ ...prev, includePageNumbers: e.target.checked }))}
+                        className="w-3.5 h-3.5 rounded accent-accent cursor-pointer"
+                      />
+                    </label>
+
+                    <label className="flex items-center justify-between p-1.5 rounded-md bg-slate-50 dark:bg-[#161619] border border-slate-200/60 dark:border-zinc-800/60 cursor-pointer">
+                      <span className="text-[10.5px] font-medium text-slate-600 dark:text-zinc-300">
+                        Incluir fecha actual
+                      </span>
+                      <input
+                        type="checkbox"
+                        checked={config.includeDate}
+                        onChange={(e) => setConfig((prev) => ({ ...prev, includeDate: e.target.checked }))}
+                        className="w-3.5 h-3.5 rounded accent-accent cursor-pointer"
+                      />
+                    </label>
+                  </div>
+                )}
 
                 <label className="flex items-center justify-between p-2 rounded-lg bg-white dark:bg-[#1B1B1F] border border-slate-200 dark:border-zinc-800 cursor-pointer">
                   <span className="text-[11px] font-medium text-slate-700 dark:text-zinc-200">
@@ -630,30 +737,6 @@ export const ExportPdfModal: React.FC<ExportPdfModalProps> = ({
                     type="checkbox"
                     checked={config.breakBetweenHojas}
                     onChange={(e) => setConfig((prev) => ({ ...prev, breakBetweenHojas: e.target.checked }))}
-                    className="w-3.5 h-3.5 rounded accent-accent cursor-pointer"
-                  />
-                </label>
-
-                <label className="flex items-center justify-between p-2 rounded-lg bg-white dark:bg-[#1B1B1F] border border-slate-200 dark:border-zinc-800 cursor-pointer">
-                  <span className="text-[11px] font-medium text-slate-700 dark:text-zinc-200">
-                    Numeración de páginas en pie
-                  </span>
-                  <input
-                    type="checkbox"
-                    checked={config.includePageNumbers}
-                    onChange={(e) => setConfig((prev) => ({ ...prev, includePageNumbers: e.target.checked }))}
-                    className="w-3.5 h-3.5 rounded accent-accent cursor-pointer"
-                  />
-                </label>
-
-                <label className="flex items-center justify-between p-2 rounded-lg bg-white dark:bg-[#1B1B1F] border border-slate-200 dark:border-zinc-800 cursor-pointer">
-                  <span className="text-[11px] font-medium text-slate-700 dark:text-zinc-200">
-                    Incluir fecha actual
-                  </span>
-                  <input
-                    type="checkbox"
-                    checked={config.includeDate}
-                    onChange={(e) => setConfig((prev) => ({ ...prev, includeDate: e.target.checked }))}
                     className="w-3.5 h-3.5 rounded accent-accent cursor-pointer"
                   />
                 </label>

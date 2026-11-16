@@ -1,6 +1,7 @@
 import type { NotePage } from '../../../types/notes';
 import type { PdfExportConfig } from './pdfExportTypes';
 import { PAPER_SIZES } from './pdfExportTypes';
+import type { A4HeaderFooterConfig } from '../components/A4HeaderFooterTypes';
 import { hydrateMathInHtml } from '../extensions/mathUtils';
 import katexCssRaw from 'katex/dist/katex.min.css?inline';
 
@@ -78,6 +79,8 @@ export interface BuildPdfHtmlOptions {
   isForPrint?: boolean;
   isDarkCanvas?: boolean;
   zoom?: number;
+  headerFooterConfig?: A4HeaderFooterConfig | null;
+  authorName?: string;
 }
 
 /**
@@ -221,10 +224,64 @@ export function buildDynamicPdfCss(
         page-break-after: avoid !important;
         break-after: avoid !important;
       }
+      .sheet-header {
+        position: absolute !important;
+        top: 0 !important;
+        left: 0 !important;
+        right: 0 !important;
+        width: 100% !important;
+        height: ${config.margins.top}mm !important;
+        box-sizing: border-box !important;
+        overflow: visible !important;
+        pointer-events: none !important;
+        z-index: 10 !important;
+        ${!config.includeHeader ? 'display: none !important;' : 'display: block !important;'}
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+      }
+      .sheet-footer {
+        position: absolute !important;
+        bottom: 0 !important;
+        left: 0 !important;
+        right: 0 !important;
+        width: 100% !important;
+        height: ${config.margins.bottom}mm !important;
+        box-sizing: border-box !important;
+        overflow: visible !important;
+        pointer-events: none !important;
+        z-index: 10 !important;
+        ${!config.includeFooter ? 'display: none !important;' : 'display: block !important;'}
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+      }
+    }
+
+    .sheet-header {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      width: 100%;
+      height: ${config.margins.top}mm;
+      box-sizing: border-box;
+      overflow: visible;
+      pointer-events: none;
+      z-index: 10;
+      ${!config.includeHeader ? 'display: none !important;' : 'display: block;'}
     }
 
     .sheet-footer {
-      ${!config.includePageNumbers && !config.includeDate ? 'display: none !important;' : 'display: flex;'}
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      width: 100%;
+      height: ${config.margins.bottom}mm;
+      box-sizing: border-box;
+      overflow: visible;
+      pointer-events: none;
+      z-index: 10;
+      ${!config.includeFooter ? 'display: none !important;' : 'display: block;'}
     }
 
     p {
@@ -232,6 +289,14 @@ export function buildDynamicPdfCss(
       line-height: ${config.lineHeight};
       text-align: ${config.textAlign};
       ${config.firstLineIndentMm > 0 ? `text-indent: ${config.firstLineIndentMm}mm;` : ''}
+      min-height: 1.25em;
+    }
+
+    p:empty::before,
+    p:blank::before {
+      content: "\\00a0";
+      visibility: hidden;
+      display: inline-block;
     }
   `;
 }
@@ -264,6 +329,23 @@ export function normalizeImagesInHtml(html: string): string {
 }
 
 /**
+ * Normaliza el contenido HTML de cada hoja para la exportación a PDF:
+ * 1. Asegura que los anchos porcentuales de imágenes se apliquen vía CSS.
+ * 2. Garantiza que los párrafos vacíos (<p></p> o <p>&nbsp;</p>) generados por presionar Enter
+ *    se conserven con altura de línea física completa (<p><br></p>) y no colapsen a 0px.
+ */
+export function normalizeContentHtmlForPdf(html: string): string {
+  if (!html) return '<p><br></p>';
+  let processed = normalizeImagesInHtml(html);
+
+  // Convertir párrafos vacíos (<p></p>, <p> </p>, <p>&nbsp;</p>) en párrafos con <br>
+  // para que el motor de paginación del PDF preserve los saltos de línea y espaciados (Enters)
+  processed = processed.replace(/<p(\s+[^>]*)?>(\s*|&nbsp;)?<\/p>/gi, '<p$1><br></p>');
+
+  return processed;
+}
+
+/**
  * Genera el documento HTML con motor de paginación precisa por hojas físicas (A4, Carta, etc.)
  */
 export function buildPdfDocumentHtml(
@@ -287,7 +369,7 @@ export function buildPdfDocumentHtml(
     .map(
       (p, idx) => `
       <div class="raw-hoja" data-hoja-index="${idx}">
-        ${normalizeImagesInHtml(hydrateMathInHtml(p.content || '<p></p>'))}
+        ${normalizeContentHtmlForPdf(hydrateMathInHtml(p.content || '<p><br></p>'))}
       </div>
     `
     )
@@ -343,24 +425,141 @@ export function buildPdfDocumentHtml(
 
     .sheet-body {
       flex: 1;
+      width: 100%;
       min-height: 0;
       overflow: hidden;
       box-sizing: border-box;
-      padding-bottom: 6px;
+    }
+
+    /* Encabezado de página */
+    .sheet-header {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      width: 100%;
+      height: ${config.margins.top}mm;
+      font-size: 8.5pt;
+      color: #64748B;
+      box-sizing: border-box;
+      overflow: visible;
+      pointer-events: none;
+      z-index: 10;
     }
 
     /* Pie de página con numeración y fecha */
     .sheet-footer {
-      height: 22px;
-      margin-top: 8px;
-      padding-top: 6px;
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      width: 100%;
+      height: ${config.margins.bottom}mm;
       font-size: 8.5pt;
-      color: #94A3B8;
-      border-top: 1px solid #F1F5F9;
-      justify-content: space-between;
-      align-items: center;
-      flex-shrink: 0;
+      color: #64748B;
       box-sizing: border-box;
+      overflow: visible;
+      pointer-events: none;
+      z-index: 10;
+    }
+
+    .sheet-header-inner,
+    .sheet-footer-inner {
+      position: absolute;
+      left: 0;
+      right: 0;
+      width: 100%;
+      box-sizing: border-box;
+      pointer-events: none;
+    }
+
+    .hf-image {
+      position: absolute !important;
+      margin: 0 !important;
+      padding: 0 !important;
+      border: none !important;
+      border-radius: 0 !important;
+      max-width: none !important;
+      pointer-events: none !important;
+      user-select: none !important;
+      box-sizing: border-box !important;
+    }
+
+    .hf-standard-slots {
+      width: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      position: relative;
+    }
+    .hf-col {
+      flex: 1;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .hf-left { text-align: left; }
+    .hf-center { text-align: center; }
+    .hf-right { text-align: right; }
+
+    .hf-movimiento {
+      width: 100%;
+      display: flex;
+      align-items: center;
+      font-size: 8.5pt;
+    }
+    .hf-movimiento.even { justify-content: flex-start; gap: 8px; }
+    .hf-movimiento.odd { justify-content: flex-end; gap: 8px; margin-left: auto; }
+    .hf-badge {
+      background: #F4B183;
+      color: #1E293B;
+      font-weight: 700;
+      padding: 2px 10px;
+      border-radius: 2px;
+    }
+    .hf-title {
+      font-weight: 600;
+      color: #334155;
+    }
+
+    .hf-retrospectiva {
+      width: 100%;
+      background: #C55A44;
+      border-bottom: 2px solid #4472C4;
+      color: #FFFFFF;
+      padding: 4px 10px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 8pt;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .hf-segmento {
+      width: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 8.5pt;
+      font-weight: 600;
+      color: #2F5597;
+    }
+
+    .hf-apa7 {
+      width: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 8.5pt;
+      font-family: 'Times New Roman', Times, serif;
+    }
+    .hf-apa-title {
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
     }
 
     /* Formato tipográfico */
@@ -547,7 +746,7 @@ export function buildPdfDocumentHtml(
       box-shadow: inset 0 0 0 2px #FFFFFF;
     }
 
-    img {
+    .sheet-body img {
       max-width: 100% !important;
       height: auto !important;
       border-radius: 4px;
@@ -555,20 +754,20 @@ export function buildPdfDocumentHtml(
       display: block;
     }
 
-    img[style*="text-align: left"],
-    img[data-text-align="left"] {
+    .sheet-body img[style*="text-align: left"],
+    .sheet-body img[data-text-align="left"] {
       margin-left: 0 !important;
       margin-right: auto !important;
     }
 
-    img[style*="text-align: right"],
-    img[data-text-align="right"] {
+    .sheet-body img[style*="text-align: right"],
+    .sheet-body img[data-text-align="right"] {
       margin-left: auto !important;
       margin-right: 0 !important;
     }
 
-    img[style*="text-align: center"],
-    img[data-text-align="center"] {
+    .sheet-body img[style*="text-align: center"],
+    .sheet-body img[data-text-align="center"] {
       margin-left: auto !important;
       margin-right: auto !important;
     }
@@ -608,9 +807,39 @@ export function buildPdfDocumentHtml(
     table {
       width: 100%;
       border-collapse: collapse;
-      margin: 10px 0;
+      margin: 10px 0 0 0;
       font-size: 0.9em;
       page-break-inside: auto;
+    }
+
+    .tableWrapper {
+      margin: 10px 0 0 0;
+      padding: 0;
+      max-width: 100%;
+    }
+
+    .tableWrapper table {
+      margin: 0 !important;
+    }
+
+    table + h1, .tableWrapper + h1 {
+      margin-top: 16px !important;
+    }
+
+    table + h2, .tableWrapper + h2 {
+      margin-top: 14px !important;
+    }
+
+    table + h3, .tableWrapper + h3 {
+      margin-top: 12px !important;
+    }
+
+    table + p, .tableWrapper + p {
+      margin-top: 10px !important;
+    }
+
+    table + table, .tableWrapper + .tableWrapper {
+      margin-top: 10px !important;
     }
 
     table[data-table-align="center"]:not([style*="width"]),
@@ -650,7 +879,7 @@ export function buildPdfDocumentHtml(
 
     th, td {
       border: 1px solid #94A3B8;
-      padding: 4px 8px;
+      padding: 5px 9px;
       vertical-align: middle;
       -webkit-print-color-adjust: exact;
       print-color-adjust: exact;
@@ -682,6 +911,10 @@ export function buildPdfDocumentHtml(
     (function() {
       var activeConfig = ${JSON.stringify(config)};
       var isForPrint = ${isForPrint};
+      var hfConfig = ${JSON.stringify(options.headerFooterConfig || null)};
+      var authorName = ${JSON.stringify(options.authorName || '')};
+      var noteTitle = ${JSON.stringify(cleanTitle)};
+      var currentDateFormatted = '${currentDateFormatted}';
 
       window.__updatePdfPreview = function(newCss, newConfig) {
         var dynEl = document.getElementById('dynamic-config-styles');
@@ -702,10 +935,132 @@ export function buildPdfDocumentHtml(
         output.innerHTML = '';
 
         var cfg = activeConfig;
-        var hasFooter = !!(cfg.includePageNumbers || cfg.includeDate);
+        var hasHeader = !!cfg.includeHeader;
+        var hasFooter = !!cfg.includeFooter;
         var sheetCount = 0;
         var currentSheet = null;
         var currentBody = null;
+
+        function getZoneSlots(zone, sheetNum) {
+          if (!hfConfig) return null;
+          if (hfConfig.differentFirstPage && sheetNum === 1) {
+            return zone === 'header' ? hfConfig.firstPageHeaderSlots : hfConfig.firstPageFooterSlots;
+          }
+          if (hfConfig.differentOddEven && sheetNum % 2 === 0) {
+            return zone === 'header' ? hfConfig.evenPageHeaderSlots : hfConfig.evenPageFooterSlots;
+          }
+          return zone === 'header' ? hfConfig.headerSlots : hfConfig.footerSlots;
+        }
+
+        function getZonePreset(zone) {
+          if (!hfConfig) return 'none';
+          return zone === 'header' ? (hfConfig.headerPreset || 'none') : (hfConfig.footerPreset || 'none');
+        }
+
+        function interpolateText(raw, sheetNum, total) {
+          if (!raw) return '';
+          return raw
+            .replace(/\{page\}/gi, String(sheetNum))
+            .replace(/\{total\}/gi, String(total))
+            .replace(/\{date\}/gi, currentDateFormatted)
+            .replace(/\{time\}/gi, new Intl.DateTimeFormat('es-ES', { hour: '2-digit', minute: '2-digit' }).format(new Date()))
+            .replace(/\{title\}/gi, noteTitle)
+            .replace(/\{author\}/gi, authorName);
+        }
+
+        function renderZoneHtml(zone, sheetNum, total) {
+          var preset = getZonePreset(zone);
+          var slots = getZoneSlots(zone, sheetNum);
+          var isEven = (sheetNum % 2 === 0);
+          var textContentHtml = '';
+
+          var headerDistCm = (hfConfig && typeof hfConfig.headerDistanceCm === 'number') ? hfConfig.headerDistanceCm : 1.25;
+          var footerDistCm = (hfConfig && typeof hfConfig.footerDistanceCm === 'number') ? hfConfig.footerDistanceCm : 1.25;
+
+          if (preset === 'movimiento') {
+            if (isEven) {
+              var leftVal = interpolateText((slots && slots.left) || '{title}', sheetNum, total);
+              textContentHtml = '<div class="hf-movimiento even"><div class="hf-badge">' + sheetNum + '</div><div class="hf-title">' + leftVal + '</div></div>';
+            } else {
+              var rightVal = interpolateText((slots && slots.right) || '{title}', sheetNum, total);
+              textContentHtml = '<div class="hf-movimiento odd"><div class="hf-title">' + rightVal + '</div><div class="hf-badge">' + sheetNum + '</div></div>';
+            }
+          } else if (preset === 'retrospectiva') {
+            var leftText = interpolateText((slots && slots.left) || '{title}', sheetNum, total);
+            var rightText = interpolateText((slots && slots.right) || (zone === 'header' ? '{date}' : 'Página {page}'), sheetNum, total);
+            textContentHtml = '<div class="hf-retrospectiva"><div class="hf-ret-left">' + leftText + '</div><div class="hf-ret-right">' + rightText + '</div></div>';
+          } else if (preset === 'segmento') {
+            var leftText = interpolateText(slots ? slots.left : '', sheetNum, total);
+            var centerText = interpolateText(slots ? slots.center : '', sheetNum, total);
+            var rightText = interpolateText((slots && slots.right) || 'Página {page}', sheetNum, total);
+            textContentHtml = '<div class="hf-segmento"><span>' + leftText + '</span><span>' + centerText + '</span><span>' + rightText + '</span></div>';
+          } else if (preset === 'apa7') {
+            var leftText = interpolateText((slots && slots.left) || '{title}', sheetNum, total);
+            var rightText = String(sheetNum);
+            textContentHtml = '<div class="hf-apa7"><span class="hf-apa-title">' + leftText + '</span><span>' + rightText + '</span></div>';
+          } else {
+            var hasCustomSlots = slots && (slots.left || slots.center || slots.right);
+            if (!hasCustomSlots && preset === 'none') {
+              if (zone === 'header') {
+                var headerTitleText = cfg.includeHeaderTitle ? noteTitle : '';
+                var headerDateText = cfg.includeHeaderDate ? currentDateFormatted : '';
+                if (headerTitleText || headerDateText) {
+                  textContentHtml = '<div class="hf-standard-slots"><div class="hf-col hf-left font-medium" style="color: #64748B;">' + headerTitleText + '</div><div class="hf-col hf-center"></div><div class="hf-col hf-right" style="color: #94A3B8;">' + headerDateText + '</div></div>';
+                }
+              } else {
+                var leftDate = cfg.includeDate ? currentDateFormatted : '';
+                var rightPage = cfg.includePageNumbers ? ('Página ' + sheetNum + ' de ' + total) : '';
+                if (leftDate || rightPage) {
+                  textContentHtml = '<div class="hf-standard-slots"><div class="hf-col hf-left" style="color: #94A3B8;">' + leftDate + '</div><div class="hf-col hf-center"></div><div class="hf-col hf-right" style="color: #94A3B8;">' + rightPage + '</div></div>';
+                }
+              }
+            } else {
+              var left = interpolateText(slots ? slots.left : '', sheetNum, total);
+              var center = interpolateText(slots ? slots.center : '', sheetNum, total);
+              var right = interpolateText(slots ? slots.right : '', sheetNum, total);
+
+              // Si en slots se usó {title} por defecto pero se desactivó explícitamente includeHeaderTitle
+              if (zone === 'header' && cfg.includeHeaderTitle === false && slots && slots.left === '{title}') {
+                left = '';
+              }
+
+              if (zone === 'footer' && !right && cfg.includePageNumbers) {
+                right = 'Página ' + sheetNum + ' de ' + total;
+              }
+              if (zone === 'footer' && !left && cfg.includeDate) {
+                left = currentDateFormatted;
+              }
+
+              if (left || center || right) {
+                textContentHtml = '<div class="hf-standard-slots"><div class="hf-col hf-left">' + left + '</div><div class="hf-col hf-center">' + center + '</div><div class="hf-col hf-right">' + right + '</div></div>';
+              }
+            }
+          }
+
+          var imagesHtml = '';
+          if (slots && Array.isArray(slots.images) && slots.images.length > 0) {
+            slots.images.forEach(function(img) {
+              if (img && img.src) {
+                imagesHtml += '<img class="hf-image" src="' + img.src + '" style="position: absolute; left: ' + (img.x || 0) + 'px; top: ' + (img.y || 0) + 'px; width: ' + (img.width || 80) + 'px !important; height: ' + (img.height || 40) + 'px !important; object-fit: contain;" />';
+              }
+            });
+          }
+
+          if (!imagesHtml && !textContentHtml) {
+            return '';
+          }
+
+          var innerWrapper = '';
+          if (textContentHtml) {
+            if (zone === 'header') {
+              innerWrapper = '<div class="sheet-header-inner" style="top: ' + headerDistCm + 'cm; padding-left: ' + cfg.margins.left + 'mm; padding-right: ' + cfg.margins.right + 'mm;">' + textContentHtml + '</div>';
+            } else {
+              innerWrapper = '<div class="sheet-footer-inner" style="bottom: ' + footerDistCm + 'cm; padding-left: ' + cfg.margins.left + 'mm; padding-right: ' + cfg.margins.right + 'mm;">' + textContentHtml + '</div>';
+            }
+          }
+
+          return imagesHtml + innerWrapper;
+        }
 
         function createNewSheet() {
           sheetCount++;
@@ -718,6 +1073,13 @@ export function buildPdfDocumentHtml(
           badge.textContent = 'Hoja ' + sheetCount;
           sheet.appendChild(badge);
 
+          var header = document.createElement('div');
+          header.className = 'sheet-header';
+          if (!hasHeader) {
+            header.style.display = 'none';
+          }
+          sheet.appendChild(header);
+
           var body = document.createElement('div');
           body.className = 'sheet-body';
           sheet.appendChild(body);
@@ -726,11 +1088,6 @@ export function buildPdfDocumentHtml(
           footer.className = 'sheet-footer';
           if (!hasFooter) {
             footer.style.display = 'none';
-          } else {
-            footer.style.display = 'flex';
-            var leftText = cfg.includeDate ? '${currentDateFormatted}' : '';
-            var rightText = cfg.includePageNumbers ? 'Página 1' : '';
-            footer.innerHTML = '<div>' + leftText + '</div><div>' + rightText + '</div>';
           }
           sheet.appendChild(footer);
 
@@ -774,6 +1131,15 @@ export function buildPdfDocumentHtml(
           } else {
             img.style.marginLeft = 'auto';
             img.style.marginRight = 'auto';
+          }
+        });
+
+        // Asegurar que todos los párrafos vacíos contengan al menos un <br> para respetar saltos de línea (Enters)
+        Array.from(rawDoc.querySelectorAll('p')).forEach(function(pEl) {
+          if (!pEl.childNodes.length || (pEl.childNodes.length === 1 && pEl.textContent.trim() === '')) {
+            if (!pEl.querySelector('br')) {
+              pEl.innerHTML = '<br>';
+            }
           }
         });
 
@@ -827,17 +1193,40 @@ export function buildPdfDocumentHtml(
         var total = allSheets.length;
 
         allSheets.forEach(function(sheet, idx) {
+          var sheetNum = idx + 1;
           var badge = sheet.querySelector('.sheet-badge');
           if (badge) {
-            badge.textContent = 'Hoja ' + (idx + 1) + ' / ' + total;
+            badge.textContent = 'Hoja ' + sheetNum + ' / ' + total;
+          }
+
+          var header = sheet.querySelector('.sheet-header');
+          if (header) {
+            if (!hasHeader) {
+              header.style.display = 'none';
+            } else {
+              var headerHtml = renderZoneHtml('header', sheetNum, total);
+              if (!headerHtml) {
+                header.style.display = 'none';
+              } else {
+                header.style.display = 'block';
+                header.innerHTML = headerHtml;
+              }
+            }
           }
 
           var footer = sheet.querySelector('.sheet-footer');
-          if (footer && hasFooter) {
-            var pageNum = idx + 1;
-            var leftText = cfg.includeDate ? '${currentDateFormatted}' : '';
-            var rightText = cfg.includePageNumbers ? ('Página ' + pageNum + ' de ' + total) : '';
-            footer.innerHTML = '<div>' + leftText + '</div><div>' + rightText + '</div>';
+          if (footer) {
+            if (!hasFooter) {
+              footer.style.display = 'none';
+            } else {
+              var footerHtml = renderZoneHtml('footer', sheetNum, total);
+              if (!footerHtml) {
+                footer.style.display = 'none';
+              } else {
+                footer.style.display = 'block';
+                footer.innerHTML = footerHtml;
+              }
+            }
           }
         });
 

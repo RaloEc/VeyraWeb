@@ -34,7 +34,7 @@ export interface TopBarProps {
 
 export const TopBar: React.FC<TopBarProps> = ({
   user,
-  profile,
+  profile: _profile,
   activeModule,
   onChangeModule,
   pendingRemindersCount = 0,
@@ -49,7 +49,7 @@ export const TopBar: React.FC<TopBarProps> = ({
   const menuRef = useRef<HTMLDivElement>(null);
 
   const userInitial = (user?.email?.[0] || 'V').toUpperCase();
-  const displayName = profile?.user_profile || user?.email?.split('@')[0] || 'Usuario';
+  const displayName = user?.user_metadata?.full_name || user?.user_metadata?.name || user?.email?.split('@')[0] || 'Usuario';
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {

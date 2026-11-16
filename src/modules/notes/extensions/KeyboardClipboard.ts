@@ -31,12 +31,9 @@ export const KeyboardClipboard = Extension.create({
           }
         }
 
-        const text = state.doc.textBetween(selection.from, selection.to, '\n');
-        if (text && typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
-          navigator.clipboard.writeText(text).catch(() => {});
-        }
         // Retornamos false para permitir que el evento de portapapeles nativo 'copy'
-        // del navegador también se propague y conserve el formato HTML/enriquecido.
+        // del navegador y ProseMirror serialize y copie el contenido enriquecido completo
+        // (tablas completas, celdas, estilos, formato HTML y texto plano) sin sobreescribirlo.
         return false;
       },
 
@@ -58,13 +55,9 @@ export const KeyboardClipboard = Extension.create({
           }
         }
 
-        const text = state.doc.textBetween(selection.from, selection.to, '\n');
-        if (text && typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
-          navigator.clipboard.writeText(text).catch(() => {});
-        }
-        // Eliminamos la selección actual y confirmamos la captura
-        commands.deleteSelection();
-        return true;
+        // Retornamos false para que el evento nativo 'cut' de ProseMirror y el navegador
+        // capture el contenido enriquecido completo (tablas, HTML, texto) y elimine la selección.
+        return false;
       },
 
       // Atajo de teclado: Pegar (Ctrl+V / Cmd+V)

@@ -113,6 +113,10 @@ export interface PdfExportConfig {
 
   // Opciones de estructura
   breakBetweenHojas: boolean; // Si es true, cada hoja de Veyra inicia en página nueva
+  includeHeader: boolean; // Encabezado de página
+  includeHeaderTitle?: boolean; // Título de la nota en el encabezado
+  includeHeaderDate?: boolean; // Fecha en el encabezado
+  includeFooter: boolean; // Pie de página
   includePageNumbers: boolean; // "Página X de Y" en pie
   includeDate: boolean; // Fecha de exportación en pie
 }
@@ -131,6 +135,10 @@ export const DEFAULT_PDF_CONFIG: PdfExportConfig = {
   textAlign: 'left',
 
   breakBetweenHojas: true,
+  includeHeader: true,
+  includeHeaderTitle: false,
+  includeHeaderDate: false,
+  includeFooter: true,
   includePageNumbers: true,
   includeDate: false,
 };

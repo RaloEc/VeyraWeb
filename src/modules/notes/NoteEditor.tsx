@@ -44,6 +44,13 @@ import {
   CustomTableHeader,
   CustomTableCell,
 } from './extensions/TableExtensions';
+import {
+  ensureCompleteTableHtml,
+  isMarkdownTable,
+  convertMarkdownTableToHtml,
+  isTsvTable,
+  convertTsvToHtml,
+} from './utils/tableClipboardUtils';
 import { AICommandExtension } from './extensions/AICommandExtension';
 import { EditorToolbar } from './EditorToolbar';
 import { CollabPresence } from './CollabPresence';
@@ -189,7 +196,7 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
         if (parsed.pageFormat === 'a4' || parsed.pageFormat === 'infinite') {
           return parsed.pageFormat;
         }
-      } catch {}
+      } catch { }
     }
     // 3. Prioridad: Caché local individual por ID de nota, o preferencia por defecto del usuario
     if (typeof window !== 'undefined') {
@@ -225,7 +232,7 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
         if (parsed.a4HeaderFooterConfig && typeof parsed.a4HeaderFooterConfig === 'object') {
           return loadA4HeaderFooterConfigForNote(note.id, parsed.a4HeaderFooterConfig);
         }
-      } catch {}
+      } catch { }
     }
     return loadA4HeaderFooterConfigForNote(note.id);
   });
@@ -266,7 +273,7 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
       saveA4HeaderFooterConfigForNote(note.id, next);
       try {
         ydoc.getMap('meta').set('a4HeaderFooterConfig', next);
-      } catch {}
+      } catch { }
       triggerAutoSaveRef.current?.();
     },
     [note.id, ydoc]
@@ -332,11 +339,11 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
     pageFormatRef.current = next;
     try {
       ydoc.getMap('meta').set('pageFormat', next);
-    } catch {}
+    } catch { }
     if (typeof window !== 'undefined') {
       try {
         localStorage.setItem(`veyra_note_page_format_${note.id}`, next);
-      } catch {}
+      } catch { }
     }
     triggerAutoSaveRef.current?.();
   }, [ydoc, note.id]);
@@ -351,7 +358,7 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
   const saveDebounceTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isSavingRef = useRef<boolean>(false);
   const pendingSaveRef = useRef<boolean>(false);
-  const triggerAutoSaveRef = useRef<() => void>(() => {});
+  const triggerAutoSaveRef = useRef<() => void>(() => { });
 
   const displayName = userName || userEmail.split('@')[0] || 'Usuario';
   const { palette, isPaperLight } = useTheme();
@@ -725,7 +732,7 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
         if (typeof window !== 'undefined') {
           try {
             localStorage.setItem(`veyra_note_page_format_${note.id}`, remoteFormat);
-          } catch {}
+          } catch { }
         }
       }
       const remoteHf = metaMap.get('a4HeaderFooterConfig') as A4HeaderFooterConfig | undefined;
@@ -922,8 +929,42 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
             }
           }
 
+          const currentEditor = (_view as any).editor || editorRef.current;
+
+          // 1. Detección y manejo prioritario de tablas en HTML
+          const hasRichHtmlBlocks = /<(?:table|thead|tbody|tr|td|th)[^>]*>/i.test(html);
+          if (hasRichHtmlBlocks && currentEditor && !currentEditor.isDestroyed) {
+            // Si el cursor está actualmente dentro de una tabla existente, permitimos que
+            // prosemirror-tables maneje de forma nativa el mapeo de celdas pegadas.
+            if (!currentEditor.isActive('table')) {
+              // Si el cursor está fuera de una tabla, insertamos la tabla como un bloque completo cerrado
+              event.preventDefault();
+              const cleanedTableHtml = ensureCompleteTableHtml(html);
+              currentEditor.commands.insertContent(cleanedTableHtml);
+              return true;
+            }
+            return false;
+          }
+
           // Detección y transformación automática de Markdown y fórmulas matemáticas LaTeX ($$ y $)
           const cleanedText = cleanAiClipboardArtifacts(plainText);
+
+          // 2. Detección de tablas en texto plano (Markdown o TSV copiado de hojas de cálculo)
+          if ((!html || !hasRichHtmlBlocks) && currentEditor && !currentEditor.isDestroyed) {
+            if (isMarkdownTable(cleanedText)) {
+              event.preventDefault();
+              const tableHtml = convertMarkdownTableToHtml(cleanedText);
+              currentEditor.commands.insertContent(tableHtml);
+              return true;
+            }
+            if (isTsvTable(cleanedText)) {
+              event.preventDefault();
+              const tableHtml = convertTsvToHtml(cleanedText);
+              currentEditor.commands.insertContent(tableHtml);
+              return true;
+            }
+          }
+
           const isMath = hasMathContent(cleanedText);
           const isMarkdown = hasMarkdownContent(cleanedText);
 
@@ -931,16 +972,14 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
           // o fórmulas matemáticas, priorizamos la conversión limpia de Markdown para respetar los saltos
           // de línea y títulos en bloques independientes.
           const hasExplicitMarkdownBlocks = /^(?:#{1,6}\s*\S+|[-*+]\s+\[[ xX]\]|[-*+]\s+\S+|\d+\.\s+\S+|>+\s+\S+|```)/m.test(cleanedText);
-          const hasRichHtmlBlocks = /<(?:table|thead|tbody|tr|td)[^>]*>/i.test(html);
-          const shouldProcessMarkdownOrMath = isMath || hasExplicitMarkdownBlocks || (isMarkdown && (!html || !hasRichHtmlBlocks));
+          const shouldProcessMarkdownOrMath =
+            !hasRichHtmlBlocks &&
+            (isMath || hasExplicitMarkdownBlocks || (isMarkdown && !html));
 
-          if (shouldProcessMarkdownOrMath) {
+          if (shouldProcessMarkdownOrMath && currentEditor && !currentEditor.isDestroyed) {
             event.preventDefault();
             const formattedHtml = convertMarkdownWithMathToHtml(cleanedText);
-            const currentEditor = (_view as any).editor || editorRef.current;
-            if (currentEditor && !currentEditor.isDestroyed) {
-              currentEditor.commands.insertContent(formattedHtml);
-            }
+            currentEditor.commands.insertContent(formattedHtml);
             return true;
           }
 
@@ -974,7 +1013,7 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
                 const parsed = new URL(trimmedPlain);
                 domain = parsed.hostname.replace(/^www\./, '');
                 favicon = `https://www.google.com/s2/favicons?domain=${domain}&sz=64`;
-              } catch {}
+              } catch { }
 
               currentEditor.commands.insertContent({
                 type: 'bookmark',
@@ -1877,7 +1916,7 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
           )}
         </div>
 
-      {/* Right: Presence Avatars, Status Dot & Actions */}
+        {/* Right: Presence Avatars, Status Dot & Actions */}
         <div className="flex items-center gap-2">
           <CollabPresence users={collabUsers} currentUserId={currentUserId} />
 
@@ -1888,12 +1927,12 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
               saveStatus === 'error'
                 ? 'Error al guardar'
                 : saveStatus === 'saving'
-                ? 'Guardando cambios...'
-                : syncStatus === 'connected'
-                ? 'Guardado · Colaboración en vivo activa'
-                : syncStatus === 'connecting'
-                ? 'Conectando con Supabase Realtime...'
-                : 'Guardado localmente (Desconectado)'
+                  ? 'Guardando cambios...'
+                  : syncStatus === 'connected'
+                    ? 'Guardado · Colaboración en vivo activa'
+                    : syncStatus === 'connecting'
+                      ? 'Conectando con Supabase Realtime...'
+                      : 'Guardado localmente (Desconectado)'
             }
           >
             <span
@@ -1902,10 +1941,10 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
                 saveStatus === 'error'
                   ? 'bg-red-500'
                   : saveStatus === 'saving' || syncStatus === 'connecting'
-                  ? 'bg-amber-500 animate-pulse'
-                  : syncStatus === 'connected'
-                  ? 'bg-emerald-500'
-                  : 'bg-zinc-600'
+                    ? 'bg-amber-500 animate-pulse'
+                    : syncStatus === 'connected'
+                      ? 'bg-emerald-500'
+                      : 'bg-zinc-600'
               )}
             />
           </div>
@@ -2048,17 +2087,17 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
               isPaperLight && 'sheet-light-mode',
               pageFormat === 'a4'
                 ? cn(
-                    'a4-page-mode max-w-[794px] min-h-[1123px] rounded-sm px-6 sm:px-[30mm] pt-8 sm:pt-[25mm] pb-12 sm:pb-[25mm] mb-4',
-                    isPaperLight
-                      ? 'bg-white border border-slate-300 shadow-[0_8px_30px_rgb(0,0,0,0.12)]'
-                      : 'bg-white dark:bg-[#161619] border border-slate-300 dark:border-white/10 shadow-[0_8px_30px_rgb(0,0,0,0.12)] dark:shadow-[0_8px_30px_rgb(0,0,0,0.6)]'
-                  )
+                  'a4-page-mode max-w-[794px] min-h-[1123px] rounded-sm px-6 sm:px-[30mm] pt-8 sm:pt-[25mm] pb-12 sm:pb-[25mm] mb-4',
+                  isPaperLight
+                    ? 'bg-white border border-slate-300 shadow-[0_8px_30px_rgb(0,0,0,0.12)]'
+                    : 'bg-white dark:bg-[#161619] border border-slate-300 dark:border-white/10 shadow-[0_8px_30px_rgb(0,0,0,0.12)] dark:shadow-[0_8px_30px_rgb(0,0,0,0.6)]'
+                )
                 : cn(
-                    'max-w-[760px] rounded-2xl p-6 sm:p-12 shadow-2xl min-h-[calc(100vh-140px)]',
-                    isPaperLight
-                      ? 'bg-white border border-slate-300/80 shadow-2xl'
-                      : 'bg-white dark:bg-[#161619] border border-slate-300/80 dark:border-white/8 shadow-2xl'
-                  )
+                  'max-w-[760px] rounded-2xl p-6 sm:p-12 shadow-2xl min-h-[calc(100vh-140px)]',
+                  isPaperLight
+                    ? 'bg-white border border-slate-300/80 shadow-2xl'
+                    : 'bg-white dark:bg-[#161619] border border-slate-300/80 dark:border-white/8 shadow-2xl'
+                )
             )}
           >
             {pageFormat === 'a4' && <style ref={a4StyleRef} />}
@@ -2133,10 +2172,10 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
               className={cn(
                 'w-full flex-1 flex flex-col transition-opacity duration-200',
                 pageFormat === 'a4' &&
-                  activeHeaderFooterZone !== null &&
-                  (a4HeaderFooterConfig.showDocumentText
-                    ? 'opacity-45'
-                    : 'opacity-0 pointer-events-none')
+                activeHeaderFooterZone !== null &&
+                (a4HeaderFooterConfig.showDocumentText
+                  ? 'opacity-45'
+                  : 'opacity-0 pointer-events-none')
               )}
               onClick={() => {
                 if (activeHeaderFooterZone !== null) {
@@ -2236,6 +2275,8 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
         onClose={() => setIsExportPdfOpen(false)}
         title={title || note.title || 'Nota sin título'}
         pages={exportPdfPages}
+        headerFooterConfig={a4HeaderFooterConfig}
+        userName={userName}
       />
     </div>
   );

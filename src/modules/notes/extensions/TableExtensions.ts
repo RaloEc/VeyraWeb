@@ -1,7 +1,9 @@
 import { Table, TableRow, TableHeader, TableCell } from '@tiptap/extension-table';
 import { findParentNode, type Editor } from '@tiptap/core';
-import { selectedRect, CellSelection, mergeCells } from '@tiptap/pm/tables';
+import { selectedRect, CellSelection, mergeCells, TableMap } from '@tiptap/pm/tables';
 import { Plugin, PluginKey } from '@tiptap/pm/state';
+import { DOMSerializer } from '@tiptap/pm/model';
+import { toast } from 'sonner';
 
 export const CustomTableCell = TableCell.extend({
   addAttributes() {
@@ -317,6 +319,7 @@ export const CustomTable = Table.extend({
   },
 }).configure({
   resizable: true,
+  allowTableNodeSelection: true,
   HTMLAttributes: {
     class: 'veyra-table',
   },
@@ -446,6 +449,115 @@ export function mergeWithBelowCell(editor: Editor): boolean {
     return mergeCells(nextState, dispatch);
   } catch (err) {
     console.error('Error al combinar con celda inferior:', err);
+    return false;
+  }
+}
+
+/**
+ * Copia la tabla actual completa al portapapeles en formato HTML enriquecido
+ * y texto plano tabular (TSV).
+ */
+export async function copyTableToClipboard(editor: Editor): Promise<boolean> {
+  if (!editor || editor.isDestroyed) return false;
+  try {
+    const tableParent = findParentNode((node: any) => node.type.name === 'table')(editor.state.selection);
+    if (!tableParent) return false;
+
+    // 1. Serializar el nodo de la tabla a HTML limpio usando el schema de ProseMirror
+    const serializer = DOMSerializer.fromSchema(editor.schema);
+    const domNode = serializer.serializeNode(tableParent.node);
+    const tempDiv = document.createElement('div');
+    tempDiv.appendChild(domNode);
+    const html = tempDiv.innerHTML;
+
+    // 2. Generar representación en texto plano tabulado (TSV)
+    const textRows: string[] = [];
+    tableParent.node.forEach((rowNode) => {
+      if (rowNode.type.name === 'tableRow') {
+        const cellTexts: string[] = [];
+        rowNode.forEach((cellNode) => {
+          cellTexts.push(cellNode.textContent.trim().replace(/\r?\n+/g, ' '));
+        });
+        textRows.push(cellTexts.join('\t'));
+      }
+    });
+    const plainText = textRows.join('\n');
+
+    // 3. Escribir al portapapeles con text/html y text/plain
+    if (typeof navigator !== 'undefined' && navigator.clipboard && window.ClipboardItem) {
+      try {
+        const blobHtml = new Blob([html], { type: 'text/html' });
+        const blobText = new Blob([plainText], { type: 'text/plain' });
+        await navigator.clipboard.write([
+          new ClipboardItem({
+            'text/html': blobHtml,
+            'text/plain': blobText,
+          }),
+        ]);
+        toast.success('Tabla copiada al portapapeles');
+        return true;
+      } catch (err) {
+        console.warn('Fallback a writeText al copiar tabla:', err);
+      }
+    }
+
+    if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(plainText);
+      toast.success('Tabla copiada al portapapeles');
+      return true;
+    }
+    return false;
+  } catch (err) {
+    console.error('Error al copiar tabla:', err);
+    toast.error('No se pudo copiar la tabla');
+    return false;
+  }
+}
+
+/**
+ * Duplica la tabla actual completa justo debajo de sí misma.
+ */
+export function duplicateTable(editor: Editor): boolean {
+  if (!editor || editor.isDestroyed) return false;
+  try {
+    const tableParent = findParentNode((node: any) => node.type.name === 'table')(editor.state.selection);
+    if (!tableParent) return false;
+
+    const insertPos = tableParent.pos + tableParent.node.nodeSize;
+    const { tr } = editor.state;
+    tr.insert(insertPos, tableParent.node);
+    editor.view.dispatch(tr);
+    toast.success('Tabla duplicada');
+    return true;
+  } catch (err) {
+    console.error('Error al duplicar tabla:', err);
+    toast.error('No se pudo duplicar la tabla');
+    return false;
+  }
+}
+
+/**
+ * Selecciona todas las celdas de la tabla actual como un CellSelection rectangular.
+ */
+export function selectAllTableCells(editor: Editor): boolean {
+  if (!editor || editor.isDestroyed) return false;
+  try {
+    const tableParent = findParentNode((node: any) => node.type.name === 'table')(editor.state.selection);
+    if (!tableParent) return false;
+
+    const table = tableParent.node;
+    const map = TableMap.get(table);
+    if (!map || map.map.length === 0) return false;
+
+    const tableStart = tableParent.pos + 1;
+    const firstCellPos = tableStart + map.map[0];
+    const lastCellPos = tableStart + map.map[map.map.length - 1];
+
+    const sel = CellSelection.create(editor.state.doc, firstCellPos, lastCellPos);
+    editor.view.dispatch(editor.state.tr.setSelection(sel));
+    return true;
+  } catch (err) {
+    console.error('Error al seleccionar celdas de la tabla:', err);
     return false;
   }
 }

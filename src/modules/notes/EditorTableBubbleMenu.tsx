@@ -18,6 +18,8 @@ import {
   ArrowDown,
   TableProperties,
   Check,
+  Copy,
+  CopyPlus,
 } from 'lucide-react';
 import { createPortal } from 'react-dom';
 import { cn } from '../../lib/utils';
@@ -25,6 +27,8 @@ import {
   getTableSelectionInfo,
   mergeWithRightCell,
   mergeWithBelowCell,
+  copyTableToClipboard,
+  duplicateTable,
 } from './extensions/TableExtensions';
 
 export interface EditorTableBubbleMenuProps {
@@ -74,6 +78,7 @@ export const EditorTableBubbleMenu: React.FC<EditorTableBubbleMenuProps> = ({ ed
   const [mergeCoords, setMergeCoords] = useState<{ top: number; left: number }>({ top: 0, left: 0 });
 
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [isCopied, setIsCopied] = useState(false);
   const [menuPos, setMenuPos] = useState<{ top: number; left: number; isSticky: boolean } | null>(null);
 
   const menuRef = useRef<HTMLDivElement>(null);
@@ -461,6 +466,20 @@ export const EditorTableBubbleMenu: React.FC<EditorTableBubbleMenuProps> = ({ ed
     editor.chain().focus().splitCell().run();
   };
 
+  const handleCopyTable = async () => {
+    if (!editor) return;
+    const ok = await copyTableToClipboard(editor);
+    if (ok) {
+      setIsCopied(true);
+      setTimeout(() => setIsCopied(false), 2000);
+    }
+  };
+
+  const handleDuplicateTable = () => {
+    if (!editor) return;
+    duplicateTable(editor);
+  };
+
   return (
     <>
       {menuPos &&
@@ -753,6 +772,37 @@ export const EditorTableBubbleMenu: React.FC<EditorTableBubbleMenuProps> = ({ ed
             className="h-7 w-7 rounded-lg text-veyra-muted hover:text-veyra-text hover:bg-black/5 dark:hover:bg-white/5 transition-colors cursor-pointer flex items-center justify-center shrink-0"
           >
             <AlignRight className="w-3.5 h-3.5" />
+          </button>
+        </div>
+
+        <div className="w-[1px] h-4 bg-veyra-border mx-0.5 shrink-0" />
+
+        {/* Copiar y Duplicar tabla */}
+        <div className="inline-flex items-center gap-0.5">
+          <button
+            type="button"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={handleCopyTable}
+            title="Copiar tabla completa al portapapeles (HTML y texto)"
+            className="h-7 px-1.5 rounded-lg text-veyra-muted hover:text-veyra-text hover:bg-black/5 dark:hover:bg-white/5 transition-colors cursor-pointer flex items-center gap-1 shrink-0"
+          >
+            {isCopied ? (
+              <Check className="w-3.5 h-3.5 text-emerald-500" />
+            ) : (
+              <Copy className="w-3.5 h-3.5" />
+            )}
+            <span className="text-[11px] font-medium hidden sm:inline">
+              {isCopied ? 'Copiada' : 'Copiar'}
+            </span>
+          </button>
+          <button
+            type="button"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={handleDuplicateTable}
+            title="Duplicar tabla inmediatamente debajo"
+            className="h-7 w-7 rounded-lg text-veyra-muted hover:text-accent hover:bg-accent/10 transition-colors cursor-pointer flex items-center justify-center shrink-0"
+          >
+            <CopyPlus className="w-3.5 h-3.5" />
           </button>
         </div>
 

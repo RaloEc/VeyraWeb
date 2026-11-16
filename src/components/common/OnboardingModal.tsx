@@ -1,9 +1,5 @@
 import React, { useState } from 'react';
 import {
-  GraduationCap,
-  Briefcase,
-  User,
-  Sliders,
   Bell,
   AlertCircle,
   ShieldAlert,
@@ -22,7 +18,6 @@ export interface OnboardingModalProps {
   onComplete: () => void;
 }
 
-export type ProfileChoice = 'student' | 'work' | 'personal' | 'custom';
 export type ControlLevelChoice = 'gentle' | 'strict' | 'critical';
 
 export const OnboardingModal: React.FC<OnboardingModalProps> = ({
@@ -30,8 +25,7 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
   userEmail: _userEmail,
   onComplete,
 }) => {
-  const [step, setStep] = useState<1 | 2 | 3>(1);
-  const [selectedProfile, setSelectedProfile] = useState<ProfileChoice>('personal');
+  const [step, setStep] = useState<1 | 2>(1);
   const [selectedControlLevel, setSelectedControlLevel] = useState<ControlLevelChoice>('gentle');
   const [notificationStatus, setNotificationStatus] = useState<NotificationPermission>(() => {
     if (typeof window !== 'undefined' && 'Notification' in window) {
@@ -40,37 +34,6 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
     return 'default';
   });
   const [saving, setSaving] = useState(false);
-
-  const profileOptions = [
-    {
-      id: 'student' as ProfileChoice,
-      title: 'Estudiante',
-      desc: 'Clases, exámenes, apuntes y entregas académicas',
-      icon: GraduationCap,
-      color: '#3B82F6',
-    },
-    {
-      id: 'work' as ProfileChoice,
-      title: 'Profesional / Trabajo',
-      desc: 'Proyectos, reuniones, clientes y tareas de alto impacto',
-      icon: Briefcase,
-      color: '#10B981',
-    },
-    {
-      id: 'personal' as ProfileChoice,
-      title: 'Vida Personal',
-      desc: 'Hábitos diarios, finanzas, recordatorios y metas personales',
-      icon: User,
-      color: '#8B5CF6',
-    },
-    {
-      id: 'custom' as ProfileChoice,
-      title: 'Personalizado',
-      desc: 'Configuración libre adaptada exactamente a tu flujo de trabajo',
-      icon: Sliders,
-      color: '#F59E0B',
-    },
-  ];
 
   const controlLevelOptions = [
     {
@@ -113,7 +76,6 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
       const { error } = await supabase
         .from('profiles')
         .update({
-          user_profile: selectedProfile,
           default_control_level: selectedControlLevel,
           onboarding_completed: true,
           updated_at: new Date().toISOString(),
@@ -157,86 +119,15 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
               step >= 2 ? 'bg-accent' : 'bg-veyra-border'
             )}
           />
-          <div
-            className={cn(
-              'h-1 flex-1 rounded-full transition-all duration-300',
-              step >= 3 ? 'bg-accent' : 'bg-veyra-border'
-            )}
-          />
         </div>
 
-        {/* Step 1: Profile */}
+        {/* Step 1: Control Level */}
         {step === 1 && (
           <div className="space-y-5 flex-1 overflow-y-auto pr-1">
             <div className="text-center sm:text-left">
               <span className="inline-flex items-center gap-1 text-[11px] font-medium text-accent uppercase tracking-wider mb-1">
                 <Sparkles className="w-3.5 h-3.5" />
-                Paso 1 de 3
-              </span>
-              <h2 className="text-xl font-bold text-veyra-text tracking-tight">
-                ¿Cómo planeas usar Veyra?
-              </h2>
-              <p className="text-xs text-veyra-muted mt-1">
-                Adaptaremos tu experiencia y prioridades a tu enfoque principal.
-              </p>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
-              {profileOptions.map((opt) => {
-                const isSelected = selectedProfile === opt.id;
-                const Icon = opt.icon;
-                return (
-                  <button
-                    key={opt.id}
-                    type="button"
-                    onClick={() => setSelectedProfile(opt.id)}
-                    className={cn(
-                      'p-4 rounded-xl border text-left transition-all cursor-pointer flex flex-col gap-2 relative',
-                      isSelected
-                        ? 'border-accent bg-accent/10 shadow-sm'
-                        : 'border-veyra-border bg-veyra-elevated/40 hover:border-veyra-border/80'
-                    )}
-                  >
-                    <div className="flex items-center justify-between">
-                      <div
-                        className="w-8 h-8 rounded-lg flex items-center justify-center text-white"
-                        style={{ backgroundColor: opt.color }}
-                      >
-                        <Icon className="w-4 h-4" />
-                      </div>
-                      {isSelected && (
-                        <div className="w-5 h-5 rounded-full bg-accent text-white flex items-center justify-center">
-                          <Check className="w-3 h-3 stroke-[3]" />
-                        </div>
-                      )}
-                    </div>
-                    <div>
-                      <h3 className="text-xs font-semibold text-veyra-text">{opt.title}</h3>
-                      <p className="text-[11px] text-veyra-muted mt-0.5 leading-relaxed">
-                        {opt.desc}
-                      </p>
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-
-            <div className="pt-4 flex justify-end">
-              <Button type="button" onClick={() => setStep(2)} size="md">
-                <span>Continuar</span>
-                <ArrowRight className="w-4 h-4" />
-              </Button>
-            </div>
-          </div>
-        )}
-
-        {/* Step 2: Control Level */}
-        {step === 2 && (
-          <div className="space-y-5 flex-1 overflow-y-auto pr-1">
-            <div className="text-center sm:text-left">
-              <span className="inline-flex items-center gap-1 text-[11px] font-medium text-accent uppercase tracking-wider mb-1">
-                <Sparkles className="w-3.5 h-3.5" />
-                Paso 2 de 3
+                Paso 1 de 2
               </span>
               <h2 className="text-xl font-bold text-veyra-text tracking-tight">
                 Nivel de control predeterminado
@@ -289,15 +180,8 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
               })}
             </div>
 
-            <div className="pt-4 flex items-center justify-between">
-              <button
-                type="button"
-                onClick={() => setStep(1)}
-                className="text-xs text-veyra-muted hover:text-veyra-text transition-colors"
-              >
-                Volver
-              </button>
-              <Button type="button" onClick={() => setStep(3)} size="md">
+            <div className="pt-4 flex justify-end">
+              <Button type="button" onClick={() => setStep(2)} size="md">
                 <span>Continuar</span>
                 <ArrowRight className="w-4 h-4" />
               </Button>
@@ -305,13 +189,13 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
           </div>
         )}
 
-        {/* Step 3: Notifications & Done */}
-        {step === 3 && (
+        {/* Step 2: Notifications & Done */}
+        {step === 2 && (
           <div className="space-y-5 flex-1 overflow-y-auto pr-1">
             <div className="text-center sm:text-left">
               <span className="inline-flex items-center gap-1 text-[11px] font-medium text-accent uppercase tracking-wider mb-1">
                 <Sparkles className="w-3.5 h-3.5" />
-                Paso 3 de 3
+                Paso 2 de 2
               </span>
               <h2 className="text-xl font-bold text-veyra-text tracking-tight">
                 Permiso de Notificaciones
@@ -355,7 +239,7 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
             <div className="pt-4 flex items-center justify-between">
               <button
                 type="button"
-                onClick={() => setStep(2)}
+                onClick={() => setStep(1)}
                 className="text-xs text-veyra-muted hover:text-veyra-text transition-colors"
               >
                 Volver
