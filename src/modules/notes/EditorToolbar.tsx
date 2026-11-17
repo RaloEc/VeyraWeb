@@ -30,6 +30,8 @@ import {
   RotateCcw,
   Sigma,
   Table,
+  LayoutTemplate,
+  Pilcrow,
   Code2,
   Sparkles,
   AArrowUp,
@@ -72,9 +74,18 @@ const NUMBERING_OPTIONS: NumberingOption[] = [
 export interface EditorToolbarProps {
   editor: Editor | null;
   onUploadImage?: (file: File) => Promise<void>;
+  onOpenTemplates?: () => void;
+  showFormattingMarks?: boolean;
+  onToggleFormattingMarks?: () => void;
 }
 
-export const EditorToolbar: React.FC<EditorToolbarProps> = ({ editor, onUploadImage }) => {
+export const EditorToolbar: React.FC<EditorToolbarProps> = ({
+  editor,
+  onUploadImage,
+  onOpenTemplates,
+  showFormattingMarks,
+  onToggleFormattingMarks,
+}) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Botones trigger y referencias de popover
@@ -880,6 +891,15 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({ editor, onUploadIm
           'Insertar tabla (o escribe /tabla)'
         )}
 
+        {/* 8.5 Catálogo de Plantillas */}
+        {onOpenTemplates &&
+          toolBtn(
+            false,
+            onOpenTemplates,
+            <LayoutTemplate className="w-3.5 h-3.5 text-accent" />,
+            'Plantillas y modelos predefinidos (/plantilla)'
+          )}
+
         {/* 9. Bloque de Código */}
         {toolBtn(
           editor.isActive('codeBlock'),
@@ -1008,6 +1028,15 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({ editor, onUploadIm
           <AlignJustify className="w-3.5 h-3.5" />,
           'Justificar'
         )}
+
+        {/* Marcas de formato ocultas (Mostrar todo / Pilcrow ¶) */}
+        {onToggleFormattingMarks &&
+          toolBtn(
+            !!showFormattingMarks,
+            onToggleFormattingMarks,
+            <Pilcrow className="w-3.5 h-3.5" />,
+            'Mostrar todo (Ctrl+(): Muestra marcas de párrafo y símbolos de formato ocultos'
+          )}
 
         <div className="w-[1px] h-3.5 bg-veyra-border mx-1 shrink-0" />
 

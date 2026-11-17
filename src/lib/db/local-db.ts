@@ -6,9 +6,24 @@ import type { Database } from '../../types/database';
 
 export type ProfileRow = Database['public']['Tables']['profiles']['Row'];
 
+export interface UserTemplateRecord {
+  id: string;
+  user_id: string;
+  title: string;
+  description: string;
+  category: string;
+  type: 'block' | 'page';
+  content: string;
+  icon_name: string;
+  created_at: string;
+  updated_at: string;
+  last_modified_ms: number;
+  deleted: number;
+}
+
 export interface OutboxEntry {
   id?: number;
-  table: 'reminders' | 'events' | 'folders' | 'notes' | 'profiles';
+  table: 'reminders' | 'events' | 'folders' | 'notes' | 'profiles' | 'note_templates';
   op: 'upsert' | 'delete';
   record_id: string;
   payload: any;
@@ -30,6 +45,7 @@ export class VeyraLocalDB extends Dexie {
   folders!: Table<Folder, string>;
   notes!: Table<Note, string>;
   profiles!: Table<ProfileRow, string>;
+  note_templates!: Table<UserTemplateRecord, string>;
   outbox!: Table<OutboxEntry, number>;
   sync_metadata!: Table<SyncMetadata, string>;
 
@@ -44,6 +60,10 @@ export class VeyraLocalDB extends Dexie {
       profiles: 'id, user_profile, updated_at',
       outbox: '++id, table, op, record_id, created_at_ms, last_modified_ms, retries',
       sync_metadata: 'key',
+    });
+
+    this.version(2).stores({
+      note_templates: 'id, user_id, type, category, last_modified_ms, deleted',
     });
   }
 }

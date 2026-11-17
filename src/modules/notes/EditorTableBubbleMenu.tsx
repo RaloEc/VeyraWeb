@@ -20,6 +20,7 @@ import {
   Check,
   Copy,
   CopyPlus,
+  BookmarkPlus,
 } from 'lucide-react';
 import { createPortal } from 'react-dom';
 import { cn } from '../../lib/utils';
@@ -33,6 +34,7 @@ import {
 
 export interface EditorTableBubbleMenuProps {
   editor: Editor | null;
+  onSaveTableAsTemplate?: () => void;
 }
 
 const CELL_COLORS = [
@@ -65,9 +67,10 @@ const BORDER_COLORS = [
   { label: 'Rojo suave', value: '#fca5a5', bgClass: 'bg-rose-300' },
 ];
 
-export const EditorTableBubbleMenu: React.FC<EditorTableBubbleMenuProps> = ({ editor }) => {
-  if (!editor) return null;
-
+export const EditorTableBubbleMenu: React.FC<EditorTableBubbleMenuProps> = ({
+  editor,
+  onSaveTableAsTemplate,
+}) => {
   const [isColorMenuOpen, setIsColorMenuOpen] = useState(false);
   const [colorCoords, setColorCoords] = useState<{ top: number; left: number }>({ top: 0, left: 0 });
 
@@ -442,6 +445,7 @@ export const EditorTableBubbleMenu: React.FC<EditorTableBubbleMenuProps> = ({ ed
   };
 
   const handleDeleteTable = () => {
+    if (!editor) return;
     if (!confirmDelete) {
       setConfirmDelete(true);
       if (deleteTimeoutRef.current) clearTimeout(deleteTimeoutRef.current);
@@ -479,6 +483,8 @@ export const EditorTableBubbleMenu: React.FC<EditorTableBubbleMenuProps> = ({ ed
     if (!editor) return;
     duplicateTable(editor);
   };
+
+  if (!editor) return null;
 
   return (
     <>
@@ -804,6 +810,17 @@ export const EditorTableBubbleMenu: React.FC<EditorTableBubbleMenuProps> = ({ ed
           >
             <CopyPlus className="w-3.5 h-3.5" />
           </button>
+          {onSaveTableAsTemplate && (
+            <button
+              type="button"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={onSaveTableAsTemplate}
+              title="Guardar esta tabla como plantilla reutilizable"
+              className="h-7 w-7 rounded-lg text-veyra-muted hover:text-accent hover:bg-accent/10 transition-colors cursor-pointer flex items-center justify-center shrink-0"
+            >
+              <BookmarkPlus className="w-3.5 h-3.5 text-accent" />
+            </button>
+          )}
         </div>
 
         <div className="w-[1px] h-4 bg-veyra-border mx-0.5 shrink-0" />

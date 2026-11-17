@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useEditor, EditorContent } from '@tiptap/react';
+import { findParentNode } from '@tiptap/core';
 import StarterKit from '@tiptap/starter-kit';
 import Collaboration from '@tiptap/extension-collaboration';
 import { CollaborationCursor } from '../../lib/collaboration-cursor';
@@ -51,6 +52,9 @@ import {
   isTsvTable,
   convertTsvToHtml,
 } from './utils/tableClipboardUtils';
+import { A4PaginationExtension } from './pagination/a4PaginationExtension';
+import { calculateParagraphSplit } from './pagination/lineBreakMeasurer';
+import type { A4VirtualBreakWidgetSpec } from './pagination/types';
 import { AICommandExtension } from './extensions/AICommandExtension';
 import { EditorToolbar } from './EditorToolbar';
 import { CollabPresence } from './CollabPresence';
@@ -71,6 +75,11 @@ import { Loader2, PanelLeft, X, Layers, GraduationCap, Folder as FolderIcon, Cal
 import { useTheme } from '../../theme/ThemeProvider';
 import { PagesSidebar, type PageMeta, type PageBlock } from './PagesSidebar';
 import { ExportPdfModal } from './pdf/ExportPdfModal';
+import { TemplatesModal } from './templates/TemplatesModal';
+import { SaveTemplateModal } from './templates/SaveTemplateModal';
+import { useTemplates } from './templates/useTemplates';
+import { type NoteTemplate, type TemplateType } from './templates/templatesData';
+import { DOMSerializer } from '@tiptap/pm/model';
 import { HashtagInput } from '../../components/common/HashtagInput';
 import {
   type A4HeaderFooterConfig,
@@ -218,6 +227,11 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
   const a4StyleRef = useRef<HTMLStyleElement | null>(null);
   const [a4PageBreaks, setA4PageBreaks] = useState<number[]>([]);
   const lastBreaksStrRef = useRef<string>('');
+  const [enableVirtualPagination, setEnableVirtualPagination] = useState<boolean>(false);
+  const enableVirtualPaginationRef = useRef<boolean>(false);
+  useEffect(() => {
+    enableVirtualPaginationRef.current = enableVirtualPagination;
+  }, [enableVirtualPagination]);
   const [a4SheetsMeta, setA4SheetsMeta] = useState<PageMeta[]>([]);
   const lastA4SheetsSignatureRef = useRef<string>('');
   const [activeA4SheetIndex, setActiveA4SheetIndex] = useState<number>(0);
@@ -516,6 +530,128 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
 
   const [isExportPdfOpen, setIsExportPdfOpen] = useState(false);
   const [exportPdfPages, setExportPdfPages] = useState<NotePage[]>([]);
+  const [isTemplatesModalOpen, setIsTemplatesModalOpen] = useState(false);
+  const [isSaveTemplateModalOpen, setIsSaveTemplateModalOpen] = useState(false);
+  const [templateContentToSave, setTemplateContentToSave] = useState('');
+  const [templateTypeToSave, setTemplateTypeToSave] = useState<TemplateType>('block');
+
+  const [showFormattingMarks, setShowFormattingMarks] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('veyra_show_formatting_marks') === 'true';
+    }
+    return false;
+  });
+
+  const handleToggleFormattingMarks = useCallback(() => {
+    setShowFormattingMarks((prev) => {
+      const next = !prev;
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('veyra_show_formatting_marks', String(next));
+      }
+      return next;
+    });
+  }, []);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Ctrl+( o Ctrl+Shift+8 (Mostrar marcas de formato)
+      if (
+        (e.ctrlKey || e.metaKey) &&
+        (e.key === '(' || (e.shiftKey && (e.key === '8' || e.code === 'Digit8')))
+      ) {
+        e.preventDefault();
+        handleToggleFormattingMarks();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [handleToggleFormattingMarks]);
+
+  const { allTemplates, saveCustomTemplate, deleteCustomTemplate } = useTemplates(currentUserId);
+
+  const handleOpenSaveTemplate = useCallback(() => {
+    const currentEditor = editorRef.current;
+    if (!currentEditor || currentEditor.isDestroyed) return;
+
+    const { state } = currentEditor;
+    const { selection } = state;
+    const tableParent = findParentNode((node) => node.type.name === 'table')(selection);
+
+    if (tableParent) {
+      const serializer = DOMSerializer.fromSchema(state.schema);
+      const dom = serializer.serializeNode(tableParent.node);
+      const div = document.createElement('div');
+      div.appendChild(dom);
+      setTemplateContentToSave(div.innerHTML);
+      setTemplateTypeToSave('block');
+    } else if (!selection.empty) {
+      const slice = selection.content();
+      const serializer = DOMSerializer.fromSchema(state.schema);
+      const dom = serializer.serializeFragment(slice.content);
+      const div = document.createElement('div');
+      div.appendChild(dom);
+      setTemplateContentToSave(div.innerHTML);
+      setTemplateTypeToSave('block');
+    } else {
+      setTemplateContentToSave(currentEditor.getHTML());
+      setTemplateTypeToSave('page');
+    }
+
+    setIsSaveTemplateModalOpen(true);
+  }, []);
+
+  const handleSelectTemplate = useCallback(
+    (template: NoteTemplate, mode: 'insert' | 'replace' | 'append') => {
+      const currentEditor = editorRef.current;
+      if (!currentEditor || currentEditor.isDestroyed) return;
+
+      const contentHtml = template.getContent({ userName });
+
+      if (mode === 'replace') {
+        currentEditor.chain().focus().setContent(contentHtml).run();
+        toast.success(`Plantilla "${template.title}" aplicada a la página`);
+      } else if (mode === 'append') {
+        currentEditor.chain().focus('end').insertContent(`<p></p>${contentHtml}<p></p>`).run();
+        toast.success(`Plantilla "${template.title}" añadida al final`);
+      } else {
+        // 'insert' en posición del cursor
+        const { state } = currentEditor;
+        const { selection } = state;
+        const tableParent = findParentNode((node) => node.type.name === 'table')(selection);
+
+        if (tableParent) {
+          // Si el cursor está dentro de una tabla: evitar fragmentar o pegar celdas dentro
+          const isTableEmpty = !tableParent.node.textContent.trim();
+          if (isTableEmpty) {
+            // Reemplazar la tabla vacía por la plantilla
+            currentEditor
+              .chain()
+              .focus()
+              .deleteRange({
+                from: tableParent.pos,
+                to: tableParent.pos + tableParent.node.nodeSize,
+              })
+              .insertContentAt(tableParent.pos, contentHtml)
+              .run();
+          } else {
+            // Si la tabla actual tiene contenido, insertar la plantilla justo después
+            const insertPos = tableParent.pos + tableParent.node.nodeSize;
+            currentEditor
+              .chain()
+              .focus()
+              .insertContentAt(insertPos, `<p></p>${contentHtml}<p></p>`)
+              .run();
+          }
+        } else {
+          currentEditor.chain().focus().insertContent(contentHtml).run();
+        }
+        toast.success(`Plantilla "${template.title}" insertada`);
+      }
+
+      setIsTemplatesModalOpen(false);
+    },
+    [userName]
+  );
 
   const handleOpenExportPdf = useCallback(() => {
     const currentEditor = editorRef.current;
@@ -855,6 +991,7 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
         BookmarkPrompt,
         AIPrompt,
         AICommandExtension,
+        A4PaginationExtension.configure({ enabled: false }),
       ],
       editorProps: {
         attributes: {
@@ -1369,6 +1506,7 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
 
         const rules: string[] = basePaddingRule ? [basePaddingRule] : [];
         const breaks: number[] = [];
+        const virtualBreaks: A4VirtualBreakWidgetSpec[] = [];
         let currentPage = 0;
 
         const applyPushToTarget = (target: BreakableItem, desiredTop: number) => {
@@ -1424,10 +1562,47 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
             while (pushIdx > 0 && items[pushIdx - 1].isHeadingOrLead) {
               const prevTop =
                 items[pushIdx - 1].topEl.getBoundingClientRect().top - sheetRect.top;
-              if (prevTop > minPrintableY + 28) {
+              const orphanThreshold = enableVirtualPaginationRef.current
+                ? maxPrintableY - 96
+                : minPrintableY + 28;
+              if (prevTop > orphanThreshold) {
                 pushIdx -= 1;
               } else {
                 break;
+              }
+            }
+
+            // En modo experimental, intentar dividir visualmente párrafos extensos mediante decoraciones
+            if (
+              enableVirtualPaginationRef.current &&
+              editor &&
+              item.targetEl.tagName.toLowerCase() === 'p' &&
+              !item.isHeadingOrLead &&
+              pushIdx === k
+            ) {
+              const nextMinY = (currentPage + 1) * STRIDE + marginTopPx;
+              const splitResult = calculateParagraphSplit(
+                item.targetEl,
+                sheetRect.top,
+                maxPrintableY,
+                nextMinY,
+                currentPage,
+                editor.view
+              );
+
+              if (splitResult.candidate) {
+                virtualBreaks.push({
+                  pos: splitResult.candidate.pos,
+                  spacerHeight: splitResult.candidate.spacerHeight,
+                  sheetIndex: currentPage,
+                  key: `vbreak-${currentPage}-${splitResult.candidate.pos}`,
+                });
+                const breakY = currentPage * STRIDE + A4_HEIGHT_PX;
+                breaks.push(breakY);
+                currentPage += 1;
+                minPrintableY = currentPage * STRIDE + marginTopPx;
+                maxPrintableY = currentPage * STRIDE + A4_HEIGHT_PX - marginBottomPx;
+                continue;
               }
             }
 
@@ -1468,6 +1643,10 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
         if (lastBreaksStrRef.current !== nextBreaksStr) {
           lastBreaksStrRef.current = nextBreaksStr;
           setA4PageBreaks(breaks);
+        }
+
+        if (enableVirtualPaginationRef.current && editor) {
+          editor.commands.setA4VirtualBreaks(virtualBreaks);
         }
 
         // Construir metadatos reales por cada Hoja A4 física según la posición DOM final de cada bloque
@@ -1717,6 +1896,20 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
       }
     };
   }, [pageFormat, activePageId, editor, a4HeaderFooterConfig]);
+
+  // Toggle de desarrollo para activar/desactivar la paginación virtual experimental
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      (window as any).__veyra_enable_virtual_pagination = (val = true) => {
+        setEnableVirtualPagination(val);
+        enableVirtualPaginationRef.current = val;
+        if (editor) {
+          editor.commands.setA4PaginationEnabled(val);
+        }
+        console.log('[A4-PAGINATION] Modo experimental virtual:', val);
+      };
+    }
+  }, [editor]);
 
   // Handle Title changes: updates Yjs meta map + debounced sync to notes table
   const handleTitleChange = (newTitle: string) => {
@@ -2102,7 +2295,13 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
           onClose={() => setActiveHeaderFooterZone(null)}
         />
       ) : (
-        <EditorToolbar editor={editor} onUploadImage={handleUploadImage} />
+        <EditorToolbar
+          editor={editor}
+          onUploadImage={handleUploadImage}
+          onOpenTemplates={() => setIsTemplatesModalOpen(true)}
+          showFormattingMarks={showFormattingMarks}
+          onToggleFormattingMarks={handleToggleFormattingMarks}
+        />
       )}
 
       {/* Workspace Area: Main Note Canvas + Docked Right Pages Sidebar */}
@@ -2263,6 +2462,7 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
               <div
                 className={cn(
                   'w-full flex-1 flex flex-col',
+                  showFormattingMarks && 'show-formatting-marks',
                   isPaperLight ? 'text-slate-900' : 'text-veyra-text'
                 )}
                 onClick={() => {
@@ -2274,8 +2474,8 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
                 <EditorContent editor={editor} className="flex-1" />
                 <EditorBubbleMenu editor={editor} />
                 <EditorImageBubbleMenu editor={editor} currentUserId={currentUserIdRef.current} />
-                <EditorTableBubbleMenu editor={editor} />
-                <EditorSlashMenu editor={editor} />
+                <EditorTableBubbleMenu editor={editor} onSaveTableAsTemplate={handleOpenSaveTemplate} />
+                <EditorSlashMenu editor={editor} onOpenTemplates={() => setIsTemplatesModalOpen(true)} />
                 <EditorListNumberTooltip editor={editor} />
               </div>
             </div>
@@ -2330,6 +2530,33 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
         pages={exportPdfPages}
         headerFooterConfig={a4HeaderFooterConfig}
         userName={userName}
+      />
+
+      {/* Modal de Catálogo de Plantillas */}
+      <TemplatesModal
+        isOpen={isTemplatesModalOpen}
+        onClose={() => setIsTemplatesModalOpen(false)}
+        onSelectTemplate={handleSelectTemplate}
+        isDocumentEmpty={editor ? editor.isEmpty : true}
+        templates={allTemplates}
+        onOpenSaveModal={handleOpenSaveTemplate}
+        onDeleteCustomTemplate={async (id) => {
+          await deleteCustomTemplate(id);
+          toast.success('Plantilla eliminada');
+        }}
+      />
+
+      {/* Modal para Guardar Plantilla Personalizada */}
+      <SaveTemplateModal
+        isOpen={isSaveTemplateModalOpen}
+        onClose={() => setIsSaveTemplateModalOpen(false)}
+        onSave={async (data) => {
+          await saveCustomTemplate(data);
+          toast.success(`Plantilla "${data.title}" guardada en tu catálogo`);
+        }}
+        defaultContent={templateContentToSave}
+        defaultType={templateTypeToSave}
+        defaultTitle={title || note.title || ''}
       />
     </div>
   );

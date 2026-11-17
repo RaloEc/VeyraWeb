@@ -9,6 +9,51 @@ export type Json =
 export interface Database {
   public: {
     Tables: {
+      note_templates: {
+        Row: {
+          id: string;
+          user_id: string;
+          title: string;
+          description: string | null;
+          category: string;
+          type: string;
+          content: string;
+          icon_name: string | null;
+          created_at: string | null;
+          updated_at: string | null;
+          last_modified_ms: number | null;
+          deleted: number | null;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          title: string;
+          description?: string | null;
+          category?: string;
+          type?: string;
+          content: string;
+          icon_name?: string | null;
+          created_at?: string | null;
+          updated_at?: string | null;
+          last_modified_ms?: number | null;
+          deleted?: number | null;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          title?: string;
+          description?: string | null;
+          category?: string;
+          type?: string;
+          content?: string;
+          icon_name?: string | null;
+          created_at?: string | null;
+          updated_at?: string | null;
+          last_modified_ms?: number | null;
+          deleted?: number | null;
+        };
+        Relationships: [];
+      };
       profiles: {
         Row: {
           id: string;

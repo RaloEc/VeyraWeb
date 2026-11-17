@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import type { Editor } from '@tiptap/react';
 import {
   Heading1,
@@ -17,12 +17,14 @@ import {
   Code2,
   Sparkles,
   Bookmark,
+  LayoutTemplate,
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { YT_REGEX } from '../../lib/tiptap-youtube-node';
 
 export interface EditorSlashMenuProps {
   editor: Editor | null;
+  onOpenTemplates?: () => void;
 }
 
 interface SlashItem {
@@ -300,7 +302,7 @@ const SLASH_ITEMS: SlashItem[] = [
   },
 ];
 
-export const EditorSlashMenu: React.FC<EditorSlashMenuProps> = ({ editor }) => {
+export const EditorSlashMenu: React.FC<EditorSlashMenuProps> = ({ editor, onOpenTemplates }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [coords, setCoords] = useState<{
@@ -313,14 +315,43 @@ export const EditorSlashMenu: React.FC<EditorSlashMenuProps> = ({ editor }) => {
   const [query, setQuery] = useState('');
   const menuRef = useRef<HTMLDivElement>(null);
 
+  const menuItems = useMemo(() => {
+    const list: SlashItem[] = [SLASH_ITEMS[0]];
+    if (onOpenTemplates) {
+      list.push({
+        id: 'templates',
+        title: 'Plantillas y modelos',
+        description: 'Catálogo de tablas predefinidas, carátulas y páginas completas',
+        aliases: [
+          'plantilla',
+          'plantillas',
+          'template',
+          'templates',
+          'modelo',
+          'caratula',
+          'encabezado',
+          'tarea',
+          'bloque',
+        ],
+        icon: <LayoutTemplate className="w-4 h-4 text-accent" />,
+        action: (ed, rng) => {
+          ed.chain().focus().deleteRange(rng).run();
+          onOpenTemplates();
+        },
+      });
+    }
+    list.push(...SLASH_ITEMS.slice(1));
+    return list;
+  }, [onOpenTemplates]);
+
   const normalizedQuery = normalizeSearchText(query);
 
-  const filteredItems = SLASH_ITEMS.filter((item) => {
+  const filteredItems = menuItems.filter((item: SlashItem) => {
     if (!normalizedQuery) return true;
     const matchTitle = normalizeSearchText(item.title).includes(normalizedQuery);
     const matchDesc = normalizeSearchText(item.description).includes(normalizedQuery);
     const matchId = normalizeSearchText(item.id).includes(normalizedQuery);
-    const matchAlias = item.aliases?.some((alias) =>
+    const matchAlias = item.aliases?.some((alias: string) =>
       normalizeSearchText(alias).includes(normalizedQuery)
     );
     return matchTitle || matchDesc || matchId || matchAlias;
@@ -467,7 +498,7 @@ export const EditorSlashMenu: React.FC<EditorSlashMenuProps> = ({ editor }) => {
         Bloques de contenido
       </div>
       <div className="space-y-0.5">
-        {filteredItems.map((item, index) => (
+        {filteredItems.map((item: SlashItem, index: number) => (
           <button
             key={item.id}
             type="button"

@@ -287,6 +287,35 @@ class SyncEngine {
                 }
               }
             }
+          } else if (item.table === 'note_templates') {
+            if (item.op === 'delete') {
+              const res = await supabase
+                .from('note_templates')
+                .update({
+                  deleted: 1,
+                  last_modified_ms: item.last_modified_ms,
+                })
+                .eq('id', item.record_id);
+              error = res.error;
+            } else {
+              const isFullPayload = item.payload && item.payload.id && item.payload.user_id;
+              if (isFullPayload) {
+                const res = await supabase.from('note_templates').upsert(item.payload, { onConflict: 'id' });
+                error = res.error;
+              } else {
+                const updateRes = await supabase.from('note_templates').update(item.payload).eq('id', item.record_id);
+                if (updateRes.error) {
+                  const local = await localDB.note_templates.get(item.record_id);
+                  if (local) {
+                    const full = { ...local, ...item.payload, id: item.record_id };
+                    const res = await supabase.from('note_templates').upsert(full, { onConflict: 'id' });
+                    error = res.error;
+                  } else {
+                    error = updateRes.error;
+                  }
+                }
+              }
+            }
           }
 
           if (error) {
@@ -417,6 +446,28 @@ class SyncEngine {
           const noteModified = Number(note.last_modified_ms || 0);
           if (!local || noteModified >= (Number(local.last_modified_ms) || 0)) {
             await localDB.notes.put(note);
+          }
+        }
+      }
+
+      // 5. Note templates
+      const { data: remoteTemplates, error: tplErr } = await supabase
+        .from('note_templates')
+        .select('*')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false });
+
+      if (!tplErr && remoteTemplates) {
+        const outboxPending = new Set(
+          (await localDB.outbox.where({ table: 'note_templates' }).toArray()).map((o) => o.record_id)
+        );
+
+        for (const tpl of remoteTemplates) {
+          if (outboxPending.has(tpl.id)) continue;
+          const local = await localDB.note_templates.get(tpl.id);
+          const tplModified = Number(tpl.last_modified_ms || 0);
+          if (!local || tplModified >= (Number(local.last_modified_ms) || 0)) {
+            await localDB.note_templates.put(tpl as any);
           }
         }
       }

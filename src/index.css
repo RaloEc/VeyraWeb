@@ -1543,4 +1543,141 @@ figcaption,
   border-top-color: rgba(255, 255, 255, 0.12);
 }
 
+/* Espaciador decorativo de salto de página virtual A4 */
+.a4-virtual-page-break {
+  display: block !important;
+  user-select: none !important;
+  pointer-events: none !important;
+  background: transparent !important;
+  width: 100% !important;
+}
+
+/* ==========================================================================
+   Marcas de formato no imprimibles (Mostrar todo / Pilcrow ¶)
+   ========================================================================== */
+
+.show-formatting-marks .ProseMirror p,
+.show-formatting-marks .ProseMirror h1,
+.show-formatting-marks .ProseMirror h2,
+.show-formatting-marks .ProseMirror h3,
+.show-formatting-marks .ProseMirror blockquote {
+  position: relative;
+}
+
+/* Símbolo de párrafo al final del bloque con contenido */
+.show-formatting-marks .ProseMirror p::after,
+.show-formatting-marks .ProseMirror h1::after,
+.show-formatting-marks .ProseMirror h2::after,
+.show-formatting-marks .ProseMirror h3::after,
+.show-formatting-marks .ProseMirror blockquote::after {
+  content: " ¶";
+  color: #94a3b8;
+  opacity: 0.55;
+  font-weight: 400;
+  font-size: 0.82em;
+  line-height: inherit;
+  pointer-events: none;
+  user-select: none;
+  display: inline;
+  margin-left: 2px;
+  vertical-align: baseline;
+  transition: opacity 150ms ease-in-out;
+}
+
+.dark .show-formatting-marks .ProseMirror p::after,
+.dark .show-formatting-marks .ProseMirror h1::after,
+.dark .show-formatting-marks .ProseMirror h2::after,
+.dark .show-formatting-marks .ProseMirror h3::after,
+.dark .show-formatting-marks .ProseMirror blockquote::after {
+  color: #71717a;
+  opacity: 0.6;
+}
+
+/* Párrafo o encabezado vacío / salto de línea:
+   En ProseMirror, un párrafo vacío contiene <br class="ProseMirror-trailingBreak">.
+   Para que el pilcrow no salte a una segunda línea por debajo del <br>,
+   lo posicionamos absolutamente en la misma línea única del bloque. */
+.show-formatting-marks .ProseMirror p:has(> br:only-child)::after,
+.show-formatting-marks .ProseMirror h1:has(> br:only-child)::after,
+.show-formatting-marks .ProseMirror h2:has(> br:only-child)::after,
+.show-formatting-marks .ProseMirror h3:has(> br:only-child)::after,
+.show-formatting-marks .ProseMirror p:empty::after,
+.show-formatting-marks .ProseMirror h1:empty::after,
+.show-formatting-marks .ProseMirror h2:empty::after,
+.show-formatting-marks .ProseMirror h3:empty::after,
+.show-formatting-marks .ProseMirror p.is-empty::after,
+.show-formatting-marks .ProseMirror h1.is-empty::after,
+.show-formatting-marks .ProseMirror h2.is-empty::after,
+.show-formatting-marks .ProseMirror h3.is-empty::after {
+  content: "¶";
+  position: absolute;
+  left: 2px;
+  top: 0;
+  line-height: inherit;
+  display: inline-block;
+  margin-left: 0;
+  pointer-events: none;
+  user-select: none;
+}
+
+/* Alineaciones para líneas vacías */
+.show-formatting-marks .ProseMirror p[style*="text-align: center"]:has(> br:only-child)::after,
+.show-formatting-marks .ProseMirror p[style*="text-align: center"]:empty::after,
+.show-formatting-marks .ProseMirror p[style*="text-align: center"].is-empty::after {
+  left: 50%;
+  transform: translateX(-50%);
+  right: auto;
+}
+
+.show-formatting-marks .ProseMirror p[style*="text-align: right"]:has(> br:only-child)::after,
+.show-formatting-marks .ProseMirror p[style*="text-align: right"]:empty::after,
+.show-formatting-marks .ProseMirror p[style*="text-align: right"].is-empty::after {
+  right: 2px;
+  left: auto;
+  transform: none;
+}
+
+/* Ocultar placeholder del editor cuando las marcas de formato están visibles */
+.show-formatting-marks .tiptap p.is-editor-empty:first-child::before {
+  content: none !important;
+}
+
+/* Celdas de tabla */
+.show-formatting-marks .ProseMirror .veyra-table td p,
+.show-formatting-marks .ProseMirror .veyra-table th p {
+  position: relative;
+}
+
+.show-formatting-marks .ProseMirror .veyra-table td p::after,
+.show-formatting-marks .ProseMirror .veyra-table th p::after {
+  content: " ¶";
+  color: #94a3b8;
+  opacity: 0.45;
+  font-size: 0.75em;
+  line-height: inherit;
+  display: inline;
+}
+
+.dark .show-formatting-marks .ProseMirror .veyra-table td p::after,
+.dark .show-formatting-marks .ProseMirror .veyra-table th p::after {
+  color: #71717a;
+  opacity: 0.5;
+}
+
+.show-formatting-marks .ProseMirror .veyra-table td p:has(> br:only-child)::after,
+.show-formatting-marks .ProseMirror .veyra-table th p:has(> br:only-child)::after,
+.show-formatting-marks .ProseMirror .veyra-table td p:empty::after,
+.show-formatting-marks .ProseMirror .veyra-table th p:empty::after,
+.show-formatting-marks .ProseMirror .veyra-table td p.is-empty::after,
+.show-formatting-marks .ProseMirror .veyra-table th p.is-empty::after {
+  content: "¶";
+  position: absolute;
+  left: 2px;
+  top: 0;
+  line-height: inherit;
+  display: inline-block;
+  margin-left: 0;
+}
+
+
 
