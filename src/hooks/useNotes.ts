@@ -15,6 +15,11 @@ export function useNotes(userId?: string, initialNoteId?: string | null) {
   const initialSelectionDoneRef = useRef<boolean>(false);
   const initialNoteIdRef = useRef<string | null | undefined>(initialNoteId);
   const deletedNoteIdsRef = useRef<Set<string>>(new Set());
+  const selectedNoteIdRef = useRef<string | null>(selectedNoteId);
+
+  useEffect(() => {
+    selectedNoteIdRef.current = selectedNoteId;
+  }, [selectedNoteId]);
 
   // Sync selectedNoteId if initialNoteId changes externally
   useEffect(() => {
@@ -189,7 +194,9 @@ export function useNotes(userId?: string, initialNoteId?: string | null) {
               setDeletedNotes((prev) => [note, ...prev.filter((n) => n.id !== note.id)]);
             } else {
               setNotes((prev) => {
-                if (prev.some((n) => n.id === note.id)) return prev;
+                if (prev.some((n) => n.id === note.id)) {
+                  return prev.map((n) => (n.id === note.id ? { ...n, ...note } : n));
+                }
                 return [note, ...prev];
               });
             }
@@ -200,7 +207,7 @@ export function useNotes(userId?: string, initialNoteId?: string | null) {
             if (Number(note.deleted) === 1) {
               setNotes((prev) => prev.filter((n) => n.id !== note.id));
               setDeletedNotes((prev) => [note, ...prev.filter((n) => n.id !== note.id)]);
-              if (selectedNoteId === note.id) {
+              if (selectedNoteIdRef.current === note.id) {
                 setNotes((remaining) => {
                   const next = remaining.filter((n) => n.id !== note.id);
                   setSelectedNoteId(next.length > 0 ? next[0].id : null);
@@ -211,7 +218,7 @@ export function useNotes(userId?: string, initialNoteId?: string | null) {
               setNotes((prev) => {
                 const exists = prev.some((n) => n.id === note.id);
                 if (exists) {
-                  return prev.map((n) => (n.id === note.id ? note : n));
+                  return prev.map((n) => (n.id === note.id ? { ...n, ...note } : n));
                 }
                 return [note, ...prev];
               });
@@ -268,7 +275,7 @@ export function useNotes(userId?: string, initialNoteId?: string | null) {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [userId, selectedNoteId]);
+  }, [userId]);
 
   // Create folder
   const createFolder = async (

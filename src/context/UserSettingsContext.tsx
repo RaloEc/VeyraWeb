@@ -24,6 +24,7 @@ export interface GlobalUserSettings {
   // Apariencia
   accentTheme: AccentTheme;
   themeMode: 'dark' | 'light' | 'system';
+  amoledEnabled: boolean;
   notePaperMode: 'auto' | 'light';
   editorFontFamily: EditorFontFamily;
 
@@ -49,6 +50,7 @@ export const DEFAULT_USER_SETTINGS: GlobalUserSettings = {
 
   accentTheme: 'blue',
   themeMode: 'dark',
+  amoledEnabled: false,
   notePaperMode: 'auto',
   editorFontFamily: 'inter',
 
@@ -84,7 +86,7 @@ const UserSettingsContext = createContext<UserSettingsContextType | null>(null);
 const STORAGE_KEY = 'veyra_user_settings_cache_v1';
 
 export const UserSettingsProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { setAccentTheme, setMode, setNotePaperMode } = useTheme();
+  const { setAccentTheme, setMode, setAmoledEnabled, setNotePaperMode } = useTheme();
 
   // 1. Inicializar desde caché local instantánea (sin delay)
   const [settings, setSettings] = useState<GlobalUserSettings>(() => {
@@ -161,6 +163,8 @@ export const UserSettingsProvider: React.FC<{ children: React.ReactNode }> = ({ 
           .maybeSingle();
 
         setSettings((prev) => {
+          const resolvedAmoled = typeof remoteSettings.amoledEnabled === 'boolean' ? remoteSettings.amoledEnabled : prev.amoledEnabled;
+          setAmoledEnabled(Boolean(resolvedAmoled));
           const merged: GlobalUserSettings = {
             ...prev,
             ...remoteSettings,
@@ -168,6 +172,7 @@ export const UserSettingsProvider: React.FC<{ children: React.ReactNode }> = ({ 
             defaultControlLevel: (profileRow?.default_control_level as ControlLevel) || remoteSettings.defaultControlLevel || prev.defaultControlLevel,
             accentTheme: remoteSettings.accentTheme || prev.accentTheme,
             themeMode: remoteSettings.theme || prev.themeMode,
+            amoledEnabled: Boolean(resolvedAmoled),
           };
           return merged;
         });
@@ -181,6 +186,9 @@ export const UserSettingsProvider: React.FC<{ children: React.ReactNode }> = ({ 
           })
           .on('broadcast', { event: 'SETTINGS_CHANGED' }, ({ payload }) => {
             if (payload?.settings) {
+              if (typeof payload.settings.amoledEnabled === 'boolean') {
+                setAmoledEnabled(payload.settings.amoledEnabled);
+              }
               setSettings((s) => ({ ...s, ...payload.settings }));
             }
           })
@@ -226,6 +234,7 @@ export const UserSettingsProvider: React.FC<{ children: React.ReactNode }> = ({ 
         defaultControlLevel: newSettings.defaultControlLevel,
         accentTheme: newSettings.accentTheme,
         theme: newSettings.themeMode,
+        amoledEnabled: newSettings.amoledEnabled,
         soundSettings: newSettings.soundSettings,
         soundAlertsEnabled: newSettings.soundAlertsEnabled,
         defaultLeadMinutes: newSettings.defaultLeadMinutes,
@@ -305,13 +314,15 @@ export const UserSettingsProvider: React.FC<{ children: React.ReactNode }> = ({ 
         } else {
           setMode(value as 'dark' | 'light');
         }
+      } else if (key === 'amoledEnabled') {
+        setAmoledEnabled(Boolean(value));
       } else if (key === 'notePaperMode') {
         setNotePaperMode(value as 'auto' | 'light');
       }
 
       await saveSettingsToCloud(next);
     },
-    [settings, saveSettingsToCloud, setAccentTheme, setMode, setNotePaperMode]
+    [settings, saveSettingsToCloud, setAccentTheme, setMode, setAmoledEnabled, setNotePaperMode]
   );
 
   const updateSettings = useCallback(
@@ -330,23 +341,27 @@ export const UserSettingsProvider: React.FC<{ children: React.ReactNode }> = ({ 
           setMode(partial.themeMode);
         }
       }
+      if (typeof partial.amoledEnabled === 'boolean') {
+        setAmoledEnabled(partial.amoledEnabled);
+      }
       if (partial.notePaperMode) {
         setNotePaperMode(partial.notePaperMode);
       }
 
       await saveSettingsToCloud(next);
     },
-    [settings, saveSettingsToCloud, setAccentTheme, setMode, setNotePaperMode]
+    [settings, saveSettingsToCloud, setAccentTheme, setMode, setAmoledEnabled, setNotePaperMode]
   );
 
   const resetToDefaults = useCallback(async () => {
     setSettings(DEFAULT_USER_SETTINGS);
     setAccentTheme(DEFAULT_USER_SETTINGS.accentTheme);
     setMode(DEFAULT_USER_SETTINGS.themeMode === 'system' ? 'dark' : DEFAULT_USER_SETTINGS.themeMode);
+    setAmoledEnabled(DEFAULT_USER_SETTINGS.amoledEnabled);
     setNotePaperMode(DEFAULT_USER_SETTINGS.notePaperMode);
     await saveSettingsToCloud(DEFAULT_USER_SETTINGS);
     toast.success('Ajustes restablecidos por defecto');
-  }, [saveSettingsToCloud, setAccentTheme, setMode, setNotePaperMode]);
+  }, [saveSettingsToCloud, setAccentTheme, setMode, setAmoledEnabled, setNotePaperMode]);
 
   const value = useMemo(
     () => ({

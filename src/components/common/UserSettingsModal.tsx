@@ -397,6 +397,35 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
                     <span>Sistema</span>
                   </button>
                 </div>
+
+                {/* Modo Negro AMOLED (Solo en tema oscuro) */}
+                {settings.themeMode !== 'light' && (
+                  <div className="mt-2.5 flex items-center justify-between p-3 rounded-lg bg-veyra-card/60 border border-veyra-border">
+                    <div>
+                      <span className="font-semibold text-xs text-veyra-text block">Modo Negro AMOLED</span>
+                      <span className="text-[10px] text-veyra-muted">
+                        Usa negro puro (#000000) en la interfaz y en el fondo de las notas en formato infinito
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={Boolean(settings.amoledEnabled)}
+                      onClick={() => updateSetting('amoledEnabled', !settings.amoledEnabled)}
+                      className={cn(
+                        'w-10 h-5.5 rounded-full transition-colors relative shrink-0 cursor-pointer',
+                        settings.amoledEnabled ? 'bg-accent' : 'bg-zinc-700'
+                      )}
+                    >
+                      <span
+                        className={cn(
+                          'w-4 h-4 rounded-full bg-white absolute top-0.75 transition-transform',
+                          settings.amoledEnabled ? 'translate-x-5' : 'translate-x-1'
+                        )}
+                      />
+                    </button>
+                  </div>
+                )}
               </div>
 
               {/* Color de Acento */}

@@ -548,8 +548,28 @@ export async function loadYjsNote(noteId: string): Promise<YjsLoadedNote> {
     }
   }
 
-  // 5. Determine pageOrder & active page ID
-  let allPageIds = pageOrder.toArray();
+  // 5. Determine pageOrder & active page ID (deduplicating if corrupted)
+  const rawPageIds = pageOrder.toArray();
+  const uniquePageIds: string[] = [];
+  const seenPageIds = new Set<string>();
+  for (const pid of rawPageIds) {
+    if (!seenPageIds.has(pid)) {
+      seenPageIds.add(pid);
+      uniquePageIds.push(pid);
+    }
+  }
+
+  if (uniquePageIds.length !== rawPageIds.length) {
+    console.warn(`🧹 [yjs-loader] pageOrder contenía duplicados (${rawPageIds.length} -> ${uniquePageIds.length}). Limpiando...`);
+    ydoc.transact(() => {
+      while (pageOrder.length > 0) {
+        pageOrder.delete(0, 1);
+      }
+      pageOrder.insert(0, uniquePageIds);
+    }, 'dedup-page-order');
+  }
+
+  let allPageIds = uniquePageIds;
   if (allPageIds.length === 0) {
     const initialId = crypto.randomUUID();
     pageOrder.push([initialId]);

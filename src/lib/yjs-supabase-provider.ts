@@ -343,36 +343,8 @@ export class YjsSupabaseProvider {
     }
 
     const base64Update = uint8ArrayToBase64(update);
-    const hashHex = await computeSha256(update);
 
-    console.log(
-      `📤 [Yjs Local Update] Delta local generado (${update.byteLength} bytes). Modo: ${this.options.syncMode || 'yjs'}`
-    );
-
-    // 1. Persist delta via authoritative Supabase RPC only for notes configured in 'yjs' mode
-    if (this.options.syncMode !== 'rest') {
-      try {
-        const { data, error } = await supabase.rpc('append_note_yjs_update', {
-          p_note_id: this.noteId,
-          p_client_id: this.clientId,
-          p_update_data: base64Update,
-          p_update_hash: hashHex,
-        });
-
-        if (error) {
-          console.error('❌ [Yjs RPC Error] append_note_yjs_update falló:', error);
-        } else {
-          console.log('✅ [Yjs RPC Success] append_note_yjs_update guardado:', data);
-          if (typeof data === 'number' && data > this.lastProcessedReadId) {
-            this.lastProcessedReadId = data;
-          }
-        }
-      } catch (err) {
-        console.error('❌ [Yjs RPC Exception]:', err);
-      }
-    }
-
-    // 2. Broadcast via WebSocket channel note_yjs_${noteId} with YJS_UPDATE event
+    // 1. Difundir vía WebSocket INMEDIATAMENTE (0ms latencia, perfectamente en sincronía con Awareness)
     if (this.channel && this.status === 'connected') {
       this.channel.send({
         type: 'broadcast',
@@ -383,7 +355,32 @@ export class YjsSupabaseProvider {
           timestamp: Date.now(),
         },
       });
-      console.log(`⚡ [Yjs Broadcast] Delta emitido vía WebSocket a note_yjs_${this.noteId}`);
+      console.log(`⚡ [Yjs Broadcast] Delta emitido vía WebSocket a note_yjs_${this.noteId} (${update.byteLength} bytes)`);
+    }
+
+    // 2. Persistir delta en PostgreSQL vía RPC en segundo plano sin frenar el broadcast en tiempo real
+    if (this.options.syncMode !== 'rest') {
+      (async () => {
+        try {
+          const hashHex = await computeSha256(update);
+          const { data, error } = await supabase.rpc('append_note_yjs_update', {
+            p_note_id: this.noteId,
+            p_client_id: this.clientId,
+            p_update_data: base64Update,
+            p_update_hash: hashHex,
+          });
+
+          if (error) {
+            console.error('❌ [Yjs RPC Error] append_note_yjs_update falló:', error);
+          } else {
+            if (typeof data === 'number' && data > this.lastProcessedReadId) {
+              this.lastProcessedReadId = data;
+            }
+          }
+        } catch (err) {
+          console.error('❌ [Yjs RPC Exception]:', err);
+        }
+      })();
     }
   };
 

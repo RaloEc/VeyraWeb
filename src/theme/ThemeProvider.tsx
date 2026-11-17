@@ -11,6 +11,9 @@ export interface ThemeContextType {
   accentTheme: AccentTheme;
   setAccentTheme: (theme: AccentTheme) => Promise<void>;
   isDark: boolean;
+  amoledEnabled: boolean;
+  setAmoledEnabled: (enabled: boolean) => void;
+  isAmoled: boolean;
   palette: AccentPalette;
   notePaperMode: NotePaperMode;
   setNotePaperMode: (mode: NotePaperMode) => void;
@@ -25,6 +28,19 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     if (typeof window === 'undefined') return 'dark';
     return (localStorage.getItem('veyra_web_theme_mode') as ThemeMode) || 'dark';
   });
+
+  // 1.0.1 Modo AMOLED (Negro puro #000000 en modo oscuro)
+  const [amoledEnabled, setAmoledEnabledState] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    return localStorage.getItem('veyra_web_amoled_enabled') === 'true';
+  });
+
+  const setAmoledEnabled = (enabled: boolean) => {
+    setAmoledEnabledState(enabled);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('veyra_web_amoled_enabled', String(Boolean(enabled)));
+    }
+  };
 
   // 1.1 Apariencia de la hoja en Modo Oscuro (auto = oscura como el tema, light = hoja blanca)
   const [notePaperMode, setNotePaperModeState] = useState<NotePaperMode>(() => {
@@ -63,6 +79,10 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
       const cloudAccent = user.user_metadata?.settings?.accentTheme || user.user_metadata?.accentTheme;
       if (cloudAccent && ACCENT_PALETTES[cloudAccent as AccentTheme]) {
         setAccentThemeState(cloudAccent as AccentTheme);
+      }
+      if (typeof user.user_metadata?.settings?.amoledEnabled === 'boolean' && localStorage.getItem('veyra_web_amoled_enabled') === null) {
+        setAmoledEnabledState(user.user_metadata.settings.amoledEnabled);
+        localStorage.setItem('veyra_web_amoled_enabled', String(user.user_metadata.settings.amoledEnabled));
       }
 
       // Canal WebSocket compartido con el móvil (collab_sync_${userId})
@@ -114,6 +134,8 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     ? (typeof window !== 'undefined' && window.matchMedia('(prefers-color-scheme: dark)').matches)
     : mode === 'dark';
 
+  const isAmoled = Boolean(isDark && amoledEnabled);
+
   const palette = (ACCENT_PALETTES[accentTheme] || ACCENT_PALETTES.blue)[isDark ? 'dark' : 'light'];
 
   // Inyectar variables CSS en el DOM
@@ -126,10 +148,15 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
 
     if (isDark) {
       root.classList.add('dark');
+      if (isAmoled) {
+        root.classList.add('amoled');
+      } else {
+        root.classList.remove('amoled');
+      }
       root.style.colorScheme = 'dark';
-      root.style.setProperty('--bg-main', '#0B0B0C');
-      root.style.setProperty('--bg-surface', '#111113');
-      root.style.setProperty('--bg-elevated', '#18181B');
+      root.style.setProperty('--bg-main', isAmoled ? '#000000' : '#0B0B0C');
+      root.style.setProperty('--bg-surface', isAmoled ? '#0A0A0A' : '#111113');
+      root.style.setProperty('--bg-elevated', isAmoled ? '#141414' : '#18181B');
       root.style.setProperty('--bg-hover', 'rgba(255, 255, 255, 0.04)');
       root.style.setProperty('--border-main', 'rgba(255, 255, 255, 0.06)');
       root.style.setProperty('--border-subtle', 'rgba(255, 255, 255, 0.03)');
@@ -137,7 +164,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
       root.style.setProperty('--text-muted', '#8A8A93');
       root.style.setProperty('--text-subtle', '#52525B');
     } else {
-      root.classList.remove('dark');
+      root.classList.remove('dark', 'amoled');
       root.style.colorScheme = 'light';
       root.style.setProperty('--bg-main', '#FAFAFA');
       root.style.setProperty('--bg-surface', '#FFFFFF');
@@ -149,7 +176,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
       root.style.setProperty('--text-muted', '#71717A');
       root.style.setProperty('--text-subtle', '#A1A1AA');
     }
-  }, [accentTheme, isDark, palette]);
+  }, [accentTheme, isDark, isAmoled, palette]);
 
   const isPaperLight = isDark && notePaperMode === 'light';
 
@@ -161,6 +188,9 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
         accentTheme,
         setAccentTheme,
         isDark,
+        amoledEnabled,
+        setAmoledEnabled,
+        isAmoled,
         palette,
         notePaperMode,
         setNotePaperMode,

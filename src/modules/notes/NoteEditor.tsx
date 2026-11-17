@@ -176,7 +176,7 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
     }
     return initialActivePageId;
   });
-  const [pages, setPages] = useState<string[]>(initialPages);
+  const [pages, setPages] = useState<string[]>(() => Array.from(new Set(initialPages)));
   const [title, setTitle] = useState(initialMetaTitle || note.title || '');
   const [collabUsers, setCollabUsers] = useState<CollabUser[]>([]);
   const [syncStatus, setSyncStatus] = useState<'connecting' | 'connected' | 'disconnected'>('connecting');
@@ -361,7 +361,35 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
   const triggerAutoSaveRef = useRef<() => void>(() => { });
 
   const displayName = userName || userEmail.split('@')[0] || 'Usuario';
-  const { palette, isPaperLight } = useTheme();
+  const { palette, isPaperLight, isDark, isAmoled } = useTheme();
+
+  // Si loadYjsNote obtuvo un título más reciente (desde Supabase o Y.Doc meta) que aún no estaba en el listado de notas (Explorador), sincronizarlo de inmediato
+  useEffect(() => {
+    const resolvedTitle = (initialMetaTitle || '').trim();
+    if (
+      resolvedTitle &&
+      resolvedTitle !== 'Nota sin título' &&
+      (note.title || '').trim() !== resolvedTitle
+    ) {
+      onSaveNoteRef.current(note.id, { title: resolvedTitle });
+    }
+  }, [note.id, initialMetaTitle]);
+
+  // Si llega una actualización por Realtime (postgres_changes) del título de la nota desde móvil, reflejarla en el documento abierto
+  const prevNoteTitlePropRef = useRef<string | undefined>(note.title);
+  useEffect(() => {
+    if (prevNoteTitlePropRef.current === note.title) return;
+    prevNoteTitlePropRef.current = note.title;
+    const incomingTitle = (note.title || '').trim();
+    if (
+      incomingTitle &&
+      incomingTitle !== 'Nota sin título' &&
+      incomingTitle !== titleRef.current
+    ) {
+      setTitle(incomingTitle);
+      titleRef.current = incomingTitle;
+    }
+  }, [note.title]);
 
   // Keep refs up to date
   useEffect(() => {
@@ -672,17 +700,29 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
     const updatePages = () => {
       const current = po.toArray();
       if (current.length > 0) {
-        setPages(current);
-        pagesRef.current = current;
+        const unique = Array.from(new Set(current));
+        if (unique.length !== current.length) {
+          console.warn(`🧹 [NoteEditor] Corrigiendo duplicados en pageOrder (${current.length} -> ${unique.length})`);
+          try {
+            ydoc.transact(() => {
+              while (po.length > 0) {
+                po.delete(0, 1);
+              }
+              po.insert(0, unique);
+            }, 'dedup-page-order');
+          } catch (_) {}
+        }
+        setPages(unique);
+        pagesRef.current = unique;
         triggerAutoSaveRef.current?.();
         if (typeof window !== 'undefined') {
           const sp = new URLSearchParams(window.location.search);
           const pageParam = sp.get('page');
           if (pageParam) {
             const idx = parseInt(pageParam, 10) - 1;
-            if (idx >= 0 && idx < current.length) {
-              setActivePageId(current[idx]);
-              activePageIdRef.current = current[idx];
+            if (idx >= 0 && idx < unique.length) {
+              setActivePageId(unique[idx]);
+              activePageIdRef.current = unique[idx];
             }
           }
         }
@@ -721,6 +761,9 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
       if (remoteTitle !== undefined && remoteTitle !== titleRef.current) {
         setTitle(remoteTitle);
         titleRef.current = remoteTitle;
+        if (remoteTitle.trim() && (noteRef.current.title || '').trim() !== remoteTitle.trim()) {
+          onSaveNoteRef.current(noteRef.current.id, { title: remoteTitle });
+        }
       }
       const remoteFormat = metaMap.get('pageFormat') as 'infinite' | 'a4' | undefined;
       if (
@@ -2063,11 +2106,19 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
       )}
 
       {/* Workspace Area: Main Note Canvas + Docked Right Pages Sidebar */}
-      <div className="flex-1 flex overflow-hidden relative bg-[#e4e7ec] dark:bg-black">
+      <div
+        className={cn(
+          'flex-1 flex overflow-hidden relative',
+          isDark && isAmoled ? 'bg-black' : 'bg-[#e4e7ec] dark:bg-[#0B0B0C]'
+        )}
+      >
         {/* Visual Resting Canvas Margins (Lienzo exterior: más oscuro que el documento) */}
         <div
           ref={scrollContainerRef}
-          className="flex-1 overflow-y-auto px-4 sm:px-8 py-6 sm:py-8 transition-all duration-300 bg-[#e4e7ec] dark:bg-[#030304]"
+          className={cn(
+            'flex-1 overflow-y-auto px-4 sm:px-8 py-6 sm:py-8 transition-all duration-300',
+            isDark && isAmoled ? 'bg-black' : 'bg-[#e4e7ec] dark:bg-[#0B0B0C]'
+          )}
           onClick={(e) => {
             // Clicking anywhere in the outside margins focuses the editor at the end
             if (e.target === e.currentTarget && editor) {
@@ -2078,7 +2129,7 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
             }
           }}
         >
-          {/* Note Document Sheet (Documento central: gris carbón oscuro y sobrio / Hoja A4) */}
+          {/* Note Document Sheet (Documento central: gris carbón oscuro y sobrio / negro AMOLED si activo / Hoja A4) */}
           <div
             ref={docSheetRef}
             data-sheet-theme={isPaperLight ? 'light' : undefined}
@@ -2096,7 +2147,9 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
                   'max-w-[760px] rounded-2xl p-6 sm:p-12 shadow-2xl min-h-[calc(100vh-140px)]',
                   isPaperLight
                     ? 'bg-white border border-slate-300/80 shadow-2xl'
-                    : 'bg-white dark:bg-[#161619] border border-slate-300/80 dark:border-white/8 shadow-2xl'
+                    : isDark && isAmoled
+                      ? 'bg-black border border-white/12 shadow-2xl'
+                      : 'bg-white dark:bg-[#161619] border border-slate-300/80 dark:border-white/8 shadow-2xl'
                 )
             )}
           >

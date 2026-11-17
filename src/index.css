@@ -695,8 +695,19 @@ html.dark .sheet-light-mode .tiptap h5,
 html.dark .sheet-light-mode .tiptap h6,
 html.dark .sheet-light-mode .tiptap li,
 html.dark .sheet-light-mode .tiptap td,
-html.dark .sheet-light-mode .tiptap th {
+html.dark .sheet-light-mode .tiptap th,
+html.dark .sheet-light-mode .tiptap strong,
+html.dark .sheet-light-mode .tiptap b,
+html.dark .sheet-light-mode .tiptap em,
+html.dark .sheet-light-mode .tiptap i {
   color: #18181B !important;
+}
+
+html.dark .sheet-light-mode .tiptap [style*="color:"] strong,
+html.dark .sheet-light-mode .tiptap [style*="color:"] b,
+html.dark .sheet-light-mode .tiptap [style*="color:"] em,
+html.dark .sheet-light-mode .tiptap [style*="color:"] i {
+  color: inherit !important;
 }
 
 /* Evitar que texto negro o carbón se convierta en blanco dentro de la hoja clara */
@@ -924,7 +935,8 @@ html.dark .sheet-light-mode [data-bookmark-card] .veyra-bookmark-domain {
   border-radius: 4px;
   white-space: nowrap;
   pointer-events: none;
-  transition: opacity 0.2s ease-in-out;
+  opacity: 1;
+  transition: none;
 }
 
 /* Selección de texto hecha por el otro dispositivo */
