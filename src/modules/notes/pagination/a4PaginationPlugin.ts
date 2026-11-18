@@ -15,7 +15,8 @@ function createVirtualBreakDOM(spec: A4VirtualBreakWidgetSpec): HTMLElement {
   spacer.setAttribute('contenteditable', 'false');
   spacer.setAttribute('data-sheet-index', String(spec.sheetIndex + 1));
   spacer.setAttribute('data-spacer-height', `${spec.spacerHeight}px`);
-  spacer.style.display = 'block';
+  spacer.style.display = 'inline-block';
+  spacer.style.verticalAlign = 'top';
   spacer.style.height = `${spec.spacerHeight}px`;
   spacer.style.width = '100%';
   spacer.style.pointerEvents = 'none';
@@ -47,7 +48,7 @@ function buildDecorationSet(
           b.pos,
           () => createVirtualBreakDOM(b),
           {
-            side: 1,
+            side: -1,
             key: `a4-vbreak-${b.sheetIndex}-${b.pos}`,
             marks: [],
           }
@@ -64,22 +65,28 @@ export interface CreateA4PaginationPluginOptions {
 }
 
 /**
+ * Obtiene los saltos virtuales vivos actualmente mapeados y aplicados en la vista del editor.
+ */
+export function getLiveVirtualBreaks(state: EditorState): A4VirtualBreakWidgetSpec[] {
+  const pluginState = a4PaginationPluginKey.getState(state);
+  return pluginState?.breaks ?? [];
+}
+
+/**
  * Plugin ProseMirror para paginación A4 virtual.
  * Gestiona decoraciones puramente efímeras en la capa de vista sin alterar Yjs ni el documento persistente.
  */
 export function createA4PaginationPlugin(options: CreateA4PaginationPluginOptions = {}) {
-  let decorationSet = DecorationSet.empty;
-
   return new Plugin<A4PaginationPluginState>({
     key: a4PaginationPluginKey,
 
     state: {
       init(): A4PaginationPluginState {
         const enabled = options.enabled ?? false;
-        decorationSet = DecorationSet.empty;
         return {
           breaks: [],
           enabled,
+          decorations: DecorationSet.empty,
         };
       },
 
@@ -93,16 +100,30 @@ export function createA4PaginationPlugin(options: CreateA4PaginationPluginOption
             ? meta.breaks
             : prevState.breaks;
 
-          decorationSet = buildDecorationSet(newState.doc, nextBreaks, nextEnabled);
+          const nextDecorations = buildDecorationSet(newState.doc, nextBreaks, nextEnabled);
           return {
             breaks: nextBreaks,
             enabled: nextEnabled,
+            decorations: nextDecorations,
           };
         }
 
-        // Si el documento cambió por edición, mapear las posiciones de los saltos existentes
-        if (tr.docChanged && prevState.enabled && decorationSet !== DecorationSet.empty) {
-          decorationSet = decorationSet.map(tr.mapping, newState.doc);
+        // Si el documento cambió por edición, mapear las posiciones de los saltos y decoraciones
+        if (tr.docChanged && prevState.enabled) {
+          const mappedDecorations = prevState.decorations !== DecorationSet.empty
+            ? prevState.decorations.map(tr.mapping, newState.doc)
+            : DecorationSet.empty;
+
+          const mappedBreaks = prevState.breaks.map((b) => ({
+            ...b,
+            pos: tr.mapping.map(b.pos, -1),
+          }));
+
+          return {
+            ...prevState,
+            breaks: mappedBreaks,
+            decorations: mappedDecorations,
+          };
         }
 
         return prevState;
@@ -115,7 +136,7 @@ export function createA4PaginationPlugin(options: CreateA4PaginationPluginOption
         if (!pluginState || !pluginState.enabled) {
           return DecorationSet.empty;
         }
-        return decorationSet;
+        return pluginState.decorations;
       },
 
       // Interceptor de teclado para navegación fluida a través del salto virtual
@@ -132,25 +153,41 @@ export function createA4PaginationPlugin(options: CreateA4PaginationPluginOption
 
         const head = selection.head;
 
-        // Flecha Abajo en la frontera del salto
-        if (event.key === 'ArrowDown') {
-          for (const b of pluginState.breaks) {
-            if (head === b.pos) {
-              const nextPos = Math.min(view.state.doc.content.size - 1, b.pos + 1);
-              view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, nextPos)));
-              return true;
-            }
+        for (const b of pluginState.breaks) {
+          if (Math.abs(head - b.pos) > 4) {
+            continue;
           }
-        }
+          const from = Math.min(head, b.pos);
+          const to = Math.max(head, b.pos);
+          const textBetween = view.state.doc.textBetween(from, to);
+          const isOnlyWhitespace = /^\s*$/.test(textBetween);
 
-        // Flecha Arriba en la frontera del salto
-        if (event.key === 'ArrowUp') {
-          for (const b of pluginState.breaks) {
-            if (head === b.pos + 1 || head === b.pos) {
-              const prevPos = Math.max(1, b.pos - 1);
-              view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, prevPos)));
-              return true;
-            }
+          // Flecha Abajo desde el final de la hoja anterior
+          if (event.key === 'ArrowDown' && head < b.pos && isOnlyWhitespace) {
+            const nextPos = Math.min(view.state.doc.content.size - 1, b.pos);
+            view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, nextPos)));
+            return true;
+          }
+
+          // Flecha Arriba desde el inicio de la hoja siguiente
+          if (event.key === 'ArrowUp' && head >= b.pos && isOnlyWhitespace) {
+            const prevPos = Math.max(1, b.pos - 1);
+            view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, prevPos)));
+            return true;
+          }
+
+          // Flecha Derecha desde el final de la hoja anterior
+          if (event.key === 'ArrowRight' && head < b.pos && isOnlyWhitespace) {
+            const nextPos = Math.min(view.state.doc.content.size - 1, b.pos);
+            view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, nextPos)));
+            return true;
+          }
+
+          // Flecha Izquierda desde el inicio de la hoja siguiente
+          if (event.key === 'ArrowLeft' && head >= b.pos && isOnlyWhitespace) {
+            const prevPos = Math.max(1, b.pos - 1);
+            view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, prevPos)));
+            return true;
           }
         }
 

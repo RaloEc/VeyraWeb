@@ -1,5 +1,5 @@
 import type { EditorView } from '@tiptap/pm/view';
-import type { MeasuredVisualLine, ParagraphMeasurementResult } from './types';
+import type { MeasuredVisualLine, ParagraphMeasurementResult, ParagraphSplitCandidate } from './types';
 
 /**
  * Recopila todos los nodos de texto descendientes de un elemento en orden de documento.
@@ -131,8 +131,19 @@ function buildLineFromWords(
 
 /**
  * Evalúa si un párrafo que desborda la hoja actual puede dividirse limpiamente entre líneas.
- * Aplica control de viudas y huérfanas (mínimo 2 líneas arriba y 2 líneas abajo).
+ * Soporta división a lo largo de múltiples hojas (Hojas 1 -> 2 -> 3...) preservando márgenes A4
+ * y aplicando control de viudas y huérfanas (mínimo 2 líneas arriba y 2 líneas abajo por salto).
  */
+export function calculateParagraphSplit(
+  paragraphEl: HTMLElement,
+  sheetTop: number,
+  stride: number,
+  marginTopPx: number,
+  marginBottomPx: number,
+  startSheetIndex: number,
+  view: EditorView,
+  initialSpacerOffset?: number
+): ParagraphMeasurementResult;
 export function calculateParagraphSplit(
   paragraphEl: HTMLElement,
   sheetTop: number,
@@ -140,87 +151,176 @@ export function calculateParagraphSplit(
   minNextPrintableY: number,
   sheetIndex: number,
   view: EditorView
+): ParagraphMeasurementResult;
+export function calculateParagraphSplit(
+  paragraphEl: HTMLElement,
+  sheetTop: number,
+  strideOrMaxY: number,
+  marginTopOrNextMinY: number,
+  marginBottomOrSheetIndex: number,
+  startSheetIndexOrView: number | EditorView,
+  maybeView?: EditorView,
+  maybeSpacerOffset = 0
 ): ParagraphMeasurementResult {
-  const pRect = paragraphEl.getBoundingClientRect();
-  const pTop = pRect.top - sheetTop;
-  const pBottom = pRect.bottom - sheetTop;
+  let stride: number;
+  let marginTopPx: number;
+  let marginBottomPx: number;
+  let startSheetIndex: number;
+  let view: EditorView;
+  let initialSpacerOffset: number;
 
-  // 1. Si el párrafo cabe completo en el área imprimible, no requiere división
-  if (pBottom <= maxPrintableY) {
-    return { candidate: null, shouldPushWholeBlock: false, totalLines: 0 };
+  if (typeof startSheetIndexOrView === 'object') {
+    // Compatibilidad con firma anterior: (paragraphEl, sheetTop, maxPrintableY, minNextPrintableY, sheetIndex, view)
+    const A4_HEIGHT_PX = 1123;
+    const GAP_PX = 40;
+    stride = A4_HEIGHT_PX + GAP_PX;
+    marginTopPx = 36;
+    marginBottomPx = 36;
+    startSheetIndex = marginBottomOrSheetIndex;
+    view = startSheetIndexOrView;
+    initialSpacerOffset = 0;
+  } else {
+    stride = strideOrMaxY;
+    marginTopPx = marginTopOrNextMinY;
+    marginBottomPx = marginBottomOrSheetIndex;
+    startSheetIndex = startSheetIndexOrView;
+    view = maybeView!;
+    initialSpacerOffset = maybeSpacerOffset;
+  }
+
+  const A4_HEIGHT_PX = 1123;
+  const pRect = paragraphEl.getBoundingClientRect();
+  const pTop = pRect.top - sheetTop + initialSpacerOffset;
+  const pBottom = pRect.bottom - sheetTop + initialSpacerOffset;
+
+  let currSheet = startSheetIndex;
+  let currMaxPrintableY = currSheet * stride + A4_HEIGHT_PX - marginBottomPx;
+
+  // 1. Si el párrafo cabe completo en el área imprimible de la hoja actual, no requiere división
+  if (pBottom <= currMaxPrintableY) {
+    return { candidate: null, candidates: [], shouldPushWholeBlock: false, totalLines: 0 };
   }
 
   // 2. Si el párrafo empieza por debajo del límite de la hoja actual, pertenece a la siguiente
-  if (pTop >= maxPrintableY) {
-    return { candidate: null, shouldPushWholeBlock: true, totalLines: 0 };
+  if (pTop >= currMaxPrintableY) {
+    return { candidate: null, candidates: [], shouldPushWholeBlock: true, totalLines: 0 };
   }
 
   // 3. Medir líneas visuales
   const lines = measureParagraphVisualLines(paragraphEl, sheetTop);
   if (lines.length <= 1) {
     // Si tiene una sola línea o no se pudo medir, no puede dividirse
-    return { candidate: null, shouldPushWholeBlock: true, totalLines: lines.length };
+    return { candidate: null, candidates: [], shouldPushWholeBlock: true, totalLines: lines.length };
   }
 
-  // 4. Identificar la última línea que cabe en maxPrintableY
-  let lastFittingIdx = -1;
-  for (let i = 0; i < lines.length; i++) {
-    if (lines[i].bottom <= maxPrintableY) {
-      lastFittingIdx = i;
-    } else {
+  const candidates: ParagraphSplitCandidate[] = [];
+  let currentLineIdx = 0;
+  let cumulativeSpacer = initialSpacerOffset;
+
+  while (currentLineIdx < lines.length) {
+    currMaxPrintableY = currSheet * stride + A4_HEIGHT_PX - marginBottomPx;
+    const nextMinPrintableY = (currSheet + 1) * stride + marginTopPx;
+
+    // Verificar si las líneas restantes caben en la hoja actual
+    const lastLineRenderedBottom = lines[lines.length - 1].bottom + cumulativeSpacer;
+    if (lastLineRenderedBottom <= currMaxPrintableY) {
       break;
     }
-  }
 
-  // 5. Control de huérfanas: si no cabe al menos 2 líneas, empujar el bloque entero
-  if (lastFittingIdx < 1) {
-    return { candidate: null, shouldPushWholeBlock: true, totalLines: lines.length };
-  }
-
-  // 6. Control de viudas: si en la siguiente hoja solo quedaría 1 línea aislada,
-  // retroceder el corte una línea para enviar al menos 2 líneas a la siguiente hoja
-  const linesOnNextSheet = lines.length - (lastFittingIdx + 1);
-  if (linesOnNextSheet === 1) {
-    if (lastFittingIdx > 1) {
-      lastFittingIdx -= 1;
-    } else {
-      // Si no podemos ceder una línea sin dejar una huérfana en la hoja actual, empujar el bloque entero
-      return { candidate: null, shouldPushWholeBlock: true, totalLines: lines.length };
+    // Identificar la última línea que cabe en currMaxPrintableY
+    let lastFittingIdx = -1;
+    for (let i = currentLineIdx; i < lines.length; i++) {
+      const renderedBottom = lines[i].bottom + cumulativeSpacer;
+      if (renderedBottom <= currMaxPrintableY) {
+        lastFittingIdx = i;
+      } else {
+        break;
+      }
     }
-  }
 
-  const splitLine = lines[lastFittingIdx];
-  const lastNode = splitLine.lastNode;
-  let targetOffset = splitLine.lastOffset;
+    const linesOnCurrSheet =
+      lastFittingIdx >= currentLineIdx ? lastFittingIdx - currentLineIdx + 1 : 0;
 
-  // Ajustar hacia el espacio en blanco inmediato posterior para un corte limpio
-  const textContent = lastNode.textContent || '';
-  if (targetOffset < textContent.length && /\s/u.test(textContent[targetOffset])) {
-    targetOffset += 1;
-  }
+    // Control de huérfanas: mínimo 2 líneas en la hoja actual
+    if (linesOnCurrSheet < 2) {
+      if (candidates.length === 0) {
+        // En la primera hoja no caben al menos 2 líneas: empujar el bloque entero
+        return {
+          candidate: null,
+          candidates: [],
+          shouldPushWholeBlock: true,
+          totalLines: lines.length,
+        };
+      }
+      // Si ya se produjeron cortes previos en hojas anteriores, detener cortes adicionales
+      break;
+    }
 
-  // Mapear posición DOM a posición absoluta en el documento ProseMirror
-  let splitPos: number;
-  try {
-    splitPos = view.posAtDOM(lastNode, targetOffset);
-  } catch (err) {
-    console.warn('[lineBreakMeasurer] Error calculando posAtDOM:', err);
-    return { candidate: null, shouldPushWholeBlock: true, totalLines: lines.length };
-  }
+    // Control de viudas: si en el resto del párrafo solo quedaría 1 línea aislada, retroceder una línea
+    const remainingLinesAfterFit = lines.length - (lastFittingIdx + 1);
+    if (remainingLinesAfterFit === 1) {
+      if (linesOnCurrSheet > 2) {
+        lastFittingIdx -= 1;
+      } else if (candidates.length === 0) {
+        // Párrafo de 3 líneas donde caben 2 y sobra 1: empujar bloque entero
+        return {
+          candidate: null,
+          candidates: [],
+          shouldPushWholeBlock: true,
+          totalLines: lines.length,
+        };
+      }
+    }
 
-  // Altura del espaciador: distancia exacta desde el final de la última línea que entra
-  // hasta el inicio del área imprimible de la siguiente hoja
-  const spacerHeight = Math.max(0, Math.round(minNextPrintableY - splitLine.bottom));
+    const splitLine = lines[lastFittingIdx];
+    const lastNode = splitLine.lastNode;
+    let targetOffset = splitLine.lastOffset;
 
-  return {
-    candidate: {
+    // Ajustar hacia el espacio en blanco inmediato posterior para un corte limpio
+    const textContent = lastNode.textContent || '';
+    if (targetOffset < textContent.length && /\s/u.test(textContent[targetOffset])) {
+      targetOffset += 1;
+    }
+
+    // Mapear posición DOM a posición absoluta en el documento ProseMirror
+    let splitPos: number;
+    try {
+      splitPos = view.posAtDOM(lastNode, targetOffset);
+    } catch (err) {
+      console.warn('[lineBreakMeasurer] Error calculando posAtDOM:', err);
+      if (candidates.length === 0) {
+        return {
+          candidate: null,
+          candidates: [],
+          shouldPushWholeBlock: true,
+          totalLines: lines.length,
+        };
+      }
+      break;
+    }
+
+    // Altura del espaciador: distancia exacta desde el fondo renderizado de la última línea
+    // hasta el inicio del área imprimible de la siguiente hoja
+    const splitLineRenderedBottom = splitLine.bottom + cumulativeSpacer;
+    const spacerHeight = Math.max(0, Math.round(nextMinPrintableY - splitLineRenderedBottom));
+
+    candidates.push({
       pos: splitPos,
       spacerHeight,
       totalLines: lines.length,
-      linesOnCurrentSheet: lastFittingIdx + 1,
+      linesOnCurrentSheet: lastFittingIdx - currentLineIdx + 1,
       linesOnNextSheet: lines.length - (lastFittingIdx + 1),
-      sheetIndex,
-    },
+      sheetIndex: currSheet,
+    });
+
+    cumulativeSpacer += spacerHeight;
+    currentLineIdx = lastFittingIdx + 1;
+    currSheet += 1;
+  }
+
+  return {
+    candidate: candidates[0] || null,
+    candidates,
     shouldPushWholeBlock: false,
     totalLines: lines.length,
   };

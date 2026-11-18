@@ -1,3 +1,5 @@
+import type { DecorationSet } from '@tiptap/pm/view';
+
 export interface MeasuredVisualLine {
   top: number;
   bottom: number;
@@ -19,6 +21,7 @@ export interface ParagraphSplitCandidate {
 
 export interface ParagraphMeasurementResult {
   candidate: ParagraphSplitCandidate | null;
+  candidates?: ParagraphSplitCandidate[];
   shouldPushWholeBlock: boolean;
   totalLines: number;
 }
@@ -33,4 +36,5 @@ export interface A4VirtualBreakWidgetSpec {
 export interface A4PaginationPluginState {
   breaks: A4VirtualBreakWidgetSpec[];
   enabled: boolean;
+  decorations: DecorationSet;
 }

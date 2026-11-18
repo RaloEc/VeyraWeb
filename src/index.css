@@ -1545,11 +1545,18 @@ figcaption,
 
 /* Espaciador decorativo de salto de página virtual A4 */
 .a4-virtual-page-break {
-  display: block !important;
+  display: inline-block !important;
+  vertical-align: top !important;
   user-select: none !important;
   pointer-events: none !important;
   background: transparent !important;
   width: 100% !important;
+}
+
+/* Ocultar espaciadores durante el ciclo de medición para evitar mediciones viciadas y desplazamientos residuales */
+.a4-measuring .a4-virtual-page-break {
+  display: none !important;
+  height: 0 !important;
 }
 
 /* ==========================================================================

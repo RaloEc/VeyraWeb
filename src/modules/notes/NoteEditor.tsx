@@ -53,6 +53,7 @@ import {
   convertTsvToHtml,
 } from './utils/tableClipboardUtils';
 import { A4PaginationExtension } from './pagination/a4PaginationExtension';
+import { getLiveVirtualBreaks } from './pagination/a4PaginationPlugin';
 import { calculateParagraphSplit } from './pagination/lineBreakMeasurer';
 import type { A4VirtualBreakWidgetSpec } from './pagination/types';
 import { AICommandExtension } from './extensions/AICommandExtension';
@@ -227,8 +228,8 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
   const a4StyleRef = useRef<HTMLStyleElement | null>(null);
   const [a4PageBreaks, setA4PageBreaks] = useState<number[]>([]);
   const lastBreaksStrRef = useRef<string>('');
-  const [enableVirtualPagination, setEnableVirtualPagination] = useState<boolean>(false);
-  const enableVirtualPaginationRef = useRef<boolean>(false);
+  const [enableVirtualPagination, setEnableVirtualPagination] = useState<boolean>(true);
+  const enableVirtualPaginationRef = useRef<boolean>(true);
   useEffect(() => {
     enableVirtualPaginationRef.current = enableVirtualPagination;
   }, [enableVirtualPagination]);
@@ -846,7 +847,7 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
               }
               po.insert(0, unique);
             }, 'dedup-page-order');
-          } catch (_) {}
+          } catch (_) { }
         }
         setPages(unique);
         pagesRef.current = unique;
@@ -991,7 +992,7 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
         BookmarkPrompt,
         AIPrompt,
         AICommandExtension,
-        A4PaginationExtension.configure({ enabled: false }),
+        A4PaginationExtension.configure({ enabled: true }),
       ],
       editorProps: {
         attributes: {
@@ -1292,6 +1293,12 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
         lastBreaksStrRef.current = '';
         setA4PageBreaks([]);
       }
+      if (editor) {
+        const liveBreaks = getLiveVirtualBreaks(editor.state);
+        if (liveBreaks.length > 0) {
+          editor.commands.setA4VirtualBreaks([]);
+        }
+      }
       return;
     }
 
@@ -1403,6 +1410,13 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
             lastBreaksStrRef.current = '';
             setA4PageBreaks([]);
           }
+          if (editor) {
+            const liveBreaks = getLiveVirtualBreaks(editor.state);
+            if (liveBreaks.length > 0) {
+              editor.commands.setA4VirtualBreaks([]);
+            }
+            editor.commands.setA4PaginationEnabled(false);
+          }
           const emptySig = 'empty-1';
           if (lastA4SheetsSignatureRef.current !== emptySig) {
             lastA4SheetsSignatureRef.current = emptySig;
@@ -1432,212 +1446,243 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
 
         const items: BreakableItem[] = [];
         const pmChildren = Array.from(pm.children) as HTMLElement[];
-
-        for (let i = 1; i <= pmChildren.length; i++) {
-          const child = pmChildren[i - 1];
-          const tag = child.tagName.toLowerCase();
-          const childSelector = `div.a4-page-mode div.ProseMirror > :nth-child(${i})`;
-
-          if (tag === 'ul' || tag === 'ol') {
-            collectListItems(child, childSelector, true, items);
-            continue;
-          }
-
-          if (child.classList.contains('tableWrapper')) {
-            const rows = Array.from(child.querySelectorAll('tr')) as HTMLElement[];
-            if (rows.length > 0) {
-              for (let rIdx = 0; rIdx < rows.length; rIdx++) {
-                const row = rows[rIdx];
-                const parentEl = row.parentElement;
-                const parentTag = parentEl ? parentEl.tagName.toLowerCase() : 'tbody';
-                const nthRow = parentEl
-                  ? Array.from(parentEl.children).indexOf(row) + 1
-                  : rIdx + 1;
-                const rowH = row.getBoundingClientRect().height;
-                const isHeaderRow =
-                  row.querySelector('th') !== null ||
-                  (rowH < 56 && row.querySelector('strong, b') !== null);
-
-                if (rIdx === 0) {
-                  items.push({
-                    topEl: row,
-                    bottomEl: row,
-                    targetEl: child,
-                    selector: childSelector,
-                    prop: 'margin-top',
-                    isHeadingOrLead: isHeaderRow,
-                  });
-                } else {
-                  const firstCell = (row.querySelector('td, th') as HTMLElement) || row;
-                  const cellContent =
-                    (firstCell.firstElementChild as HTMLElement) || firstCell;
-                  const rowCellsSelector = `${childSelector} ${parentTag} > tr:nth-child(${nthRow}) > td, ${childSelector} ${parentTag} > tr:nth-child(${nthRow}) > th`;
-                  items.push({
-                    topEl: cellContent,
-                    bottomEl: row,
-                    targetEl: firstCell,
-                    selector: rowCellsSelector,
-                    prop: 'padding-top',
-                    isHeadingOrLead: isHeaderRow,
-                  });
-                }
-              }
-              continue;
-            }
-          }
-
-          const text = (child.textContent || '').trim();
-          const isHeading =
-            /^h[1-6]$/.test(tag) ||
-            (tag === 'p' &&
-              text.endsWith(':') &&
-              text.length < 95 &&
-              child.querySelector('strong, b') !== null);
-
-          items.push({
-            topEl: child,
-            bottomEl: child,
-            targetEl: child,
-            selector: childSelector,
-            prop: 'margin-top',
-            isHeadingOrLead: isHeading,
-          });
-        }
-
         const rules: string[] = basePaddingRule ? [basePaddingRule] : [];
         const breaks: number[] = [];
         const virtualBreaks: A4VirtualBreakWidgetSpec[] = [];
         let currentPage = 0;
 
-        const applyPushToTarget = (target: BreakableItem, desiredTop: number) => {
-          const sRect = sheet.getBoundingClientRect();
-          const tRect = target.topEl.getBoundingClientRect();
-          const currentTop = tRect.top - sRect.top;
-          const cs = window.getComputedStyle(target.targetEl);
-          const baseVal =
-            parseFloat(target.prop === 'margin-top' ? cs.marginTop : cs.paddingTop) || 0;
-          let neededVal = Math.max(0, Math.round(baseVal + (desiredTop - currentTop)));
+        let isMeasuringApplied = false;
+        if (pm) {
+          pm.classList.add('a4-measuring');
+          isMeasuringApplied = true;
+        }
 
-          const extraRule =
-            target.prop === 'padding-top' ? ' vertical-align: top !important;' : '';
-          const ruleIndex = rules.length;
-          rules.push(
-            `${target.selector} { ${target.prop}: ${neededVal}px !important;${extraRule} }`
-          );
-          styleEl.textContent = rules.join('\n');
+        try {
+          for (let i = 1; i <= pmChildren.length; i++) {
+            const child = pmChildren[i - 1];
+            const tag = child.tagName.toLowerCase();
+            const childSelector = `div.a4-page-mode div.ProseMirror > :nth-child(${i})`;
 
-          // Verificar posición real en el DOM tras aplicar la regla (compensa colapso de márgenes CSS)
-          const vSheetRect = sheet.getBoundingClientRect();
-          const vTopRect = target.topEl.getBoundingClientRect();
-          const actualTop = vTopRect.top - vSheetRect.top;
-          const diff = Math.round(desiredTop - actualTop);
-          if (Math.abs(diff) > 1) {
-            neededVal = Math.max(0, neededVal + diff);
-            rules[ruleIndex] =
-              `${target.selector} { ${target.prop}: ${neededVal}px !important;${extraRule} }`;
-            styleEl.textContent = rules.join('\n');
-          }
-        };
-
-        for (let k = 0; k < items.length; k++) {
-          const item = items[k];
-          let sheetRect = sheet.getBoundingClientRect();
-          let itemTop = item.topEl.getBoundingClientRect().top - sheetRect.top;
-          let itemBottom = item.bottomEl.getBoundingClientRect().bottom - sheetRect.top;
-
-          let minPrintableY = currentPage * STRIDE + marginTopPx;
-          let maxPrintableY = currentPage * STRIDE + A4_HEIGHT_PX - marginBottomPx;
-
-          // Si un bloque anterior avanzó de página sin empujar a este, asegurar que empiece en minPrintableY
-          if (currentPage > 0 && itemTop < minPrintableY - 2) {
-            applyPushToTarget(item, minPrintableY);
-            sheetRect = sheet.getBoundingClientRect();
-            itemTop = item.topEl.getBoundingClientRect().top - sheetRect.top;
-            itemBottom = item.bottomEl.getBoundingClientRect().bottom - sheetRect.top;
-          }
-
-          if (itemBottom > maxPrintableY) {
-            // Retroceder si el bloque anterior es un título o encabezado que quedaría huérfano al final de la hoja
-            let pushIdx = k;
-            while (pushIdx > 0 && items[pushIdx - 1].isHeadingOrLead) {
-              const prevTop =
-                items[pushIdx - 1].topEl.getBoundingClientRect().top - sheetRect.top;
-              const orphanThreshold = enableVirtualPaginationRef.current
-                ? maxPrintableY - 96
-                : minPrintableY + 28;
-              if (prevTop > orphanThreshold) {
-                pushIdx -= 1;
-              } else {
-                break;
-              }
+            if (tag === 'ul' || tag === 'ol') {
+              collectListItems(child, childSelector, true, items);
+              continue;
             }
 
-            // En modo experimental, intentar dividir visualmente párrafos extensos mediante decoraciones
-            if (
-              enableVirtualPaginationRef.current &&
-              editor &&
-              item.targetEl.tagName.toLowerCase() === 'p' &&
-              !item.isHeadingOrLead &&
-              pushIdx === k
-            ) {
-              const nextMinY = (currentPage + 1) * STRIDE + marginTopPx;
-              const splitResult = calculateParagraphSplit(
-                item.targetEl,
-                sheetRect.top,
-                maxPrintableY,
-                nextMinY,
-                currentPage,
-                editor.view
-              );
+            if (child.classList.contains('tableWrapper')) {
+              const rows = Array.from(child.querySelectorAll('tr')) as HTMLElement[];
+              if (rows.length > 0) {
+                for (let rIdx = 0; rIdx < rows.length; rIdx++) {
+                  const row = rows[rIdx];
+                  const parentEl = row.parentElement;
+                  const parentTag = parentEl ? parentEl.tagName.toLowerCase() : 'tbody';
+                  const nthRow = parentEl
+                    ? Array.from(parentEl.children).indexOf(row) + 1
+                    : rIdx + 1;
+                  const rowH = row.getBoundingClientRect().height;
+                  const isHeaderRow =
+                    row.querySelector('th') !== null ||
+                    (rowH < 56 && row.querySelector('strong, b') !== null);
 
-              if (splitResult.candidate) {
-                virtualBreaks.push({
-                  pos: splitResult.candidate.pos,
-                  spacerHeight: splitResult.candidate.spacerHeight,
-                  sheetIndex: currentPage,
-                  key: `vbreak-${currentPage}-${splitResult.candidate.pos}`,
-                });
-                const breakY = currentPage * STRIDE + A4_HEIGHT_PX;
-                breaks.push(breakY);
-                currentPage += 1;
-                minPrintableY = currentPage * STRIDE + marginTopPx;
-                maxPrintableY = currentPage * STRIDE + A4_HEIGHT_PX - marginBottomPx;
+                  if (rIdx === 0) {
+                    items.push({
+                      topEl: row,
+                      bottomEl: row,
+                      targetEl: child,
+                      selector: childSelector,
+                      prop: 'margin-top',
+                      isHeadingOrLead: isHeaderRow,
+                    });
+                  } else {
+                    const firstCell = (row.querySelector('td, th') as HTMLElement) || row;
+                    const cellContent =
+                      (firstCell.firstElementChild as HTMLElement) || firstCell;
+                    const rowCellsSelector = `${childSelector} ${parentTag} > tr:nth-child(${nthRow}) > td, ${childSelector} ${parentTag} > tr:nth-child(${nthRow}) > th`;
+                    items.push({
+                      topEl: cellContent,
+                      bottomEl: row,
+                      targetEl: firstCell,
+                      selector: rowCellsSelector,
+                      prop: 'padding-top',
+                      isHeadingOrLead: isHeaderRow,
+                    });
+                  }
+                }
                 continue;
               }
             }
 
-            const target = items[pushIdx];
-            const targetTop = target.topEl.getBoundingClientRect().top - sheetRect.top;
+            const text = (child.textContent || '').trim();
+            const isHeading =
+              /^h[1-6]$/.test(tag) ||
+              (tag === 'p' &&
+                text.endsWith(':') &&
+                text.length < 95 &&
+                child.querySelector('strong, b') !== null);
 
-            if (targetTop > minPrintableY + 14) {
-              const breakY = currentPage * STRIDE + A4_HEIGHT_PX;
-              breaks.push(breakY);
-              currentPage += 1;
+            items.push({
+              topEl: child,
+              bottomEl: child,
+              targetEl: child,
+              selector: childSelector,
+              prop: 'margin-top',
+              isHeadingOrLead: isHeading,
+            });
+          }
 
-              const desiredTop = currentPage * STRIDE + marginTopPx;
-              applyPushToTarget(target, desiredTop);
+          const applyPushToTarget = (target: BreakableItem, desiredTop: number) => {
+            const sRect = sheet.getBoundingClientRect();
+            const tRect = target.topEl.getBoundingClientRect();
+            const currentTop = tRect.top - sRect.top;
+            const cs = window.getComputedStyle(target.targetEl);
+            const baseVal =
+              parseFloat(target.prop === 'margin-top' ? cs.marginTop : cs.paddingTop) || 0;
+            let neededVal = Math.max(0, Math.round(baseVal + (desiredTop - currentTop)));
 
+            const extraRule =
+              target.prop === 'padding-top' ? ' vertical-align: top !important;' : '';
+            const ruleIndex = rules.length;
+            rules.push(
+              `${target.selector} { ${target.prop}: ${neededVal}px !important;${extraRule} }`
+            );
+            styleEl.textContent = rules.join('\n');
+
+            // Verificar posición real en el DOM tras aplicar la regla (compensa colapso de márgenes CSS)
+            const vSheetRect = sheet.getBoundingClientRect();
+            const vTopRect = target.topEl.getBoundingClientRect();
+            const actualTop = vTopRect.top - vSheetRect.top;
+            const diff = Math.round(desiredTop - actualTop);
+            if (Math.abs(diff) > 1) {
+              neededVal = Math.max(0, neededVal + diff);
+              rules[ruleIndex] =
+                `${target.selector} { ${target.prop}: ${neededVal}px !important;${extraRule} }`;
+              styleEl.textContent = rules.join('\n');
+            }
+          };
+
+          for (let k = 0; k < items.length; k++) {
+            const item = items[k];
+            let sheetRect = sheet.getBoundingClientRect();
+            let itemTop = item.topEl.getBoundingClientRect().top - sheetRect.top;
+            let itemBottom = item.bottomEl.getBoundingClientRect().bottom - sheetRect.top;
+
+            const totalVirtualSpacersHeight = enableVirtualPaginationRef.current
+              ? virtualBreaks.reduce((sum, b) => sum + b.spacerHeight, 0)
+              : 0;
+            const renderedItemTop = itemTop + totalVirtualSpacersHeight;
+            const renderedItemBottom = itemBottom + totalVirtualSpacersHeight;
+
+            let minPrintableY = currentPage * STRIDE + marginTopPx;
+            let maxPrintableY = currentPage * STRIDE + A4_HEIGHT_PX - marginBottomPx;
+
+            // Si un bloque anterior avanzó de página sin empujar a este, asegurar que empiece en minPrintableY
+            if (currentPage > 0 && renderedItemTop < minPrintableY - 2) {
+              applyPushToTarget(item, minPrintableY - totalVirtualSpacersHeight);
               sheetRect = sheet.getBoundingClientRect();
+              itemTop = item.topEl.getBoundingClientRect().top - sheetRect.top;
               itemBottom = item.bottomEl.getBoundingClientRect().bottom - sheetRect.top;
-              minPrintableY = currentPage * STRIDE + marginTopPx;
-              maxPrintableY = currentPage * STRIDE + A4_HEIGHT_PX - marginBottomPx;
             }
 
-            // Si el elemento por sí solo sigue superando la página actual, avanzar las páginas necesarias
-            while (itemBottom > currentPage * STRIDE + A4_HEIGHT_PX - marginBottomPx) {
-              const breakY = currentPage * STRIDE + A4_HEIGHT_PX;
-              breaks.push(breakY);
-              currentPage += 1;
+            if (renderedItemBottom > maxPrintableY) {
+              // Retroceder si el bloque anterior es un título o encabezado que quedaría huérfano al final de la hoja
+              let pushIdx = k;
+              while (pushIdx > 0 && items[pushIdx - 1].isHeadingOrLead) {
+                const prevTop =
+                  items[pushIdx - 1].topEl.getBoundingClientRect().top -
+                  sheetRect.top +
+                  totalVirtualSpacersHeight;
+                const orphanThreshold = enableVirtualPaginationRef.current
+                  ? maxPrintableY - 96
+                  : minPrintableY + 28;
+                if (prevTop > orphanThreshold) {
+                  pushIdx -= 1;
+                } else {
+                  break;
+                }
+              }
+
+              // En modo experimental, intentar dividir visualmente párrafos extensos mediante decoraciones
+              if (
+                enableVirtualPaginationRef.current &&
+                editor &&
+                item.targetEl.tagName.toLowerCase() === 'p' &&
+                !item.isHeadingOrLead &&
+                pushIdx === k
+              ) {
+                const splitResult = calculateParagraphSplit(
+                  item.targetEl,
+                  sheetRect.top,
+                  STRIDE,
+                  marginTopPx,
+                  marginBottomPx,
+                  currentPage,
+                  editor.view,
+                  totalVirtualSpacersHeight
+                );
+
+                const cands =
+                  splitResult.candidates && splitResult.candidates.length > 0
+                    ? splitResult.candidates
+                    : splitResult.candidate
+                      ? [splitResult.candidate]
+                      : [];
+
+                if (cands.length > 0) {
+                  for (const cand of cands) {
+                    virtualBreaks.push({
+                      pos: cand.pos,
+                      spacerHeight: cand.spacerHeight,
+                      sheetIndex: cand.sheetIndex,
+                      key: `vbreak-${cand.sheetIndex}-${cand.pos}`,
+                    });
+                    const breakY = cand.sheetIndex * STRIDE + A4_HEIGHT_PX;
+                    breaks.push(breakY);
+                  }
+                  currentPage += cands.length;
+                  minPrintableY = currentPage * STRIDE + marginTopPx;
+                  maxPrintableY = currentPage * STRIDE + A4_HEIGHT_PX - marginBottomPx;
+                  continue;
+                }
+              }
+
+              const target = items[pushIdx];
+              const targetTop =
+                target.topEl.getBoundingClientRect().top -
+                sheetRect.top +
+                totalVirtualSpacersHeight;
+
+              if (targetTop > minPrintableY + 14) {
+                const breakY = currentPage * STRIDE + A4_HEIGHT_PX;
+                breaks.push(breakY);
+                currentPage += 1;
+
+                const desiredTop = currentPage * STRIDE + marginTopPx;
+                applyPushToTarget(target, desiredTop - totalVirtualSpacersHeight);
+
+                sheetRect = sheet.getBoundingClientRect();
+                itemBottom = item.bottomEl.getBoundingClientRect().bottom - sheetRect.top;
+                minPrintableY = currentPage * STRIDE + marginTopPx;
+                maxPrintableY = currentPage * STRIDE + A4_HEIGHT_PX - marginBottomPx;
+              }
+
+              // Si el elemento por sí solo sigue superando la página actual, avanzar las páginas necesarias
+              while (
+                itemBottom + totalVirtualSpacersHeight >
+                currentPage * STRIDE + A4_HEIGHT_PX - marginBottomPx
+              ) {
+                const breakY = currentPage * STRIDE + A4_HEIGHT_PX;
+                breaks.push(breakY);
+                currentPage += 1;
+              }
             }
+          }
+        } finally {
+          if (isMeasuringApplied && pm) {
+            pm.classList.remove('a4-measuring');
           }
         }
 
         const totalMinHeight = (currentPage + 1) * A4_HEIGHT_PX + currentPage * PAGE_GAP_PX;
         sheet.style.minHeight = `${totalMinHeight}px`;
-
-        lastSettledW = sheet.offsetWidth;
-        lastSettledH = sheet.offsetHeight;
-        lastSettledPmH = pm.offsetHeight;
 
         const nextBreaksStr = breaks.join(',');
         if (lastBreaksStrRef.current !== nextBreaksStr) {
@@ -1646,8 +1691,27 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
         }
 
         if (enableVirtualPaginationRef.current && editor) {
-          editor.commands.setA4VirtualBreaks(virtualBreaks);
+          editor.commands.setA4PaginationEnabled(true);
+          const liveBreaks = getLiveVirtualBreaks(editor.state);
+          const liveSig = liveBreaks
+            .map((b) => `${b.sheetIndex}:${b.pos}:${b.spacerHeight}`)
+            .join(',');
+          const nextVBreaksSig = virtualBreaks
+            .map((b) => `${b.sheetIndex}:${b.pos}:${b.spacerHeight}`)
+            .join(',');
+          if (liveSig !== nextVBreaksSig) {
+            editor.commands.setA4VirtualBreaks(virtualBreaks);
+          }
+        } else if (!enableVirtualPaginationRef.current && editor) {
+          const liveBreaks = getLiveVirtualBreaks(editor.state);
+          if (liveBreaks.length > 0) {
+            editor.commands.setA4VirtualBreaks([]);
+          }
         }
+
+        lastSettledW = sheet.offsetWidth;
+        lastSettledH = sheet.offsetHeight;
+        lastSettledPmH = pm.offsetHeight;
 
         // Construir metadatos reales por cada Hoja A4 física según la posición DOM final de cada bloque
         const totalSheets = currentPage + 1;

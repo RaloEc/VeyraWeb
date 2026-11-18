@@ -24,7 +24,7 @@ export const A4PaginationExtension = Extension.create<A4PaginationExtensionOptio
 
   addOptions() {
     return {
-      enabled: false,
+      enabled: true,
     };
   },
 
