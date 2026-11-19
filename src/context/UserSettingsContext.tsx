@@ -150,9 +150,9 @@ export const UserSettingsProvider: React.FC<{ children: React.ReactNode }> = ({ 
 
     const initSettings = async () => {
       try {
-        const { data: { session } } = await supabase.auth.getSession();
-        const user = session?.user;
-        if (!user) {
+        const { data: userData, error: userError } = await supabase.auth.getUser();
+        const user = userData?.user;
+        if (userError || !user) {
           setIsLoading(false);
           return;
         }
@@ -163,12 +163,18 @@ export const UserSettingsProvider: React.FC<{ children: React.ReactNode }> = ({ 
         const remoteSettings = user.user_metadata?.settings || {};
         const profileName = user.user_metadata?.full_name || user.user_metadata?.name || '';
 
-        // B) Leer tabla profiles para default_control_level
-        const { data: profileRow } = await supabase
-          .from('profiles')
-          .select('default_control_level')
-          .eq('id', user.id)
-          .maybeSingle();
+        // B) Leer tabla profiles para default_control_level (con fallback seguro)
+        let profileRow: { default_control_level?: string | null } | null = null;
+        try {
+          const { data } = await supabase
+            .from('profiles')
+            .select('default_control_level')
+            .eq('id', user.id)
+            .maybeSingle();
+          profileRow = data;
+        } catch {
+          // Ignorar fallas de red silenciosamente
+        }
 
         setSettings((prev) => {
           const resolvedAmoled = typeof remoteSettings.amoledEnabled === 'boolean' ? remoteSettings.amoledEnabled : prev.amoledEnabled;

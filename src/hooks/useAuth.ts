@@ -14,35 +14,70 @@ export function useAuth() {
   useEffect(() => {
     let isMounted = true;
 
-    // Failsafe timeout to prevent infinite black/splash screen if network is slow
+    // Failsafe timeout to prevent infinite black/splash screen
     const failsafeTimeout = setTimeout(() => {
       if (isMounted) {
         setLoading(false);
       }
-    }, 1500);
+    }, 2500);
 
-    // 1. Get initial session
-    supabase.auth
-      .getSession()
-      .then(({ data: { session } }) => {
+    const initAuth = async () => {
+      try {
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
         if (!isMounted) return;
-        setSession(session);
-        setUser(session?.user ?? null);
-        if (session?.user) {
-          clearTimeout(failsafeTimeout);
-          fetchProfile(session.user.id, session.user.email);
-        } else {
-          clearTimeout(failsafeTimeout);
+
+        if (!session?.user) {
+          setUser(null);
+          setSession(null);
+          setProfile(null);
           setLoading(false);
+          return;
         }
-      })
-      .catch((err) => {
-        console.error('[useAuth] getSession error:', err);
+
+        // Verificar validez real del usuario y token contra Supabase Auth
+        const {
+          data: { user: verifiedUser },
+          error: userError,
+        } = await supabase.auth.getUser();
+
+        if (!isMounted) return;
+
+        if (userError || !verifiedUser) {
+          console.warn('[useAuth] Sesión expirada o inválida, cerrando sesión localmente...');
+          await supabase.auth.signOut().catch(() => {});
+          if (typeof window !== 'undefined') {
+            try {
+              localStorage.removeItem('veyra_web_auth_token');
+            } catch (_) {}
+          }
+          setUser(null);
+          setSession(null);
+          setProfile(null);
+          setLoading(false);
+          return;
+        }
+
+        setUser(verifiedUser);
+        setSession(session);
+        await fetchProfile(verifiedUser.id, verifiedUser.email);
+      } catch (err) {
+        console.warn('[useAuth] Fallo en verificación de sesión:', err);
+        if (isMounted) {
+          setUser(null);
+          setSession(null);
+          setProfile(null);
+        }
+      } finally {
         if (isMounted) {
           clearTimeout(failsafeTimeout);
           setLoading(false);
         }
-      });
+      }
+    };
+
+    initAuth();
 
     // 2. Listen for auth changes
     const {
@@ -95,9 +130,17 @@ export function useAuth() {
         if (!upsertErr && created) {
           setProfile(created);
         }
+      } else if (error) {
+        console.warn('[useAuth] Error consultando perfil:', error);
+        if (error.code === 'PGRST301' || (error as any).status === 401 || (error as any).status === 521) {
+          await supabase.auth.signOut().catch(() => {});
+          setUser(null);
+          setSession(null);
+          setProfile(null);
+        }
       }
     } catch (err) {
-      console.error('[useAuth] Error fetching profile:', err);
+      console.warn('[useAuth] Excepción obteniendo perfil:', err);
     } finally {
       setLoading(false);
     }
