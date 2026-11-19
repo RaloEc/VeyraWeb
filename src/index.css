@@ -99,6 +99,96 @@
   background: var(--accent-primary);
 }
 
+/* ═══════════════════════════════════════════════════════════════
+   SELECCIÓN DE TEXTO ELEGANTE Y PERSONALIZADA (ACCENT COLOR)
+   ═══════════════════════════════════════════════════════════════ */
+
+/* Regla global base: tono suave translúcido adaptativo */
+::selection {
+  background-color: color-mix(in srgb, var(--accent-primary, #60A5FA) 30%, transparent);
+  color: inherit;
+}
+
+::-moz-selection {
+  background-color: color-mix(in srgb, var(--accent-primary, #60A5FA) 30%, transparent);
+  color: inherit;
+}
+
+/* Modo claro y Hojas en modo papel blanco (.sheet-light-mode) */
+html:not(.dark) ::selection,
+.sheet-light-mode ::selection,
+.sheet-light-mode *::selection,
+.a4-page-mode.sheet-light-mode ::selection,
+.a4-page-mode.sheet-light-mode *::selection {
+  background-color: color-mix(in srgb, var(--accent-primary, #3B82F6) 26%, transparent) !important;
+  color: #0f172a !important;
+}
+
+/* Modo oscuro general */
+html.dark:not(.sheet-light-mode) ::selection {
+  background-color: color-mix(in srgb, var(--accent-primary, #60A5FA) 34%, transparent);
+  color: inherit;
+}
+
+/* Editor TipTap / ProseMirror en modo oscuro */
+html.dark .tiptap:not(.sheet-light-mode) ::selection,
+html.dark .tiptap:not(.sheet-light-mode) *::selection,
+html.dark .ProseMirror:not(.sheet-light-mode) ::selection,
+html.dark .ProseMirror:not(.sheet-light-mode) *::selection {
+  background-color: color-mix(in srgb, var(--accent-primary, #60A5FA) 36%, transparent);
+  color: #f8fafc;
+}
+
+/* Editor TipTap / ProseMirror en modo claro u hoja A4 blanca */
+html:not(.dark) .tiptap ::selection,
+html:not(.dark) .tiptap *::selection,
+html:not(.dark) .ProseMirror ::selection,
+html:not(.dark) .ProseMirror *::selection,
+.sheet-light-mode .tiptap ::selection,
+.sheet-light-mode .tiptap *::selection,
+.sheet-light-mode .ProseMirror ::selection,
+.sheet-light-mode .ProseMirror *::selection {
+  background-color: color-mix(in srgb, var(--accent-primary, #3B82F6) 26%, transparent) !important;
+  color: #0f172a !important;
+}
+
+/* Tablas Veyra: selección de texto en celdas y cabeceras */
+.veyra-table ::selection,
+.veyra-table *::selection {
+  background-color: color-mix(in srgb, var(--accent-primary, #60A5FA) 28%, transparent);
+}
+
+.sheet-light-mode .veyra-table ::selection,
+.sheet-light-mode .veyra-table *::selection,
+html:not(.dark) .veyra-table ::selection,
+html:not(.dark) .veyra-table *::selection {
+  color: #0f172a !important;
+}
+
+/* Bloques de código pre y code: preservar colores de sintaxis */
+.tiptap pre ::selection,
+.tiptap code ::selection,
+pre ::selection,
+code ::selection {
+  background-color: color-mix(in srgb, var(--accent-primary, #60A5FA) 35%, transparent) !important;
+  color: inherit !important;
+}
+
+/* Campos de entrada (inputs y textareas) */
+input::selection,
+textarea::selection {
+  background-color: color-mix(in srgb, var(--accent-primary, #60A5FA) 32%, transparent);
+  color: inherit;
+}
+
+/* Caret dinámico con el color de acento */
+.tiptap,
+.ProseMirror,
+input,
+textarea {
+  caret-color: var(--accent-primary, #60A5FA);
+}
+
 /* Tiptap Editor & TaskList styling matching Veyra */
 .tiptap {
   outline: none;
@@ -162,7 +252,7 @@
 /* Blockquote */
 .tiptap blockquote {
   border-left: 3px solid var(--accent-primary);
-  padding: 0.35rem 0.75rem 0.35rem 1rem;
+  padding: 0.45rem 0.85rem 0.45rem 1rem;
   margin: 0.85rem 0;
   font-style: italic;
   color: var(--text-muted, #8A8A93);
@@ -172,6 +262,26 @@
 
 .tiptap blockquote p {
   margin: 0;
+}
+
+.tiptap blockquote p:not(:last-child) {
+  margin-bottom: 0.35rem;
+}
+
+.tiptap blockquote strong,
+.tiptap blockquote ul,
+.tiptap blockquote ol,
+.tiptap blockquote code {
+  font-style: normal;
+}
+
+.tiptap blockquote strong {
+  color: var(--text-main, #EDEDEF);
+}
+
+html:not(.dark) .tiptap blockquote strong,
+html.dark .sheet-light-mode .tiptap blockquote strong {
+  color: #0f172a !important;
 }
 
 /* Code block (pre + code) */
@@ -1484,7 +1594,7 @@ figcaption,
   right: 0;
   top: 0;
   bottom: 0;
-  background: rgba(99, 102, 241, 0.18);
+  background: color-mix(in srgb, var(--accent-primary, #60A5FA) 18%, transparent);
   pointer-events: none;
 }
 

@@ -203,3 +203,46 @@ export function ensureCompleteTableHtml(html: string): string {
 
   return cleaned;
 }
+
+/**
+ * Sanitiza el HTML de una tabla eliminando espacios en blanco, tabulaciones y saltos
+ * de línea entre etiquetas estructurales (table, thead, tbody, tr, th, td).
+ * Esto es crítico porque TipTap/ProseMirror con `preserveWhitespace: "full"`
+ * convierte los espacios de indentación entre etiquetas en nodos de texto,
+ * los cuales ProseMirror envuelve automáticamente en celdas y filas vacías adicionales.
+ */
+export function sanitizeTableHtml(html: string): string {
+  if (!html) return '';
+
+  return html
+    // Eliminar saltos de línea e indentación entre cualquier par de etiquetas HTML
+    .replace(/>\s*[\r\n]+\s*</g, '><')
+    .replace(/(<\/table>)\s*(<p>)/gi, '$1$2')
+    .replace(/(<table[^>]*>)\s+/gi, '$1')
+    .replace(/\s+(<\/table>)/gi, '$1')
+    .replace(/(<thead[^>]*>)\s+/gi, '$1')
+    .replace(/\s+(<\/thead>)/gi, '$1')
+    .replace(/(<tbody[^>]*>)\s+/gi, '$1')
+    .replace(/\s+(<\/tbody>)/gi, '$1')
+    .replace(/(<tr[^>]*>)\s+/gi, '$1')
+    .replace(/\s+(<\/tr>)/gi, '$1')
+    .replace(/(<th[^>]*>)\s+(<p[^>]*>)/gi, '$1$2')
+    .replace(/(<\/p>)\s+(<\/th>)/gi, '$1$2')
+    .replace(/(<td[^>]*>)\s+(<p[^>]*>)/gi, '$1$2')
+    .replace(/(<\/p>)\s+(<\/td>)/gi, '$1$2')
+    .replace(/(<\/th>)\s+(<th[^>]*>)/gi, '$1$2')
+    .replace(/(<\/td>)\s+(<td[^>]*>)/gi, '$1$2')
+    .replace(/(<\/tr>)\s+(<tr[^>]*>)/gi, '$1$2')
+    .replace(/(<\/thead>)\s+(<tbody[^>]*>)/gi, '$1$2')
+    .replace(/(<blockquote[^>]*>)\s+/gi, '$1')
+    .replace(/\s+(<\/blockquote>)/gi, '$1')
+    .replace(/(<ul[^>]*>)\s+/gi, '$1')
+    .replace(/\s+(<\/ul>)/gi, '$1')
+    .replace(/(<ol[^>]*>)\s+/gi, '$1')
+    .replace(/\s+(<\/ol>)/gi, '$1')
+    .replace(/(<li[^>]*>)\s+(<p[^>]*>)/gi, '$1$2')
+    .replace(/(<\/p>)\s+(<\/li>)/gi, '$1$2')
+    .replace(/(<\/li>)\s+(<li[^>]*>)/gi, '$1$2')
+    .replace(/(<\/blockquote>)\s+(<p[^>]*>)/gi, '$1$2')
+    .trim();
+}

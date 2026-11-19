@@ -27,6 +27,7 @@ import {
   Copy,
   FolderInput,
   FileDown,
+  Share2,
 } from 'lucide-react';
 import { MorphIcon } from 'morphicons/react';
 import { ChevronDown, ChevronRight, PanelLeftClose } from 'lucide';
@@ -38,6 +39,7 @@ import { Button } from '../../components/common/Button';
 import { cn } from '../../lib/utils';
 import { AgendaSidebarView } from './AgendaSidebarView';
 import { UserSettingsModal } from '../../components/common/UserSettingsModal';
+import { ShareModal } from '../../components/common/ShareModal';
 import type { useReminders } from '../../hooks/useReminders';
 import type { useEvents } from '../../hooks/useEvents';
 
@@ -71,6 +73,10 @@ export interface NotesSidebarProps {
   onSelectEvent?: (eventId: string) => void;
   selectedReminderId?: string | null;
   onSelectReminder?: (reminderId: string) => void;
+  onOpenCalendar?: () => void;
+  isCalendarOpen?: boolean;
+  sidebarSection?: 'notes' | 'agenda';
+  onSectionChange?: (section: 'notes' | 'agenda') => void;
   userId?: string;
   userEmail?: string;
   userName?: string;
@@ -196,13 +202,29 @@ export const NotesSidebar: React.FC<NotesSidebarProps> = ({
   onSelectEvent,
   selectedReminderId,
   onSelectReminder,
+  onOpenCalendar,
+  isCalendarOpen,
+  sidebarSection: controlledSidebarSection,
+  onSectionChange,
   userId,
   userEmail,
   userName,
   onSignOut,
 }) => {
-  const [sidebarSection, setSidebarSection] = useState<'notes' | 'agenda'>('notes');
+  const [internalSidebarSection, setInternalSidebarSection] = useState<'notes' | 'agenda'>('agenda');
+  const sidebarSection = controlledSidebarSection ?? internalSidebarSection;
+
+  const handleSelectSection = (section: 'notes' | 'agenda') => {
+    setInternalSidebarSection(section);
+    onSectionChange?.(section);
+  };
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [shareTarget, setShareTarget] = useState<{
+    type: 'note' | 'folder' | 'event';
+    id: string;
+    name: string;
+    ownerId?: string | null;
+  } | null>(null);
   const [search, setSearch] = useState('');
   const [activeView, setActiveView] = useState<ViewType>('all');
   const [selectedTag, setSelectedTag] = useState<string | null>(null);
@@ -519,9 +541,9 @@ export const NotesSidebar: React.FC<NotesSidebarProps> = ({
       const rawTags = ev.tags;
       const hasTags = Boolean(
         rawTags &&
-          (Array.isArray(rawTags)
-            ? rawTags.length > 0
-            : typeof rawTags === 'string' && rawTags.length > 2)
+        (Array.isArray(rawTags)
+          ? rawTags.length > 0
+          : typeof rawTags === 'string' && rawTags.length > 2)
       );
 
       // Include if it has linked notes OR relevant category tags (like #clase, #universidad)
@@ -1332,7 +1354,7 @@ export const NotesSidebar: React.FC<NotesSidebarProps> = ({
         <div className="grid grid-cols-2 p-0.5 rounded-lg bg-veyra-elevated/70 border border-veyra-border text-xs">
           <button
             type="button"
-            onClick={() => setSidebarSection('notes')}
+            onClick={() => handleSelectSection('notes')}
             className={cn(
               'flex items-center justify-center gap-1.5 py-1 px-2 rounded-md font-medium transition-all duration-150 cursor-pointer',
               sidebarSection === 'notes'
@@ -1346,7 +1368,7 @@ export const NotesSidebar: React.FC<NotesSidebarProps> = ({
           </button>
           <button
             type="button"
-            onClick={() => setSidebarSection('agenda')}
+            onClick={() => handleSelectSection('agenda')}
             className={cn(
               'flex items-center justify-center gap-1.5 py-1 px-2 rounded-md font-medium transition-all duration-150 cursor-pointer',
               sidebarSection === 'agenda'
@@ -1374,587 +1396,590 @@ export const NotesSidebar: React.FC<NotesSidebarProps> = ({
           onSelectEvent={onSelectEvent}
           selectedReminderId={selectedReminderId}
           onSelectReminder={onSelectReminder}
+          onOpenCalendar={onOpenCalendar}
+          isCalendarOpen={isCalendarOpen}
+          userId={userId}
         />
       ) : (
         <>
           {/* 2. Top Controls: Compact Search + New Note Action */}
-      <div className="p-2.5 border-b border-veyra-border shrink-0 flex items-center gap-1.5">
-        {/* Search Input with Clear button */}
-        <div className="relative flex-1">
-          <Search className="w-3.5 h-3.5 text-veyra-subtle absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-          <input
-            ref={searchInputRef}
-            type="text"
-            placeholder="Buscar..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="w-full bg-veyra-elevated text-veyra-text placeholder:text-veyra-subtle rounded-lg pl-8 pr-7 py-1.5 text-xs border border-veyra-border focus:border-accent/60 outline-none transition-colors"
-          />
-          {search.trim().length > 0 && (
-            <button
-              type="button"
-              onClick={() => setSearch('')}
-              className="absolute right-2 top-1/2 -translate-y-1/2 text-veyra-subtle hover:text-veyra-text p-0.5 rounded cursor-pointer transition-colors"
-              title="Borrar búsqueda"
-            >
-              <X className="w-3.5 h-3.5" />
-            </button>
-          )}
-        </div>
-
-        {/* Compact + Nueva Nota Button */}
-        <button
-          onClick={onCreateNote}
-          title="Nueva Nota"
-          className="h-[30px] w-[30px] rounded-lg bg-accent text-white flex items-center justify-center hover:opacity-90 transition-opacity shadow-sm shrink-0 cursor-pointer"
-        >
-          <Plus className="w-4 h-4 stroke-[2.5]" />
-        </button>
-      </div>
-
-      {/* 3. Scrollable Middle Area: Vistas (icon-only) + Carpetas + Notas */}
-      <div className="flex-1 overflow-y-auto p-3 space-y-3.5">
-        {/* Compact Icon-Only VISTAS Row: Visible only when NOT searching */}
-        {search.trim().length === 0 && (
-          <div className="flex items-center justify-between p-1 bg-veyra-elevated/40 border border-veyra-border rounded-lg">
-            <button
-              type="button"
-              onClick={() => {
-                setActiveView('all');
-                onSelectFolder(null);
-              }}
-              title={`Todas las notas (${allNotes.length})`}
-              className={cn(
-                'flex-1 flex items-center justify-center py-1.5 rounded-md transition-colors cursor-pointer',
-                activeView === 'all' && selectedFolderId === null
-                  ? 'bg-accent/20 text-accent font-semibold shadow-sm'
-                  : 'text-veyra-muted hover:text-veyra-text hover:bg-white/5'
-              )}
-            >
-              <Layers className="w-4 h-4" />
-            </button>
-
-            <button
-              type="button"
-              onClick={() => {
-                setActiveView('favorites');
-                onSelectFolder(null);
-              }}
-              title={`Favoritas (${favoritesCount})`}
-              className={cn(
-                'flex-1 flex items-center justify-center py-1.5 rounded-md transition-colors cursor-pointer',
-                activeView === 'favorites'
-                  ? 'bg-accent/20 text-accent font-semibold shadow-sm'
-                  : 'text-veyra-muted hover:text-veyra-text hover:bg-white/5'
-              )}
-            >
-              <Star className="w-4 h-4" />
-            </button>
-
-            <button
-              type="button"
-              onClick={() => {
-                setActiveView('recent');
-                onSelectFolder(null);
-              }}
-              title={`Recientes (${recentNotes.length})`}
-              className={cn(
-                'flex-1 flex items-center justify-center py-1.5 rounded-md transition-colors cursor-pointer',
-                activeView === 'recent'
-                  ? 'bg-accent/20 text-accent font-semibold shadow-sm'
-                  : 'text-veyra-muted hover:text-veyra-text hover:bg-white/5'
-              )}
-            >
-              <Clock className="w-4 h-4" />
-            </button>
-
-            <button
-              type="button"
-              onClick={() => {
-                setActiveView('tags');
-                setSelectedTag(null);
-                onSelectFolder(null);
-              }}
-              title={`Etiquetas (${taggedNotesCount})`}
-              className={cn(
-                'flex-1 flex items-center justify-center py-1.5 rounded-md transition-colors cursor-pointer',
-                activeView === 'tags'
-                  ? 'bg-accent/20 text-accent font-semibold shadow-sm'
-                  : 'text-veyra-muted hover:text-veyra-text hover:bg-white/5'
-              )}
-            >
-              <Tag className="w-4 h-4" />
-            </button>
-
-            <button
-              type="button"
-              onClick={() => {
-                setActiveView('trash');
-                onSelectFolder(null);
-              }}
-              title={`Papelera (${trashCount})`}
-              className={cn(
-                'flex-1 flex items-center justify-center py-1.5 rounded-md transition-colors cursor-pointer',
-                activeView === 'trash'
-                  ? 'bg-accent/20 text-accent font-semibold shadow-sm'
-                  : 'text-veyra-muted hover:text-veyra-text hover:bg-white/5'
-              )}
-            >
-              <Trash2 className="w-4 h-4" />
-            </button>
-          </div>
-        )}
-
-        {/* VIEW A: Single Unified File Explorer Tree (When activeView === 'all' and not searching) */}
-        {search.trim().length === 0 && activeView === 'all' && (
-          <div className="space-y-2">
-            {/* Explorer Header */}
-            <div className="flex items-center justify-between px-2 mb-1">
-              <span className="text-[10px] font-semibold text-veyra-subtle uppercase tracking-wider">
-                Explorador
-              </span>
-              <div className="flex items-center gap-1">
+          <div className="p-2.5 border-b border-veyra-border shrink-0 flex items-center gap-1.5">
+            {/* Search Input with Clear button */}
+            <div className="relative flex-1">
+              <Search className="w-3.5 h-3.5 text-veyra-subtle absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+              <input
+                ref={searchInputRef}
+                type="text"
+                placeholder="Buscar..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="w-full bg-veyra-elevated text-veyra-text placeholder:text-veyra-subtle rounded-lg pl-8 pr-7 py-1.5 text-xs border border-veyra-border focus:border-accent/60 outline-none transition-colors"
+              />
+              {search.trim().length > 0 && (
                 <button
                   type="button"
-                  onClick={handleToggleSortMode}
-                  title={
-                    sortMode === 'alphabetical'
-                      ? 'Orden alfabético A–Z activo. Clic para modo manual (Drag & Drop)'
-                      : 'Orden manual (Drag & Drop) activo. Clic para ordenar alfabéticamente A–Z'
-                  }
-                  className={cn(
-                    'p-1 rounded transition-all cursor-pointer flex items-center justify-center',
-                    sortMode === 'alphabetical'
-                      ? 'text-accent bg-accent/15 hover:bg-accent/25'
-                      : 'text-veyra-subtle hover:text-veyra-text hover:bg-white/5'
-                  )}
+                  onClick={() => setSearch('')}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-veyra-subtle hover:text-veyra-text p-0.5 rounded cursor-pointer transition-colors"
+                  title="Borrar búsqueda"
                 >
-                  <ArrowDownAZ className="w-3.5 h-3.5" />
+                  <X className="w-3.5 h-3.5" />
                 </button>
-                <button
-                  onClick={() => {
-                    setNewFolderName('');
-                    setIsFolderModalOpen(true);
-                  }}
-                  className="p-1 rounded text-veyra-subtle hover:text-veyra-text hover:bg-white/5 transition-colors cursor-pointer"
-                  title="Nueva carpeta"
-                >
-                  <FolderPlus className="w-3.5 h-3.5" />
-                </button>
-              </div>
+              )}
             </div>
 
-            {/* Tree Items: Folders first, then Event Categories, then Root Notes */}
-            <div
-              onDragOver={(e) => {
-                if (canMoveToRoot) {
-                  e.preventDefault();
-                  e.dataTransfer.dropEffect = 'move';
-                }
-              }}
-              onDrop={(e) => {
-                if (canMoveToRoot) {
-                  e.preventDefault();
-                  if (draggedItem?.type === 'note') {
-                    if (draggedItem.folderId !== null) {
-                      onMoveNote?.(draggedItem.id, null);
-                    }
-                    if (draggedItem.eventId !== null) {
-                      onMoveNoteToEvent?.(draggedItem.id, null);
-                    }
-                  } else if (draggedItem?.type === 'folder') {
-                    onMoveFolder?.(draggedItem.id, null);
-                  }
-                  setDraggedItem(null);
-                  setDragOverTarget(null);
-                }
-              }}
-              className="space-y-0.5"
+            {/* Compact + Nueva Nota Button */}
+            <button
+              onClick={onCreateNote}
+              title="Nueva Nota"
+              className="h-[30px] w-[30px] rounded-lg bg-accent text-white flex items-center justify-center hover:opacity-90 transition-opacity shadow-sm shrink-0 cursor-pointer"
             >
-              {/* Drop Zone: Sacar de carpetas o eventos (mover a la raíz) */}
-              {canMoveToRoot && (
-                <div
-                  onDragOver={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    e.dataTransfer.dropEffect = 'move';
-                    if (dragOverTarget !== 'root') setDragOverTarget('root');
-                  }}
-                  onDragLeave={() => {
-                    if (dragOverTarget === 'root') setDragOverTarget(null);
-                  }}
-                  onDrop={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    setDragOverTarget(null);
-                    if (draggedItem?.type === 'note') {
-                      if (draggedItem.folderId !== null) {
-                        onMoveNote?.(draggedItem.id, null);
-                      }
-                      if (draggedItem.eventId !== null) {
-                        onMoveNoteToEvent?.(draggedItem.id, null);
-                      }
-                    } else if (draggedItem?.type === 'folder') {
-                      onMoveFolder?.(draggedItem.id, null);
-                    }
-                    setDraggedItem(null);
-                  }}
-                  className={cn(
-                    'my-1 px-2.5 py-2 rounded-lg border-2 border-dashed transition-all duration-150 flex items-center justify-center gap-2 text-xs cursor-pointer select-none',
-                    dragOverTarget === 'root'
-                      ? 'bg-accent/20 border-accent text-accent font-semibold ring-2 ring-accent/40 shadow-sm scale-[1.01]'
-                      : 'border-veyra-border hover:border-accent/60 text-veyra-muted bg-white/[0.02]'
-                  )}
-                >
-                  <FolderOutput className="w-3.5 h-3.5 shrink-0" />
-                  <span className="truncate">Soltar aquí para sacar a la raíz</span>
-                </div>
-              )}
-
-              {/* Top-level Folders (nested support) */}
-              {topLevelFolders.map((folder) => renderFolderNode(folder))}
-
-              {/* Opción B: Event Categories / Cuadernos de Clases y Eventos */}
-              {eventCategories.map((category) => {
-                const isCategoryExpanded = !!expandedEventCategories[category.name];
-                const totalCategoryNotes = category.items.reduce(
-                  (acc, it) => acc + it.notes.length,
-                  0
-                );
-
-                return (
-                  <div key={category.name} className="space-y-0.5 pt-1">
-                    {/* Category Header Row (e.g. "Universidad", "Clases") */}
-                    <div
-                      onClick={() =>
-                        setExpandedEventCategories((prev) => ({
-                          ...prev,
-                          [category.name]: !isCategoryExpanded,
-                        }))
-                      }
-                      className="group flex items-center justify-between px-2 py-1.5 rounded-lg text-veyra-muted hover:text-veyra-text hover:bg-white/[0.03] transition-colors cursor-pointer"
-                    >
-                      <div className="flex items-center gap-1.5 truncate flex-1 min-w-0">
-                        <span className="p-0.5 text-veyra-subtle group-hover:text-veyra-text transition-colors flex items-center justify-center">
-                          <MorphIcon
-                            icon={isCategoryExpanded ? ChevronDown : ChevronRight}
-                            size={13}
-                            color="currentColor"
-                          />
-                        </span>
-
-                        {React.createElement(getCategoryIcon(category.name), {
-                          className: 'w-3.5 h-3.5 text-accent shrink-0',
-                        })}
-                        <span className="truncate text-xs font-semibold text-veyra-text">
-                          {category.name}
-                        </span>
-                      </div>
-
-                      <span className="text-[10px] font-mono text-veyra-subtle pr-1">
-                        {totalCategoryNotes}
-                      </span>
-                    </div>
-
-                    {/* Events inside category */}
-                    {isCategoryExpanded && (
-                      <div className="ml-3 pl-2 border-l border-veyra-border/60 space-y-0.5 py-0.5">
-                        {category.items.map(({ event, notes }) => {
-                          const isEventExpanded = !!expandedEvents[event.id];
-                          const eventColor = event.color || '#3B82F6';
-                          const isEventDragOver = dragOverTarget === `event-${event.id}`;
-
-                          return (
-                            <div key={event.id} className="space-y-0.5">
-                              {/* Event Row (Drop target for notes, but NOT draggable) */}
-                              <div
-                                onDragOver={(e) => {
-                                  if (!draggedItem || draggedItem.type !== 'note') return;
-                                  if (draggedItem.eventId !== event.id) {
-                                    e.preventDefault();
-                                    e.stopPropagation();
-                                    e.dataTransfer.dropEffect = 'move';
-                                    if (dragOverTarget !== `event-${event.id}`) {
-                                      setDragOverTarget(`event-${event.id}`);
-                                    }
-                                  }
-                                }}
-                                onDragLeave={(e) => {
-                                  if (dragOverTarget === `event-${event.id}`) {
-                                    const rect = e.currentTarget.getBoundingClientRect();
-                                    if (
-                                      e.clientX < rect.left ||
-                                      e.clientX >= rect.right ||
-                                      e.clientY < rect.top ||
-                                      e.clientY >= rect.bottom
-                                    ) {
-                                      setDragOverTarget(null);
-                                    }
-                                  }
-                                }}
-                                onDrop={(e) => {
-                                  e.preventDefault();
-                                  e.stopPropagation();
-                                  setDragOverTarget(null);
-                                  if (draggedItem?.type === 'note' && draggedItem.eventId !== event.id) {
-                                    onMoveNoteToEvent?.(draggedItem.id, event.id);
-                                    setExpandedEvents((prev) => ({ ...prev, [event.id]: true }));
-                                  }
-                                  setDraggedItem(null);
-                                }}
-                                onClick={() =>
-                                  setExpandedEvents((prev) => ({
-                                    ...prev,
-                                    [event.id]: !isEventExpanded,
-                                  }))
-                                }
-                                onContextMenu={(e) => {
-                                  e.preventDefault();
-                                  e.stopPropagation();
-                                  openContextMenu(e.clientX, e.clientY, { type: 'event', event });
-                                }}
-                                className={cn(
-                                  'group flex items-center justify-between px-2 py-1 rounded-md text-veyra-muted hover:text-veyra-text hover:bg-white/[0.04] transition-all cursor-pointer relative select-none',
-                                  isEventDragOver && 'bg-accent/25 text-accent font-semibold ring-2 ring-accent/60 shadow-md scale-[1.01]'
-                                )}
-                              >
-                                <div className="flex items-center gap-1.5 truncate flex-1 min-w-0">
-                                  <span className="p-0.5 text-veyra-subtle group-hover:text-veyra-text transition-colors flex items-center justify-center">
-                                    <MorphIcon
-                                      icon={isEventExpanded ? ChevronDown : ChevronRight}
-                                      size={12}
-                                      color="currentColor"
-                                    />
-                                  </span>
-
-                                  <Calendar
-                                    className="w-3.5 h-3.5 shrink-0"
-                                    style={{ color: eventColor }}
-                                  />
-
-                                  <span className="truncate text-xs font-medium text-veyra-text">
-                                    {event.title}
-                                  </span>
-                                </div>
-
-                                <div className="flex items-center gap-1 shrink-0">
-                                  {onSelectEvent && (
-                                    <button
-                                      type="button"
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        onSelectEvent(event.id);
-                                      }}
-                                      title="Ver evento en agenda"
-                                      className="opacity-0 group-hover:opacity-100 p-0.5 rounded text-veyra-subtle hover:text-accent hover:bg-white/10 transition-all cursor-pointer"
-                                    >
-                                      <ExternalLink className="w-3 h-3" />
-                                    </button>
-                                  )}
-
-                                  {onCreateNoteForEvent && (
-                                    <button
-                                      type="button"
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        onCreateNoteForEvent(event.id, event.folder_id || null);
-                                        setExpandedEvents((prev) => ({ ...prev, [event.id]: true }));
-                                      }}
-                                      title="Nueva nota para esta materia"
-                                      className="opacity-0 group-hover:opacity-100 p-0.5 rounded text-veyra-subtle hover:text-accent hover:bg-white/10 transition-all cursor-pointer"
-                                    >
-                                      <Plus className="w-3 h-3" />
-                                    </button>
-                                  )}
-
-                                  <span className="text-[10px] font-mono text-veyra-subtle pr-1">
-                                    {notes.length}
-                                  </span>
-                                </div>
-                              </div>
-
-                              {/* Event child notes */}
-                              {isEventExpanded && (
-                                <div className="ml-4 pl-2 border-l border-veyra-border/40 space-y-0.5 py-0.5">
-                                  {notes.length === 0 ? (
-                                    <div className="px-2 py-1 text-[11px] text-veyra-subtle flex items-center justify-between">
-                                      <span className="italic">Sin notas aún</span>
-                                      {onCreateNoteForEvent && (
-                                        <button
-                                          type="button"
-                                          onClick={() =>
-                                            onCreateNoteForEvent(event.id, event.folder_id || null)
-                                          }
-                                          className="text-accent text-[10px] font-medium hover:underline flex items-center gap-0.5 cursor-pointer"
-                                        >
-                                          <Plus className="w-2.5 h-2.5" />
-                                          <span>Crear apunte</span>
-                                        </button>
-                                      )}
-                                    </div>
-                                  ) : (
-                                    notes.map((n) => renderNoteItem(n))
-                                  )}
-                                </div>
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-
-              {/* Root Notes: notas que no están dentro de carpetas ni eventos */}
-              {rootNotes.map((n) => renderNoteItem(n))}
-
-              {/* Empty state when no folders, no event categories and no notes exist */}
-              {folders.length === 0 && eventCategories.length === 0 && rootNotes.length === 0 && (
-                <div className="py-8 px-3 text-center text-veyra-subtle space-y-1">
-                  <p className="text-xs font-medium text-veyra-muted">No hay notas ni carpetas</p>
-                  <p className="text-[11px] text-veyra-subtle">
-                    Pulsa + para crear tu primera nota.
-                  </p>
-                </div>
-              )}
-            </div>
+              <Plus className="w-4 h-4 stroke-[2.5]" />
+            </button>
           </div>
-        )}
 
-        {/* VIEW B: Filtered Notes / Search Results View */}
-        {(search.trim().length > 0 || activeView !== 'all') && (
-          <div>
-            <div className="flex items-center justify-between px-2 mb-2">
-              <span className="text-[10px] font-semibold text-veyra-subtle uppercase tracking-wider truncate">
-                {search.trim().length > 0
-                  ? `Resultados (${displayedNotes.length})`
-                  : activeView === 'favorites'
-                  ? `Favoritas (${displayedNotes.length})`
-                  : activeView === 'recent'
-                  ? `Recientes (${displayedNotes.length})`
-                  : activeView === 'tags'
-                  ? selectedTag
-                    ? `#${selectedTag} (${displayedNotes.length})`
-                    : `Etiquetas (${displayedNotes.length})`
-                  : activeView === 'trash'
-                  ? `Papelera (${displayedNotes.length})`
-                  : `Notas (${displayedNotes.length})`}
-              </span>
-
-              {activeView === 'trash' && (deletedNotes || []).length > 0 ? (
+          {/* 3. Scrollable Middle Area: Vistas (icon-only) + Carpetas + Notas */}
+          <div className="flex-1 overflow-y-auto p-3 space-y-3.5">
+            {/* Compact Icon-Only VISTAS Row: Visible only when NOT searching */}
+            {search.trim().length === 0 && (
+              <div className="flex items-center justify-between p-1 bg-veyra-elevated/40 border border-veyra-border rounded-lg">
                 <button
                   type="button"
                   onClick={() => {
-                    if (window.confirm('¿Deseas vaciar la papelera de notas permanentemente?')) {
-                      onEmptyTrash?.();
-                    }
+                    setActiveView('all');
+                    onSelectFolder(null);
                   }}
-                  className="text-[10px] font-mono text-red-400 hover:text-red-300 transition-colors cursor-pointer flex items-center gap-1"
-                  title="Vaciar papelera permanentemente"
-                >
-                  <Trash2 className="w-3 h-3" />
-                  <span>Vaciar</span>
-                </button>
-              ) : (
-                <span className="text-[10px] font-mono text-veyra-subtle lowercase shrink-0 ml-2">
-                  {activeView === 'favorites'
-                    ? 'fijadas'
-                    : activeView === 'recent'
-                    ? 'últimos 7 días'
-                    : activeView === 'trash'
-                    ? 'eliminadas'
-                    : 'orden: reciente'}
-                </span>
-              )}
-            </div>
-
-            {/* Tags Pills Bar (Only in Tags view when tags exist) */}
-            {activeView === 'tags' && allTags.length > 0 && search.trim().length === 0 && (
-              <div className="flex items-center gap-1.5 overflow-x-auto pb-2 px-1 mb-2">
-                <button
-                  type="button"
-                  onClick={() => setSelectedTag(null)}
+                  title={`Todas las notas (${allNotes.length})`}
                   className={cn(
-                    'px-2 py-0.5 rounded-full text-[10px] font-medium transition-colors shrink-0 cursor-pointer',
-                    selectedTag === null
-                      ? 'bg-accent text-white'
-                      : 'bg-white/5 text-veyra-muted hover:text-veyra-text hover:bg-white/10'
+                    'flex-1 flex items-center justify-center py-1.5 rounded-md transition-colors cursor-pointer',
+                    activeView === 'all' && selectedFolderId === null
+                      ? 'bg-accent/20 text-accent font-semibold shadow-sm'
+                      : 'text-veyra-muted hover:text-veyra-text hover:bg-white/5'
                   )}
                 >
-                  Todas ({taggedNotesCount})
+                  <Layers className="w-4 h-4" />
                 </button>
-                {allTags.map(({ tag, count }) => (
-                  <button
-                    key={tag}
-                    type="button"
-                    onClick={() => setSelectedTag(selectedTag === tag ? null : tag)}
-                    className={cn(
-                      'px-2 py-0.5 rounded-full text-[10px] font-medium transition-colors shrink-0 cursor-pointer',
-                      selectedTag === tag
-                        ? 'bg-accent text-white'
-                        : 'bg-white/5 text-veyra-muted hover:text-veyra-text hover:bg-white/10'
-                    )}
-                  >
-                    #{tag} ({count})
-                  </button>
-                ))}
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveView('favorites');
+                    onSelectFolder(null);
+                  }}
+                  title={`Favoritas (${favoritesCount})`}
+                  className={cn(
+                    'flex-1 flex items-center justify-center py-1.5 rounded-md transition-colors cursor-pointer',
+                    activeView === 'favorites'
+                      ? 'bg-accent/20 text-accent font-semibold shadow-sm'
+                      : 'text-veyra-muted hover:text-veyra-text hover:bg-white/5'
+                  )}
+                >
+                  <Star className="w-4 h-4" />
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveView('recent');
+                    onSelectFolder(null);
+                  }}
+                  title={`Recientes (${recentNotes.length})`}
+                  className={cn(
+                    'flex-1 flex items-center justify-center py-1.5 rounded-md transition-colors cursor-pointer',
+                    activeView === 'recent'
+                      ? 'bg-accent/20 text-accent font-semibold shadow-sm'
+                      : 'text-veyra-muted hover:text-veyra-text hover:bg-white/5'
+                  )}
+                >
+                  <Clock className="w-4 h-4" />
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveView('tags');
+                    setSelectedTag(null);
+                    onSelectFolder(null);
+                  }}
+                  title={`Etiquetas (${taggedNotesCount})`}
+                  className={cn(
+                    'flex-1 flex items-center justify-center py-1.5 rounded-md transition-colors cursor-pointer',
+                    activeView === 'tags'
+                      ? 'bg-accent/20 text-accent font-semibold shadow-sm'
+                      : 'text-veyra-muted hover:text-veyra-text hover:bg-white/5'
+                  )}
+                >
+                  <Tag className="w-4 h-4" />
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveView('trash');
+                    onSelectFolder(null);
+                  }}
+                  title={`Papelera (${trashCount})`}
+                  className={cn(
+                    'flex-1 flex items-center justify-center py-1.5 rounded-md transition-colors cursor-pointer',
+                    activeView === 'trash'
+                      ? 'bg-accent/20 text-accent font-semibold shadow-sm'
+                      : 'text-veyra-muted hover:text-veyra-text hover:bg-white/5'
+                  )}
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
               </div>
             )}
 
-            <div className="space-y-0.5">
-              {displayedNotes.length === 0 ? (
-                <div className="py-8 px-3 text-center text-veyra-subtle space-y-1">
-                  <p className="text-xs font-medium text-veyra-muted">
-                    {activeView === 'favorites'
-                      ? 'No tienes notas favoritas'
-                      : activeView === 'recent'
-                      ? 'No hay notas modificadas recientemente'
-                      : activeView === 'tags'
-                      ? 'No se encontraron notas con etiquetas'
-                      : activeView === 'trash'
-                      ? 'La papelera está vacía'
-                      : 'No hay notas para mostrar'}
-                  </p>
-                  <p className="text-[11px] text-veyra-subtle leading-relaxed">
-                    {activeView === 'favorites'
-                      ? 'Haz clic en la estrella al pasar el cursor sobre cualquier nota para fijarla aquí.'
-                      : activeView === 'tags'
-                      ? 'Escribe #etiqueta (ej: #ideas, #trabajo) en el título o cuerpo de tus notas para organizarlas.'
-                      : activeView === 'trash'
-                      ? 'Las notas que elimines aparecerán aquí para restaurarlas o eliminarlas definitivamente.'
-                      : ''}
-                  </p>
+            {/* VIEW A: Single Unified File Explorer Tree (When activeView === 'all' and not searching) */}
+            {search.trim().length === 0 && activeView === 'all' && (
+              <div className="space-y-2">
+                {/* Explorer Header */}
+                <div className="flex items-center justify-between px-2 mb-1">
+                  <span className="text-[10px] font-semibold text-veyra-subtle uppercase tracking-wider">
+                    Explorador
+                  </span>
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={handleToggleSortMode}
+                      title={
+                        sortMode === 'alphabetical'
+                          ? 'Orden alfabético A–Z activo. Clic para modo manual (Drag & Drop)'
+                          : 'Orden manual (Drag & Drop) activo. Clic para ordenar alfabéticamente A–Z'
+                      }
+                      className={cn(
+                        'p-1 rounded transition-all cursor-pointer flex items-center justify-center',
+                        sortMode === 'alphabetical'
+                          ? 'text-accent bg-accent/15 hover:bg-accent/25'
+                          : 'text-veyra-subtle hover:text-veyra-text hover:bg-white/5'
+                      )}
+                    >
+                      <ArrowDownAZ className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      onClick={() => {
+                        setNewFolderName('');
+                        setIsFolderModalOpen(true);
+                      }}
+                      className="p-1 rounded text-veyra-subtle hover:text-veyra-text hover:bg-white/5 transition-colors cursor-pointer"
+                      title="Nueva carpeta"
+                    >
+                      <FolderPlus className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
                 </div>
-              ) : (
-                displayedNotes.map((note) => renderNoteItem(note))
-              )}
+
+                {/* Tree Items: Folders first, then Event Categories, then Root Notes */}
+                <div
+                  onDragOver={(e) => {
+                    if (canMoveToRoot) {
+                      e.preventDefault();
+                      e.dataTransfer.dropEffect = 'move';
+                    }
+                  }}
+                  onDrop={(e) => {
+                    if (canMoveToRoot) {
+                      e.preventDefault();
+                      if (draggedItem?.type === 'note') {
+                        if (draggedItem.folderId !== null) {
+                          onMoveNote?.(draggedItem.id, null);
+                        }
+                        if (draggedItem.eventId !== null) {
+                          onMoveNoteToEvent?.(draggedItem.id, null);
+                        }
+                      } else if (draggedItem?.type === 'folder') {
+                        onMoveFolder?.(draggedItem.id, null);
+                      }
+                      setDraggedItem(null);
+                      setDragOverTarget(null);
+                    }
+                  }}
+                  className="space-y-0.5"
+                >
+                  {/* Drop Zone: Sacar de carpetas o eventos (mover a la raíz) */}
+                  {canMoveToRoot && (
+                    <div
+                      onDragOver={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        e.dataTransfer.dropEffect = 'move';
+                        if (dragOverTarget !== 'root') setDragOverTarget('root');
+                      }}
+                      onDragLeave={() => {
+                        if (dragOverTarget === 'root') setDragOverTarget(null);
+                      }}
+                      onDrop={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        setDragOverTarget(null);
+                        if (draggedItem?.type === 'note') {
+                          if (draggedItem.folderId !== null) {
+                            onMoveNote?.(draggedItem.id, null);
+                          }
+                          if (draggedItem.eventId !== null) {
+                            onMoveNoteToEvent?.(draggedItem.id, null);
+                          }
+                        } else if (draggedItem?.type === 'folder') {
+                          onMoveFolder?.(draggedItem.id, null);
+                        }
+                        setDraggedItem(null);
+                      }}
+                      className={cn(
+                        'my-1 px-2.5 py-2 rounded-lg border-2 border-dashed transition-all duration-150 flex items-center justify-center gap-2 text-xs cursor-pointer select-none',
+                        dragOverTarget === 'root'
+                          ? 'bg-accent/20 border-accent text-accent font-semibold ring-2 ring-accent/40 shadow-sm scale-[1.01]'
+                          : 'border-veyra-border hover:border-accent/60 text-veyra-muted bg-white/[0.02]'
+                      )}
+                    >
+                      <FolderOutput className="w-3.5 h-3.5 shrink-0" />
+                      <span className="truncate">Soltar aquí para sacar a la raíz</span>
+                    </div>
+                  )}
+
+                  {/* Top-level Folders (nested support) */}
+                  {topLevelFolders.map((folder) => renderFolderNode(folder))}
+
+                  {/* Opción B: Event Categories / Cuadernos de Clases y Eventos */}
+                  {eventCategories.map((category) => {
+                    const isCategoryExpanded = !!expandedEventCategories[category.name];
+                    const totalCategoryNotes = category.items.reduce(
+                      (acc, it) => acc + it.notes.length,
+                      0
+                    );
+
+                    return (
+                      <div key={category.name} className="space-y-0.5 pt-1">
+                        {/* Category Header Row (e.g. "Universidad", "Clases") */}
+                        <div
+                          onClick={() =>
+                            setExpandedEventCategories((prev) => ({
+                              ...prev,
+                              [category.name]: !isCategoryExpanded,
+                            }))
+                          }
+                          className="group flex items-center justify-between px-2 py-1.5 rounded-lg text-veyra-muted hover:text-veyra-text hover:bg-white/[0.03] transition-colors cursor-pointer"
+                        >
+                          <div className="flex items-center gap-1.5 truncate flex-1 min-w-0">
+                            <span className="p-0.5 text-veyra-subtle group-hover:text-veyra-text transition-colors flex items-center justify-center">
+                              <MorphIcon
+                                icon={isCategoryExpanded ? ChevronDown : ChevronRight}
+                                size={13}
+                                color="currentColor"
+                              />
+                            </span>
+
+                            {React.createElement(getCategoryIcon(category.name), {
+                              className: 'w-3.5 h-3.5 text-accent shrink-0',
+                            })}
+                            <span className="truncate text-xs font-semibold text-veyra-text">
+                              {category.name}
+                            </span>
+                          </div>
+
+                          <span className="text-[10px] font-mono text-veyra-subtle pr-1">
+                            {totalCategoryNotes}
+                          </span>
+                        </div>
+
+                        {/* Events inside category */}
+                        {isCategoryExpanded && (
+                          <div className="ml-3 pl-2 border-l border-veyra-border/60 space-y-0.5 py-0.5">
+                            {category.items.map(({ event, notes }) => {
+                              const isEventExpanded = !!expandedEvents[event.id];
+                              const eventColor = event.color || '#3B82F6';
+                              const isEventDragOver = dragOverTarget === `event-${event.id}`;
+
+                              return (
+                                <div key={event.id} className="space-y-0.5">
+                                  {/* Event Row (Drop target for notes, but NOT draggable) */}
+                                  <div
+                                    onDragOver={(e) => {
+                                      if (!draggedItem || draggedItem.type !== 'note') return;
+                                      if (draggedItem.eventId !== event.id) {
+                                        e.preventDefault();
+                                        e.stopPropagation();
+                                        e.dataTransfer.dropEffect = 'move';
+                                        if (dragOverTarget !== `event-${event.id}`) {
+                                          setDragOverTarget(`event-${event.id}`);
+                                        }
+                                      }
+                                    }}
+                                    onDragLeave={(e) => {
+                                      if (dragOverTarget === `event-${event.id}`) {
+                                        const rect = e.currentTarget.getBoundingClientRect();
+                                        if (
+                                          e.clientX < rect.left ||
+                                          e.clientX >= rect.right ||
+                                          e.clientY < rect.top ||
+                                          e.clientY >= rect.bottom
+                                        ) {
+                                          setDragOverTarget(null);
+                                        }
+                                      }
+                                    }}
+                                    onDrop={(e) => {
+                                      e.preventDefault();
+                                      e.stopPropagation();
+                                      setDragOverTarget(null);
+                                      if (draggedItem?.type === 'note' && draggedItem.eventId !== event.id) {
+                                        onMoveNoteToEvent?.(draggedItem.id, event.id);
+                                        setExpandedEvents((prev) => ({ ...prev, [event.id]: true }));
+                                      }
+                                      setDraggedItem(null);
+                                    }}
+                                    onClick={() =>
+                                      setExpandedEvents((prev) => ({
+                                        ...prev,
+                                        [event.id]: !isEventExpanded,
+                                      }))
+                                    }
+                                    onContextMenu={(e) => {
+                                      e.preventDefault();
+                                      e.stopPropagation();
+                                      openContextMenu(e.clientX, e.clientY, { type: 'event', event });
+                                    }}
+                                    className={cn(
+                                      'group flex items-center justify-between px-2 py-1 rounded-md text-veyra-muted hover:text-veyra-text hover:bg-white/[0.04] transition-all cursor-pointer relative select-none',
+                                      isEventDragOver && 'bg-accent/25 text-accent font-semibold ring-2 ring-accent/60 shadow-md scale-[1.01]'
+                                    )}
+                                  >
+                                    <div className="flex items-center gap-1.5 truncate flex-1 min-w-0">
+                                      <span className="p-0.5 text-veyra-subtle group-hover:text-veyra-text transition-colors flex items-center justify-center">
+                                        <MorphIcon
+                                          icon={isEventExpanded ? ChevronDown : ChevronRight}
+                                          size={12}
+                                          color="currentColor"
+                                        />
+                                      </span>
+
+                                      <Calendar
+                                        className="w-3.5 h-3.5 shrink-0"
+                                        style={{ color: eventColor }}
+                                      />
+
+                                      <span className="truncate text-xs font-medium text-veyra-text">
+                                        {event.title}
+                                      </span>
+                                    </div>
+
+                                    <div className="flex items-center gap-1 shrink-0">
+                                      {onSelectEvent && (
+                                        <button
+                                          type="button"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            onSelectEvent(event.id);
+                                          }}
+                                          title="Ver evento en agenda"
+                                          className="opacity-0 group-hover:opacity-100 p-0.5 rounded text-veyra-subtle hover:text-accent hover:bg-white/10 transition-all cursor-pointer"
+                                        >
+                                          <ExternalLink className="w-3 h-3" />
+                                        </button>
+                                      )}
+
+                                      {onCreateNoteForEvent && (
+                                        <button
+                                          type="button"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            onCreateNoteForEvent(event.id, event.folder_id || null);
+                                            setExpandedEvents((prev) => ({ ...prev, [event.id]: true }));
+                                          }}
+                                          title="Nueva nota para esta materia"
+                                          className="opacity-0 group-hover:opacity-100 p-0.5 rounded text-veyra-subtle hover:text-accent hover:bg-white/10 transition-all cursor-pointer"
+                                        >
+                                          <Plus className="w-3 h-3" />
+                                        </button>
+                                      )}
+
+                                      <span className="text-[10px] font-mono text-veyra-subtle pr-1">
+                                        {notes.length}
+                                      </span>
+                                    </div>
+                                  </div>
+
+                                  {/* Event child notes */}
+                                  {isEventExpanded && (
+                                    <div className="ml-4 pl-2 border-l border-veyra-border/40 space-y-0.5 py-0.5">
+                                      {notes.length === 0 ? (
+                                        <div className="px-2 py-1 text-[11px] text-veyra-subtle flex items-center justify-between">
+                                          <span className="italic">Sin notas aún</span>
+                                          {onCreateNoteForEvent && (
+                                            <button
+                                              type="button"
+                                              onClick={() =>
+                                                onCreateNoteForEvent(event.id, event.folder_id || null)
+                                              }
+                                              className="text-accent text-[10px] font-medium hover:underline flex items-center gap-0.5 cursor-pointer"
+                                            >
+                                              <Plus className="w-2.5 h-2.5" />
+                                              <span>Crear apunte</span>
+                                            </button>
+                                          )}
+                                        </div>
+                                      ) : (
+                                        notes.map((n) => renderNoteItem(n))
+                                      )}
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+
+                  {/* Root Notes: notas que no están dentro de carpetas ni eventos */}
+                  {rootNotes.map((n) => renderNoteItem(n))}
+
+                  {/* Empty state when no folders, no event categories and no notes exist */}
+                  {folders.length === 0 && eventCategories.length === 0 && rootNotes.length === 0 && (
+                    <div className="py-8 px-3 text-center text-veyra-subtle space-y-1">
+                      <p className="text-xs font-medium text-veyra-muted">No hay notas ni carpetas</p>
+                      <p className="text-[11px] text-veyra-subtle">
+                        Pulsa + para crear tu primera nota.
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* VIEW B: Filtered Notes / Search Results View */}
+            {(search.trim().length > 0 || activeView !== 'all') && (
+              <div>
+                <div className="flex items-center justify-between px-2 mb-2">
+                  <span className="text-[10px] font-semibold text-veyra-subtle uppercase tracking-wider truncate">
+                    {search.trim().length > 0
+                      ? `Resultados (${displayedNotes.length})`
+                      : activeView === 'favorites'
+                        ? `Favoritas (${displayedNotes.length})`
+                        : activeView === 'recent'
+                          ? `Recientes (${displayedNotes.length})`
+                          : activeView === 'tags'
+                            ? selectedTag
+                              ? `#${selectedTag} (${displayedNotes.length})`
+                              : `Etiquetas (${displayedNotes.length})`
+                            : activeView === 'trash'
+                              ? `Papelera (${displayedNotes.length})`
+                              : `Notas (${displayedNotes.length})`}
+                  </span>
+
+                  {activeView === 'trash' && (deletedNotes || []).length > 0 ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (window.confirm('¿Deseas vaciar la papelera de notas permanentemente?')) {
+                          onEmptyTrash?.();
+                        }
+                      }}
+                      className="text-[10px] font-mono text-red-400 hover:text-red-300 transition-colors cursor-pointer flex items-center gap-1"
+                      title="Vaciar papelera permanentemente"
+                    >
+                      <Trash2 className="w-3 h-3" />
+                      <span>Vaciar</span>
+                    </button>
+                  ) : (
+                    <span className="text-[10px] font-mono text-veyra-subtle lowercase shrink-0 ml-2">
+                      {activeView === 'favorites'
+                        ? 'fijadas'
+                        : activeView === 'recent'
+                          ? 'últimos 7 días'
+                          : activeView === 'trash'
+                            ? 'eliminadas'
+                            : 'orden: reciente'}
+                    </span>
+                  )}
+                </div>
+
+                {/* Tags Pills Bar (Only in Tags view when tags exist) */}
+                {activeView === 'tags' && allTags.length > 0 && search.trim().length === 0 && (
+                  <div className="flex items-center gap-1.5 overflow-x-auto pb-2 px-1 mb-2">
+                    <button
+                      type="button"
+                      onClick={() => setSelectedTag(null)}
+                      className={cn(
+                        'px-2 py-0.5 rounded-full text-[10px] font-medium transition-colors shrink-0 cursor-pointer',
+                        selectedTag === null
+                          ? 'bg-accent text-white'
+                          : 'bg-white/5 text-veyra-muted hover:text-veyra-text hover:bg-white/10'
+                      )}
+                    >
+                      Todas ({taggedNotesCount})
+                    </button>
+                    {allTags.map(({ tag, count }) => (
+                      <button
+                        key={tag}
+                        type="button"
+                        onClick={() => setSelectedTag(selectedTag === tag ? null : tag)}
+                        className={cn(
+                          'px-2 py-0.5 rounded-full text-[10px] font-medium transition-colors shrink-0 cursor-pointer',
+                          selectedTag === tag
+                            ? 'bg-accent text-white'
+                            : 'bg-white/5 text-veyra-muted hover:text-veyra-text hover:bg-white/10'
+                        )}
+                      >
+                        #{tag} ({count})
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                <div className="space-y-0.5">
+                  {displayedNotes.length === 0 ? (
+                    <div className="py-8 px-3 text-center text-veyra-subtle space-y-1">
+                      <p className="text-xs font-medium text-veyra-muted">
+                        {activeView === 'favorites'
+                          ? 'No tienes notas favoritas'
+                          : activeView === 'recent'
+                            ? 'No hay notas modificadas recientemente'
+                            : activeView === 'tags'
+                              ? 'No se encontraron notas con etiquetas'
+                              : activeView === 'trash'
+                                ? 'La papelera está vacía'
+                                : 'No hay notas para mostrar'}
+                      </p>
+                      <p className="text-[11px] text-veyra-subtle leading-relaxed">
+                        {activeView === 'favorites'
+                          ? 'Haz clic en la estrella al pasar el cursor sobre cualquier nota para fijarla aquí.'
+                          : activeView === 'tags'
+                            ? 'Escribe #etiqueta (ej: #ideas, #trabajo) en el título o cuerpo de tus notas para organizarlas.'
+                            : activeView === 'trash'
+                              ? 'Las notas que elimines aparecerán aquí para restaurarlas o eliminarlas definitivamente.'
+                              : ''}
+                      </p>
+                    </div>
+                  ) : (
+                    displayedNotes.map((note) => renderNoteItem(note))
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* 4. Footer */}
+          <div className="h-9 px-4 flex items-center justify-between border-t border-veyra-border bg-veyra-card/50 text-[11px] text-veyra-subtle shrink-0 font-mono">
+            <div className="flex items-center gap-1.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
+              <span>{allNotes.length} notas</span>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <span>⌘</span>
+              <button
+                type="button"
+                onClick={() => setIsSettingsOpen(true)}
+                title="Preferencias y cuenta"
+                className="p-1 rounded text-veyra-subtle hover:text-veyra-text hover:bg-white/5 transition-colors cursor-pointer"
+              >
+                <Settings className="w-3.5 h-3.5" />
+              </button>
             </div>
           </div>
-        )}
-      </div>
-
-      {/* 4. Footer */}
-      <div className="h-9 px-4 flex items-center justify-between border-t border-veyra-border bg-veyra-card/50 text-[11px] text-veyra-subtle shrink-0 font-mono">
-        <div className="flex items-center gap-1.5">
-          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
-          <span>{allNotes.length} notas</span>
-        </div>
-
-        <div className="flex items-center gap-2">
-          <span>⌘</span>
-          <button
-            type="button"
-            onClick={() => setIsSettingsOpen(true)}
-            title="Preferencias y cuenta"
-            className="p-1 rounded text-veyra-subtle hover:text-veyra-text hover:bg-white/5 transition-colors cursor-pointer"
-          >
-            <Settings className="w-3.5 h-3.5" />
-          </button>
-        </div>
-      </div>
-    </>
-  )}
+        </>
+      )}
 
       {/* Modal: Nueva Carpeta Raíz */}
       <Modal
@@ -2019,6 +2044,19 @@ export const NotesSidebar: React.FC<NotesSidebarProps> = ({
         onSignOut={onSignOut}
       />
 
+      {/* Modal: Compartir recurso */}
+      {shareTarget && (
+        <ShareModal
+          isOpen={Boolean(shareTarget)}
+          onClose={() => setShareTarget(null)}
+          targetType={shareTarget.type}
+          targetId={shareTarget.id}
+          targetName={shareTarget.name}
+          ownerId={shareTarget.ownerId}
+          currentUserId={userId}
+        />
+      )}
+
       {/* Menú Contextual Personalizado (Diseño Flat, sin glass ni reflejos) */}
       {contextMenu.isOpen && contextMenu.target && (
         <div
@@ -2078,6 +2116,27 @@ export const NotesSidebar: React.FC<NotesSidebarProps> = ({
               >
                 <Pencil className="w-3.5 h-3.5 text-veyra-subtle shrink-0" />
                 <span>Renombrar carpeta</span>
+              </button>
+
+              {/* Compartir carpeta */}
+              <button
+                type="button"
+                onClick={() => {
+                  const targetFolder = contextMenu.target?.type === 'folder' ? contextMenu.target.folder : null;
+                  closeContextMenu();
+                  if (targetFolder) {
+                    setShareTarget({
+                      type: 'folder',
+                      id: targetFolder.id,
+                      name: targetFolder.name,
+                      ownerId: targetFolder.user_id,
+                    });
+                  }
+                }}
+                className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded hover:bg-white/5 text-left transition-colors cursor-pointer"
+              >
+                <Share2 className="w-3.5 h-3.5 text-accent shrink-0" />
+                <span>Compartir carpeta...</span>
               </button>
 
               {/* Cambiar color */}
@@ -2201,6 +2260,29 @@ export const NotesSidebar: React.FC<NotesSidebarProps> = ({
                 </button>
               )}
 
+              {/* Compartir nota */}
+              {activeView !== 'trash' && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const targetNote = contextMenu.target?.type === 'note' ? contextMenu.target.note : null;
+                    closeContextMenu();
+                    if (targetNote) {
+                      setShareTarget({
+                        type: 'note',
+                        id: targetNote.id,
+                        name: targetNote.title || 'Nota sin título',
+                        ownerId: targetNote.user_id,
+                      });
+                    }
+                  }}
+                  className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded hover:bg-white/5 text-left transition-colors cursor-pointer"
+                >
+                  <Share2 className="w-3.5 h-3.5 text-accent shrink-0" />
+                  <span>Compartir nota...</span>
+                </button>
+              )}
+
               {/* Mover a la raíz si está en carpeta o evento */}
               {activeView !== 'trash' &&
                 (contextMenu.target.note.folder_id !== null || contextMenu.target.note.event_id !== null) && (
@@ -2303,6 +2385,25 @@ export const NotesSidebar: React.FC<NotesSidebarProps> = ({
                   <span>Crear apunte para esta materia</span>
                 </button>
               )}
+              <button
+                type="button"
+                onClick={() => {
+                  const targetEvent = contextMenu.target?.type === 'event' ? contextMenu.target.event : null;
+                  closeContextMenu();
+                  if (targetEvent) {
+                    setShareTarget({
+                      type: 'event',
+                      id: targetEvent.id,
+                      name: targetEvent.title,
+                      ownerId: targetEvent.user_id,
+                    });
+                  }
+                }}
+                className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded hover:bg-white/5 text-left transition-colors cursor-pointer"
+              >
+                <Share2 className="w-3.5 h-3.5 text-accent shrink-0" />
+                <span>Compartir evento...</span>
+              </button>
             </>
           )}
         </div>

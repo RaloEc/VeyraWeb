@@ -51,7 +51,7 @@ export const TemplatesModal: React.FC<TemplatesModalProps> = ({
   const [activeTab, setActiveTab] = useState<TemplateType>('block');
   const [activeSourceFilter, setActiveSourceFilter] = useState<'all' | 'system' | 'custom'>('all');
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedTemplateId, setSelectedTemplateId] = useState<string>('block-academic-header');
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string>(NOTE_TEMPLATES[0]?.id || 'block-comparison-table');
 
   // Filtrado optimizado por pestaña, tipo de fuente y texto de búsqueda
   const filteredTemplates = useMemo(() => {

@@ -33,6 +33,8 @@ export interface EventModalProps {
   onClose: () => void;
   event?: CalendarEvent | null;
   allNotes?: Note[];
+  initialDateStr?: string;
+  initialTimeStr?: string;
   onSave: (payload: {
     id?: string;
     title: string;
@@ -108,6 +110,8 @@ export const EventModal: React.FC<EventModalProps> = ({
   onClose,
   event,
   allNotes = [],
+  initialDateStr,
+  initialTimeStr,
   onSave,
   onDelete,
 }) => {
@@ -245,9 +249,18 @@ export const EventModal: React.FC<EventModalProps> = ({
       now.setHours(now.getHours() + 1);
       const end = new Date(now.getTime() + 60 * 60 * 1000);
 
-      setDateStr(toLocalYmd(now));
-      setStartTimeStr(now.toTimeString().substring(0, 5));
-      setEndTimeStr(end.toTimeString().substring(0, 5));
+      let resolvedStartTime = initialTimeStr || now.toTimeString().substring(0, 5);
+      let resolvedEndTime = end.toTimeString().substring(0, 5);
+      if (initialTimeStr) {
+        const [h, m] = initialTimeStr.split(':').map(Number);
+        const endH = ((h || 0) + 1) % 24;
+        resolvedStartTime = `${String(h || 0).padStart(2, '0')}:${String(m || 0).padStart(2, '0')}`;
+        resolvedEndTime = `${String(endH).padStart(2, '0')}:${String(m || 0).padStart(2, '0')}`;
+      }
+
+      setDateStr(initialDateStr || toLocalYmd(now));
+      setStartTimeStr(resolvedStartTime);
+      setEndTimeStr(resolvedEndTime);
       setTitle('');
       setDescription('');
       setLocation('');

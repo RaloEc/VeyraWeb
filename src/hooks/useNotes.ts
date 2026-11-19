@@ -4,6 +4,7 @@ import type { Folder, Note, NoteContentPaginated } from '../types/notes';
 import type { Database } from '../types/database';
 import { localDB } from '../lib/db/local-db';
 import { syncEngine } from '../lib/sync/syncEngine';
+import { extractHashtags, syncItemTags } from '../lib/tagUtils';
 
 export function useNotes(userId?: string, initialNoteId?: string | null) {
   const [folders, setFolders] = useState<Folder[]>([]);
@@ -114,9 +115,12 @@ export function useNotes(userId?: string, initialNoteId?: string | null) {
       }
 
       if (notesRes.data) {
-        let fetchedNotes = (notesRes.data as unknown as Note[]).filter(
-          (n) => !deletedNoteIdsRef.current.has(n.id) && n.deleted !== 1
-        );
+        let fetchedNotes = (notesRes.data as unknown as Note[])
+          .filter((n) => !deletedNoteIdsRef.current.has(n.id) && n.deleted !== 1)
+          .map((n) => ({
+            ...n,
+            created_at_ms: Number(n.created_at_ms || n.updated_at_ms || n.last_modified_ms || Date.now()),
+          }));
 
         // On initial load: if an initialNoteId was specified and is not in the list, fetch it directly
         const targetId = initialNoteIdRef.current;
@@ -137,7 +141,16 @@ export function useNotes(userId?: string, initialNoteId?: string | null) {
             !deletedNoteIdsRef.current.has(specificNote.id) &&
             specificNote.deleted !== 1
           ) {
-            fetchedNotes = [specificNote as unknown as Note, ...fetchedNotes];
+            const mappedSpecific = {
+              ...(specificNote as unknown as Note),
+              created_at_ms: Number(
+                specificNote.created_at_ms ||
+                specificNote.updated_at_ms ||
+                specificNote.last_modified_ms ||
+                Date.now()
+              ),
+            };
+            fetchedNotes = [mappedSpecific, ...fetchedNotes];
           }
         }
 
@@ -184,10 +197,19 @@ export function useNotes(userId?: string, initialNoteId?: string | null) {
       .channel(channelName)
       .on(
         'postgres_changes',
-        { event: '*', schema: 'public', table: 'notes', filter: `user_id=eq.${userId}` },
+        { event: '*', schema: 'public', table: 'notes' },
         async (payload) => {
           const { eventType, new: newRec, old: oldRec } = payload;
-          const note = newRec as Note;
+          const rawNote = newRec as any;
+          const note: Note = {
+            ...rawNote,
+            created_at_ms: Number(
+              rawNote?.created_at_ms ||
+              rawNote?.updated_at_ms ||
+              rawNote?.last_modified_ms ||
+              Date.now()
+            ),
+          };
 
           if (eventType === 'INSERT') {
             if (Number(note.deleted) === 1 || deletedNoteIdsRef.current.has(note.id)) {
@@ -502,6 +524,7 @@ export function useNotes(userId?: string, initialNoteId?: string | null) {
       ...(updates.title !== undefined && { title: updates.title }),
       ...(updates.previewText !== undefined && { preview_text: updates.previewText }),
       ...(updates.folder_id !== undefined && { folder_id: updates.folder_id }),
+      created_at_ms: currentNote.created_at_ms || nowMs,
       updated_at_ms: nowMs,
       last_modified_ms: nowMs,
     };
@@ -512,6 +535,11 @@ export function useNotes(userId?: string, initialNoteId?: string | null) {
 
     await localDB.notes.update(id, optimisticUpdates);
     await syncEngine.enqueue('notes', 'upsert', id, updatePayload, nowMs);
+
+    if (updates.title !== undefined) {
+      const noteTags = extractHashtags(updates.title);
+      syncItemTags(userId, 'note', id, noteTags).catch(() => {});
+    }
   };
 
   // Delete note (soft delete)
@@ -594,11 +622,18 @@ export function useNotes(userId?: string, initialNoteId?: string | null) {
     );
 
     await localDB.notes.update(id, { is_pinned: newPin, last_modified_ms: nowMs });
-    await syncEngine.enqueue('notes', 'upsert', id, { is_pinned: newPin, last_modified_ms: nowMs }, nowMs);
+    await syncEngine.enqueue(
+      'notes',
+      'upsert',
+      id,
+      { is_pinned: newPin, last_modified_ms: nowMs, created_at_ms: target.created_at_ms || nowMs },
+      nowMs
+    );
   };
 
   // Move note to folder
   const moveNote = async (noteId: string, targetFolderId: string | null) => {
+    const target = notes.find((n) => n.id === noteId);
     const nowMs = Date.now();
     setNotes((prev) =>
       prev.map((n) =>
@@ -609,7 +644,18 @@ export function useNotes(userId?: string, initialNoteId?: string | null) {
     );
 
     await localDB.notes.update(noteId, { folder_id: targetFolderId, updated_at_ms: nowMs, last_modified_ms: nowMs });
-    await syncEngine.enqueue('notes', 'upsert', noteId, { folder_id: targetFolderId, updated_at_ms: nowMs, last_modified_ms: nowMs }, nowMs);
+    await syncEngine.enqueue(
+      'notes',
+      'upsert',
+      noteId,
+      {
+        folder_id: targetFolderId,
+        updated_at_ms: nowMs,
+        last_modified_ms: nowMs,
+        created_at_ms: target?.created_at_ms || nowMs,
+      },
+      nowMs
+    );
   };
 
   // Move folder inside another folder

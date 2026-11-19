@@ -10,6 +10,7 @@ import {
   ChevronDown,
   ChevronUp,
   Layers,
+  CalendarDays,
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import type { Reminder, ReminderPriority, ReminderControlLevel } from '../../types/reminders';
@@ -35,6 +36,9 @@ export interface AgendaSidebarViewProps {
   onSelectEvent?: (eventId: string) => void;
   selectedReminderId?: string | null;
   onSelectReminder?: (reminderId: string) => void;
+  onOpenCalendar?: () => void;
+  isCalendarOpen?: boolean;
+  userId?: string;
 }
 
 export const AgendaSidebarView: React.FC<AgendaSidebarViewProps> = ({
@@ -47,6 +51,9 @@ export const AgendaSidebarView: React.FC<AgendaSidebarViewProps> = ({
   onSelectEvent,
   selectedReminderId,
   onSelectReminder,
+  onOpenCalendar,
+  isCalendarOpen,
+  userId: _userId,
 }) => {
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<AgendaFilter>('all');
@@ -546,6 +553,22 @@ export const AgendaSidebarView: React.FC<AgendaSidebarViewProps> = ({
         >
           <Plus className="w-4 h-4 stroke-[2.5]" />
         </button>
+
+        {onOpenCalendar && (
+          <button
+            type="button"
+            onClick={onOpenCalendar}
+            title="Abrir vista Calendario (Mes / Semana / Día)"
+            className={cn(
+              'h-[30px] w-[30px] rounded-lg border flex items-center justify-center transition-colors shrink-0 cursor-pointer',
+              isCalendarOpen
+                ? 'bg-accent/20 border-accent/40 text-accent'
+                : 'bg-veyra-elevated border-veyra-border text-veyra-muted hover:text-veyra-text'
+            )}
+          >
+            <CalendarDays className="w-3.5 h-3.5" />
+          </button>
+        )}
       </div>
 
       {/* 2. Filtros rápidos: Selector compacto [Todo | Recordatorios | Eventos] */}

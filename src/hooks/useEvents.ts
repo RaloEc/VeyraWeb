@@ -5,6 +5,7 @@ import { isDateToday } from '../lib/utils';
 import { expandOccurrences } from '../services/recurrence/recurrenceEngine';
 import { localDB } from '../lib/db/local-db';
 import { syncEngine } from '../lib/sync/syncEngine';
+import { extractHashtags, syncItemTags } from '../lib/tagUtils';
 
 export type CalendarEvent = Database['public']['Tables']['events']['Row'];
 
@@ -17,7 +18,7 @@ export function useEvents(userId?: string) {
   useEffect(() => {
     let isMounted = true;
     localDB.events
-      .filter((e) => e.deleted === 0 && (!userId || e.user_id === userId))
+      .filter((e) => e.deleted === 0)
       .sortBy('start_time_ms')
       .then((cached) => {
         if (isMounted && cached.length > 0) {
@@ -40,7 +41,7 @@ export function useEvents(userId?: string) {
     try {
       if (!syncEngine.isOnline()) {
         const cached = await localDB.events
-          .filter((e) => e.deleted === 0 && e.user_id === userId)
+          .filter((e) => e.deleted === 0)
           .sortBy('start_time_ms');
         setEvents(cached);
         setLoading(false);
@@ -51,7 +52,6 @@ export function useEvents(userId?: string) {
       const { data, error } = await supabase
         .from('events')
         .select('*')
-        .eq('user_id', userId)
         .eq('deleted', 0)
         .order('start_time_ms', { ascending: true });
 
@@ -73,7 +73,7 @@ export function useEvents(userId?: string) {
       console.error('[useEvents] Error fetching:', err);
       setError((err as Error).message);
       const cached = await localDB.events
-        .filter((e) => e.deleted === 0 && (!userId || e.user_id === userId))
+        .filter((e) => e.deleted === 0)
         .sortBy('start_time_ms');
       if (cached.length > 0) {
         setEvents(cached);
@@ -100,7 +100,6 @@ export function useEvents(userId?: string) {
           event: '*',
           schema: 'public',
           table: 'events',
-          filter: `user_id=eq.${userId}`,
         },
         async (payload) => {
           const { eventType, new: newRecord, old: oldRecord } = payload;
@@ -261,6 +260,16 @@ export function useEvents(userId?: string) {
       // 3. Outbox
       await syncEngine.enqueue('events', 'upsert', newId, insertData, nowMs);
 
+      const allEventTags = Array.from(
+        new Set([
+          ...parsedTags,
+          ...extractHashtags(`${payload.title} ${payload.description || ''}`),
+        ])
+      );
+      if (allEventTags.length > 0) {
+        syncItemTags(userId, 'event', newId, allEventTags).catch(() => {});
+      }
+
       return newId;
     },
     [userId]
@@ -309,8 +318,21 @@ export function useEvents(userId?: string) {
 
       // 3. Outbox
       await syncEngine.enqueue('events', 'upsert', id, updateData, nowMs);
+
+      if (updates.tags !== undefined || updates.title !== undefined || updates.description !== undefined) {
+        const currentLocal = await localDB.events.get(id);
+        const rawTags = updates.tags !== undefined ? updates.tags : currentLocal?.tags;
+        const explicitTags = Array.isArray(rawTags) ? rawTags.map(String) : [];
+        const allEventTags = Array.from(
+          new Set([
+            ...explicitTags,
+            ...extractHashtags(`${updates.title ?? currentLocal?.title ?? ''} ${updates.description ?? currentLocal?.description ?? ''}`),
+          ])
+        );
+        syncItemTags(userId, 'event', id, allEventTags).catch(() => {});
+      }
     },
-    []
+    [userId]
   );
 
   const deleteEvent = useCallback(async (id: string) => {

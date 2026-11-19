@@ -7,6 +7,10 @@ import { CacheableResponsePlugin } from 'workbox-cacheable-response';
 
 declare let self: ServiceWorkerGlobalScope;
 
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || 'https://rrwoompvuggcczggfgiq.supabase.co';
+const SUPABASE_ANON_KEY =
+  import.meta.env.VITE_SUPABASE_ANON_KEY || 'sb_publishable_5y3OReimX6RP2Tcpl8Ailw_V52PADlk';
+
 // 1. Clean up outdated caches from previous versions
 cleanupOutdatedCaches();
 
@@ -114,6 +118,7 @@ self.addEventListener('push', (event) => {
 
     const options: NotificationOptions & {
       renotify?: boolean;
+      silent?: boolean;
       actions?: Array<{ action: string; title: string }>;
     } = {
       body: payload.body || 'Tienes un recordatorio pendiente.',
@@ -122,15 +127,20 @@ self.addEventListener('push', (event) => {
       tag: payload.tag || (payload.reminderId ? `reminder-${payload.reminderId}` : 'veyra-notification'),
       requireInteraction: isCritical || isStrict,
       renotify: true,
+      silent: Boolean(payload.silent),
       data: {
         url: payload.url || (payload.reminderId ? `/reminders/${payload.reminderId}` : '/'),
         reminderId: payload.reminderId,
         actionToken: payload.actionToken,
       },
-      actions: [
-        { action: 'complete', title: 'Completar' },
-        { action: 'snooze_10', title: 'Posponer 10m' },
-      ],
+      ...(payload.reminderId && payload.actionToken
+        ? {
+            actions: [
+              { action: 'complete', title: 'Completar' },
+              { action: 'snooze_10', title: 'Posponer 10m' },
+            ],
+          }
+        : {}),
     };
 
     event.waitUntil(self.registration.showNotification(title, options));
@@ -165,9 +175,13 @@ self.addEventListener('notificationclick', (event) => {
       };
 
       event.waitUntil(
-        fetch('/functions/v1/reminder-action', {
+        fetch(`${SUPABASE_URL}/functions/v1/reminder-action`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            'apikey': SUPABASE_ANON_KEY,
+            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+          },
           body: JSON.stringify(actionPayload),
         }).catch((err) => console.error('[SW] Action dispatch error:', err))
       );

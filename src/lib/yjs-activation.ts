@@ -35,7 +35,15 @@ export async function activateNoteYjsMode(noteId: string, ydoc: Y.Doc): Promise<
         const local = await localDB.notes.get(noteId);
         if (local) {
           // Asegurar que la fila exista en Supabase antes de invocar la RPC
-          await supabase.from('notes').upsert(local, { onConflict: 'id' });
+          await supabase.from('notes').upsert(
+            {
+              ...local,
+              created_at_ms: local.created_at_ms || local.updated_at_ms || Date.now(),
+              updated_at_ms: local.updated_at_ms || Date.now(),
+              last_modified_ms: local.last_modified_ms || Date.now(),
+            },
+            { onConflict: 'id' }
+          );
           const { data: freshRow } = await supabase
             .from('notes')
             .select('id, user_id, content, sync_mode, updated_at_ms, last_modified_ms')
@@ -73,8 +81,8 @@ export async function activateNoteYjsMode(noteId: string, ydoc: Y.Doc): Promise<
 
     console.log(`🚀 [activateNoteYjsMode] Activando nota ${noteId} en modo Yjs...`);
 
-    // 3. Call transactional RPC
-    const { data, error } = await supabase.rpc('activate_note_yjs_mode', {
+    // 3. Call transactional RPC con timeout de protección de 4s
+    const rpcPromise = supabase.rpc('activate_note_yjs_mode', {
       p_note_id: noteId,
       p_client_id: clientId,
       p_initial_update_data: initialUpdateData,
@@ -83,6 +91,12 @@ export async function activateNoteYjsMode(noteId: string, ydoc: Y.Doc): Promise<
       p_expected_updated_at_ms: Math.floor(expectedUpdatedAtMs),
       p_initial_state_vector: initialStateVector,
     });
+
+    const timeoutPromise = new Promise<{ data: null; error: { message: string } }>((_, reject) => {
+      setTimeout(() => reject(new Error('Timeout de 4s esperando activate_note_yjs_mode')), 4000);
+    });
+
+    const { data, error } = (await Promise.race([rpcPromise, timeoutPromise])) as any;
 
     if (error) {
       console.warn('⚠️ [activateNoteYjsMode] Error en activate_note_yjs_mode RPC:', error);

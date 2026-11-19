@@ -16,7 +16,7 @@ export function usePWAInstall() {
     );
   });
 
-  const [isMobileDevice, setIsMobileDevice] = useState<boolean>(() => {
+  const [isMobileDevice] = useState<boolean>(() => {
     if (typeof window === 'undefined') return false;
     return /Android|iPhone|iPad|iPod|Windows Phone|Mobile/i.test(navigator.userAgent);
   });
@@ -31,15 +31,8 @@ export function usePWAInstall() {
     };
     mediaQuery.addEventListener('change', handleDisplayChange);
 
-    // Only capture beforeinstallprompt if running on desktop!
+    // Capture beforeinstallprompt on both desktop and mobile browsers
     const handleBeforeInstallPrompt = (e: Event) => {
-      // If mobile device, prevent browser install banner
-      if (/Android|iPhone|iPad|iPod|Windows Phone|Mobile/i.test(navigator.userAgent)) {
-        setIsMobileDevice(true);
-        e.preventDefault();
-        return;
-      }
-
       e.preventDefault();
       setDeferredPrompt(e as BeforeInstallPromptEvent);
     };
@@ -47,7 +40,7 @@ export function usePWAInstall() {
     const handleAppInstalled = () => {
       setIsInstalled(true);
       setDeferredPrompt(null);
-      toast.success('¡Veyra se ha instalado como aplicación de escritorio!');
+      toast.success('¡Veyra se ha instalado como aplicación!');
     };
 
     window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
@@ -78,7 +71,7 @@ export function usePWAInstall() {
   }, [deferredPrompt]);
 
   return {
-    isInstallable: Boolean(deferredPrompt) && !isInstalled && !isMobileDevice,
+    isInstallable: Boolean(deferredPrompt) && !isInstalled,
     isInstalled,
     isMobileDevice,
     promptInstall,

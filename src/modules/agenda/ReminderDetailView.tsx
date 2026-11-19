@@ -17,6 +17,7 @@ import {
   Check,
   Paperclip,
   ExternalLink,
+  Share2,
 } from 'lucide-react';
 import type { Reminder, Subtask, ReminderControlLevel } from '../../types/reminders';
 import type { CalendarEvent } from '../../hooks/useEvents';
@@ -26,6 +27,7 @@ import type { useEvents } from '../../hooks/useEvents';
 import { useTheme } from '../../theme/ThemeProvider';
 import { cn, isDateToday, isDateOverdue, parseSubtasks, isImageAttachment, parseAttachments, toLocalYmd } from '../../lib/utils';
 import { ConfirmTooltip } from '../../components/common/ConfirmTooltip';
+import { ShareModal } from '../../components/common/ShareModal';
 
 export interface ReminderDetailViewProps {
   reminder: Reminder;
@@ -37,6 +39,7 @@ export interface ReminderDetailViewProps {
   onClose: () => void;
   isSidebarOpen?: boolean;
   onToggleSidebar?: () => void;
+  currentUserId?: string;
 }
 
 export const ReminderDetailView: React.FC<ReminderDetailViewProps> = ({
@@ -49,8 +52,10 @@ export const ReminderDetailView: React.FC<ReminderDetailViewProps> = ({
   onClose,
   isSidebarOpen,
   onToggleSidebar,
+  currentUserId,
 }) => {
   const { palette } = useTheme();
+  const [isShareModalOpen, setIsShareModalOpen] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [title, setTitle] = useState(reminder.title || '');
   const [description, setDescription] = useState(reminder.description || '');
@@ -329,6 +334,19 @@ export const ReminderDetailView: React.FC<ReminderDetailViewProps> = ({
             className="px-1.5 py-1 rounded text-veyra-muted hover:text-veyra-text hover:bg-white/5 text-[11px] font-medium cursor-pointer transition-colors"
           >
             +1d
+          </button>
+
+          <div className="w-[1px] h-3 bg-veyra-border mx-0.5" />
+
+          {/* Share Button */}
+          <button
+            type="button"
+            onClick={() => setIsShareModalOpen(true)}
+            title="Compartir recordatorio"
+            className="px-2 py-1 rounded text-veyra-muted hover:text-accent hover:bg-white/5 text-[11px] font-medium transition-colors cursor-pointer flex items-center gap-1"
+          >
+            <Share2 className="w-3 h-3 text-accent" />
+            <span className="hidden sm:inline">Compartir</span>
           </button>
 
           <div className="w-[1px] h-3 bg-veyra-border mx-0.5" />
@@ -757,6 +775,17 @@ export const ReminderDetailView: React.FC<ReminderDetailViewProps> = ({
           </form>
         </div>
       </div>
+
+      <ShareModal
+        isOpen={isShareModalOpen}
+        onClose={() => setIsShareModalOpen(false)}
+        targetType="reminder"
+        targetId={reminder.id}
+        targetName={reminder.title}
+        ownerId={reminder.user_id}
+        currentUserId={currentUserId}
+        onLeftCollaboration={onClose}
+      />
     </div>
   );
 };

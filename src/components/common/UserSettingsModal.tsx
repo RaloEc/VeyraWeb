@@ -21,11 +21,14 @@ import {
   Trash2,
   RefreshCw,
   Apple,
+  AlertTriangle,
 } from 'lucide-react';
 import { Modal } from './Modal';
 import { usePWAInstall } from '../../hooks/usePWAInstall';
 import { PushService } from '../../lib/pushService';
 import { DeviceService, type ConnectedDevice } from '../../lib/deviceService';
+import { supabase } from '../../lib/supabase';
+import { localDB } from '../../lib/db/local-db';
 import { toast } from 'sonner';
 import { ACCENT_PALETTES, type AccentTheme } from '../../theme/accentColors';
 import { useTheme } from '../../theme/ThemeProvider';
@@ -73,6 +76,62 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
   const [devices, setDevices] = useState<ConnectedDevice[]>([]);
   const [devicesLoading, setDevicesLoading] = useState<boolean>(false);
   const [removingDeviceId, setRemovingDeviceId] = useState<string | null>(null);
+
+  // Eliminación de cuenta
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState<boolean>(false);
+  const [deleteConfirmText, setDeleteConfirmText] = useState<string>('');
+  const [isDeletingAccount, setIsDeletingAccount] = useState<boolean>(false);
+
+  const handleDeleteAccount = async () => {
+    if (deleteConfirmText.trim().toUpperCase() !== 'ELIMINAR') {
+      toast.error('Escribe ELIMINAR para confirmar el borrado permanente.');
+      return;
+    }
+
+    setIsDeletingAccount(true);
+    try {
+      if (userId) {
+        await PushService.unsubscribe(userId).catch(() => {});
+
+        const { error: rpcError } = await supabase.rpc('delete_user_account');
+        if (rpcError) {
+          console.warn('[UserSettingsModal] RPC delete_user_account fallback:', rpcError.message);
+          await Promise.allSettled([
+            supabase.from('reminders').delete().eq('user_id', userId),
+            supabase.from('notes').delete().eq('user_id', userId),
+            supabase.from('folders').delete().eq('user_id', userId),
+            supabase.from('events').delete().eq('user_id', userId),
+            supabase.from('compliance_events').delete().eq('user_id', userId),
+            supabase.from('web_push_subscriptions').delete().eq('user_id', userId),
+            supabase.from('profiles').delete().eq('id', userId),
+          ]);
+        }
+      }
+
+      try {
+        await localDB.delete();
+      } catch {
+        // ignore localDB delete error
+      }
+      if (typeof window !== 'undefined') {
+        localStorage.clear();
+      }
+
+      toast.success('Tu cuenta y todos tus datos han sido eliminados.');
+      onClose();
+      if (onSignOut) {
+        onSignOut();
+      } else {
+        await supabase.auth.signOut().catch(() => {});
+        window.location.href = '/';
+      }
+    } catch (err) {
+      console.error('[UserSettingsModal] Error deleting account:', err);
+      toast.error('No se pudo eliminar la cuenta. Intenta de nuevo.');
+    } finally {
+      setIsDeletingAccount(false);
+    }
+  };
 
   const loadDevices = async () => {
     if (!userId) return;
@@ -257,7 +316,7 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
         <div className="flex-1 p-5 md:p-6 overflow-y-auto overflow-x-hidden h-full space-y-6 text-xs">
           {/* Indicador de guardado en la nube */}
           <div className="flex items-center justify-between text-[11px] text-veyra-subtle pb-2 border-b border-veyra-border/50">
-            <span className="font-medium text-veyra-muted">Los cambios globales se sincronizan al instante con tu app móvil</span>
+            <span className="font-medium text-veyra-muted">Los cambios globales se sincronizan al instante en todos tus dispositivos conectados (Web y Móvil)</span>
             {isSaving ? (
               <span className="flex items-center gap-1.5 text-accent font-medium">
                 <Loader2 className="w-3 h-3 animate-spin" />
@@ -336,6 +395,72 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
                   ))}
                 </div>
               </div>
+
+              {/* Zona de peligro: Eliminación permanente de cuenta */}
+              <div className="p-3.5 rounded-lg bg-red-500/5 border border-red-500/25 space-y-2.5">
+                <div className="flex items-center justify-between gap-2">
+                  <div>
+                    <h5 className="text-xs font-semibold text-red-400 flex items-center gap-1.5">
+                      <AlertTriangle className="w-3.5 h-3.5" />
+                      <span>Zona de peligro</span>
+                    </h5>
+                    <p className="text-[10.5px] text-veyra-muted mt-0.5">
+                      Elimina permanentemente tu cuenta, notas, recordatorios, eventos y datos locales.
+                    </p>
+                  </div>
+                  {!showDeleteConfirm && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowDeleteConfirm(true);
+                        setDeleteConfirmText('');
+                      }}
+                      className="px-3 py-1.5 rounded-lg bg-red-500/15 hover:bg-red-500/25 text-red-400 font-semibold transition-colors cursor-pointer shrink-0"
+                    >
+                      Eliminar cuenta
+                    </button>
+                  )}
+                </div>
+
+                {showDeleteConfirm && (
+                  <div className="pt-2.5 border-t border-red-500/20 space-y-2.5">
+                    <p className="text-[11px] text-red-300">
+                      Esta acción es irreversible. Escribe <strong>ELIMINAR</strong> para confirmar:
+                    </p>
+                    <div className="flex flex-col sm:flex-row gap-2">
+                      <input
+                        type="text"
+                        value={deleteConfirmText}
+                        onChange={(e) => setDeleteConfirmText(e.target.value)}
+                        placeholder="ELIMINAR"
+                        className="flex-1 px-3 py-1.5 rounded-lg bg-veyra-elevated border border-red-500/30 text-veyra-text placeholder:text-veyra-subtle focus:outline-none focus:border-red-400 text-xs font-mono"
+                      />
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setShowDeleteConfirm(false);
+                            setDeleteConfirmText('');
+                          }}
+                          disabled={isDeletingAccount}
+                          className="px-3 py-1.5 rounded-lg bg-veyra-elevated text-veyra-muted hover:text-veyra-text transition-colors cursor-pointer"
+                        >
+                          Cancelar
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleDeleteAccount}
+                          disabled={isDeletingAccount || deleteConfirmText.trim().toUpperCase() !== 'ELIMINAR'}
+                          className="px-3 py-1.5 rounded-lg bg-red-600 hover:bg-red-500 text-white font-semibold disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer flex items-center gap-1.5"
+                        >
+                          {isDeletingAccount && <Loader2 className="w-3 h-3 animate-spin" />}
+                          <span>Confirmar borrado</span>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
           )}
 
@@ -347,7 +472,7 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
               <div>
                 <h4 className="text-sm font-semibold text-veyra-text">Estilo e Interfaz</h4>
                 <p className="text-[11px] text-veyra-muted mt-0.5">
-                  El color de acento se sincroniza en tiempo real tanto en la Web como en la App móvil.
+                  El color de acento se sincroniza en tiempo real en todos tus dispositivos conectados (Web y Móvil).
                 </p>
               </div>
 
@@ -451,7 +576,7 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
                   ))}
                 </div>
                 <p className="text-[10px] text-veyra-subtle mt-1.5">
-                  Cambiar este color transmite una señal instantánea por WebSocket al móvil para colorear iconos, bordes y botones en vivo.
+                  Cambiar este color transmite una señal instantánea por WebSocket a tus demás dispositivos conectados para colorear iconos, bordes y botones en vivo.
                 </p>
               </div>
 
@@ -500,7 +625,7 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
               <div>
                 <h4 className="text-sm font-semibold text-veyra-text">Recordatorios y Agenda Compartida</h4>
                 <p className="text-[11px] text-veyra-muted mt-0.5">
-                  Alinea los tiempos de aviso, calendario y sonidos audibles con tu dispositivo móvil.
+                  Alinea los tiempos de aviso, calendario y sonidos audibles en todos tus dispositivos conectados.
                 </p>
               </div>
 

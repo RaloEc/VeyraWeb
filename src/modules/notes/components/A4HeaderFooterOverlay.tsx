@@ -121,7 +121,7 @@ export async function createHeaderFooterImageFromFile(
 /**
  * Reemplaza variables dinámicas ({page}, {total}, {date}, {time}, {title}, {author})
  */
-function interpolateTokens(
+export function interpolateTokens(
   raw: string,
   ctx: {
     sheetNum: number;

@@ -29,7 +29,8 @@ export function useAuth() {
         setSession(session);
         setUser(session?.user ?? null);
         if (session?.user) {
-          fetchProfile(session.user.id);
+          clearTimeout(failsafeTimeout);
+          fetchProfile(session.user.id, session.user.email);
         } else {
           clearTimeout(failsafeTimeout);
           setLoading(false);
@@ -51,7 +52,7 @@ export function useAuth() {
       setSession(session);
       setUser(session?.user ?? null);
       if (session?.user) {
-        await fetchProfile(session.user.id);
+        await fetchProfile(session.user.id, session.user.email);
       } else {
         setProfile(null);
         setLoading(false);
@@ -65,7 +66,7 @@ export function useAuth() {
     };
   }, []);
 
-  const fetchProfile = async (userId: string) => {
+  const fetchProfile = async (userId: string, userEmail?: string) => {
     try {
       const { data, error } = await supabase
         .from('profiles')
@@ -75,6 +76,25 @@ export function useAuth() {
 
       if (!error && data) {
         setProfile(data);
+      } else if (!error && data === null) {
+        const { data: created, error: upsertErr } = await supabase
+          .from('profiles')
+          .upsert(
+            {
+              id: userId,
+              email: userEmail ?? null,
+              default_control_level: 'normal',
+              onboarding_completed: false,
+              updated_at: new Date().toISOString(),
+            },
+            { onConflict: 'id' }
+          )
+          .select('*')
+          .single();
+
+        if (!upsertErr && created) {
+          setProfile(created);
+        }
       }
     } catch (err) {
       console.error('[useAuth] Error fetching profile:', err);
@@ -102,7 +122,7 @@ export function useAuth() {
 
   const refreshProfile = async () => {
     if (user) {
-      await fetchProfile(user.id);
+      await fetchProfile(user.id, user.email);
     }
   };
 

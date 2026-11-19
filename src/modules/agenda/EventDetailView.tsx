@@ -21,6 +21,7 @@ import {
   Check,
   Paperclip,
   Loader2,
+  Share2,
 } from 'lucide-react';
 import type { CalendarEvent } from '../../hooks/useEvents';
 import type { Note, Folder } from '../../types/notes';
@@ -29,6 +30,7 @@ import type { useEvents } from '../../hooks/useEvents';
 import { useTheme } from '../../theme/ThemeProvider';
 import { cn, isImageAttachment, parseAttachments, toLocalYmd } from '../../lib/utils';
 import { ConfirmTooltip } from '../../components/common/ConfirmTooltip';
+import { ShareModal } from '../../components/common/ShareModal';
 
 const COLOR_OPTIONS = [
   { value: '#3B82F6', label: 'Azul' },
@@ -54,6 +56,7 @@ export interface EventDetailViewProps {
   onClose: () => void;
   isSidebarOpen?: boolean;
   onToggleSidebar?: () => void;
+  currentUserId?: string;
 }
 
 export const EventDetailView: React.FC<EventDetailViewProps> = ({
@@ -69,8 +72,10 @@ export const EventDetailView: React.FC<EventDetailViewProps> = ({
   onClose,
   isSidebarOpen,
   onToggleSidebar,
+  currentUserId,
 }) => {
   const { palette } = useTheme();
+  const [isShareModalOpen, setIsShareModalOpen] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [title, setTitle] = useState(event.title || '');
   const [location, setLocation] = useState(event.location || '');
@@ -599,6 +604,19 @@ export const EventDetailView: React.FC<EventDetailViewProps> = ({
               <div className="w-[1px] h-3 bg-veyra-border mx-0.5" />
             </>
           )}
+
+          {/* Share Button */}
+          <button
+            type="button"
+            onClick={() => setIsShareModalOpen(true)}
+            title="Compartir evento"
+            className="px-2 py-1 rounded text-veyra-muted hover:text-accent hover:bg-white/5 text-[11px] font-medium transition-colors cursor-pointer flex items-center gap-1"
+          >
+            <Share2 className="w-3 h-3 text-accent" />
+            <span className="hidden sm:inline">Compartir</span>
+          </button>
+
+          <div className="w-[1px] h-3 bg-veyra-border mx-0.5" />
 
           {/* Edit Button / Actions */}
           {eventsHook?.updateEvent && (
@@ -1444,6 +1462,17 @@ export const EventDetailView: React.FC<EventDetailViewProps> = ({
           </div>
         )}
       </div>
+
+      <ShareModal
+        isOpen={isShareModalOpen}
+        onClose={() => setIsShareModalOpen(false)}
+        targetType="event"
+        targetId={event.id}
+        targetName={event.title}
+        ownerId={event.user_id}
+        currentUserId={currentUserId}
+        onLeftCollaboration={onClose}
+      />
     </div>
   );
 };

@@ -4,6 +4,8 @@ import { NotesSidebar } from './NotesSidebar';
 import { NoteEditor } from './NoteEditor';
 import { EventDetailView } from '../agenda/EventDetailView';
 import { ReminderDetailView } from '../agenda/ReminderDetailView';
+import { CalendarView } from '../agenda/CalendarView';
+import { AgendaDashboardView } from '../agenda/dashboard/AgendaDashboardView';
 import { useNotes } from '../../hooks/useNotes';
 import { useReminders } from '../../hooks/useReminders';
 import { useEvents } from '../../hooks/useEvents';
@@ -85,9 +87,39 @@ export const NotesModule: React.FC<NotesModuleProps> = ({
     return null;
   });
 
-  // Ensure note is not selected simultaneously if an event or reminder was deep-linked
+  const [sidebarSection, setSidebarSection] = useState<'notes' | 'agenda'>(() => {
+    if (typeof window !== 'undefined') {
+      const path = window.location.pathname;
+      if (path.startsWith('/notes')) {
+        return 'notes';
+      }
+    }
+    // Por defecto al entrar a la página principal, la tab activa es 'agenda'
+    return 'agenda';
+  });
+
+  const [agendaViewMode, setAgendaViewMode] = useState<'dashboard' | 'calendar'>(() => {
+    if (typeof window !== 'undefined') {
+      if (window.location.pathname.startsWith('/calendar')) {
+        return 'calendar';
+      }
+    }
+    return 'dashboard';
+  });
+
+  const [isCalendarOpen, setIsCalendarOpen] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      const path = window.location.pathname;
+      if (path.startsWith('/notes')) {
+        return false;
+      }
+    }
+    return true;
+  });
+
+  // Ensure note is not selected simultaneously if an event, reminder or calendar was deep-linked
   useEffect(() => {
-    if (selectedEventId || selectedReminderId) {
+    if (selectedEventId || selectedReminderId || isCalendarOpen) {
       setSelectedNoteId(null);
     }
   }, []);
@@ -105,7 +137,12 @@ export const NotesModule: React.FC<NotesModuleProps> = ({
     [selectedReminderId, remindersHook?.reminders]
   );
 
+  const handleSectionChange = (section: 'notes' | 'agenda') => {
+    setSidebarSection(section);
+  };
+
   const handleSelectNote = (id: string | null) => {
+    setIsCalendarOpen(false);
     setSelectedEventId(null);
     setSelectedReminderId(null);
     setSelectedNoteId(id);
@@ -113,7 +150,7 @@ export const NotesModule: React.FC<NotesModuleProps> = ({
       if (id) {
         window.history.pushState({ type: 'note', id }, '', `/notes/${id}`);
       } else {
-        window.history.pushState({}, '', '/notes');
+        window.history.pushState({}, '', '/');
       }
     }
   };
@@ -123,10 +160,11 @@ export const NotesModule: React.FC<NotesModuleProps> = ({
     setSelectedEventId(id);
     if (typeof window !== 'undefined') {
       if (id) {
+        setIsCalendarOpen(false);
         setSelectedNoteId(null);
         window.history.pushState({ type: 'event', id }, '', `/events/${id}`);
       } else {
-        window.history.pushState({}, '', '/notes');
+        window.history.pushState({}, '', '/');
       }
     }
   };
@@ -136,11 +174,42 @@ export const NotesModule: React.FC<NotesModuleProps> = ({
     setSelectedReminderId(id);
     if (typeof window !== 'undefined') {
       if (id) {
+        setIsCalendarOpen(false);
         setSelectedNoteId(null);
         window.history.pushState({ type: 'reminder', id }, '', `/reminders/${id}`);
       } else {
-        window.history.pushState({}, '', '/notes');
+        window.history.pushState({}, '', '/');
       }
+    }
+  };
+
+  const handleOpenCalendar = () => {
+    setSelectedEventId(null);
+    setSelectedReminderId(null);
+    setSelectedNoteId(null);
+    setAgendaViewMode('calendar');
+    setIsCalendarOpen(true);
+    if (typeof window !== 'undefined') {
+      window.history.pushState({ type: 'calendar' }, '', '/calendar');
+    }
+  };
+
+  const handleOpenDashboard = () => {
+    setSelectedEventId(null);
+    setSelectedReminderId(null);
+    setSelectedNoteId(null);
+    setAgendaViewMode('dashboard');
+    setIsCalendarOpen(false);
+    if (typeof window !== 'undefined') {
+      window.history.pushState({ type: 'dashboard' }, '', '/');
+    }
+  };
+
+  const handleCloseCalendar = () => {
+    setIsCalendarOpen(false);
+    setAgendaViewMode('dashboard');
+    if (typeof window !== 'undefined') {
+      window.history.pushState({}, '', '/');
     }
   };
 
@@ -150,8 +219,30 @@ export const NotesModule: React.FC<NotesModuleProps> = ({
       if (typeof window === 'undefined') return;
       const path = window.location.pathname;
 
+      if (path.startsWith('/calendar')) {
+        setSidebarSection('agenda');
+        setAgendaViewMode('calendar');
+        setIsCalendarOpen(true);
+        setSelectedEventId(null);
+        setSelectedReminderId(null);
+        setSelectedNoteId(null);
+        return;
+      }
+
+      if (path.startsWith('/agenda')) {
+        setSidebarSection('agenda');
+        setAgendaViewMode('dashboard');
+        setIsCalendarOpen(true);
+        setSelectedEventId(null);
+        setSelectedReminderId(null);
+        setSelectedNoteId(null);
+        return;
+      }
+
       const eventMatch = path.match(/^\/events\/([^/?#]+)/);
       if (eventMatch) {
+        setSidebarSection('agenda');
+        setIsCalendarOpen(false);
         setSelectedEventId(eventMatch[1]);
         setSelectedReminderId(null);
         setSelectedNoteId(null);
@@ -160,6 +251,8 @@ export const NotesModule: React.FC<NotesModuleProps> = ({
 
       const reminderMatch = path.match(/^\/reminders\/([^/?#]+)/);
       if (reminderMatch) {
+        setSidebarSection('agenda');
+        setIsCalendarOpen(false);
         setSelectedReminderId(reminderMatch[1]);
         setSelectedEventId(null);
         setSelectedNoteId(null);
@@ -168,13 +261,27 @@ export const NotesModule: React.FC<NotesModuleProps> = ({
 
       const noteMatch = path.match(/^\/notes\/([^/?#]+)/);
       if (noteMatch) {
+        setSidebarSection('notes');
+        setIsCalendarOpen(false);
         setSelectedNoteId(noteMatch[1]);
         setSelectedEventId(null);
         setSelectedReminderId(null);
         return;
       }
 
-      if (path === '/notes' || path === '/') {
+      if (path === '/') {
+        setSidebarSection('agenda');
+        setAgendaViewMode('dashboard');
+        setIsCalendarOpen(true);
+        setSelectedEventId(null);
+        setSelectedReminderId(null);
+        setSelectedNoteId(null);
+        return;
+      }
+
+      if (path === '/notes') {
+        setSidebarSection('notes');
+        setIsCalendarOpen(false);
         setSelectedEventId(null);
         setSelectedReminderId(null);
       }
@@ -259,6 +366,8 @@ export const NotesModule: React.FC<NotesModuleProps> = ({
     }
   };
 
+  const isCalendarActive = isCalendarOpen && agendaViewMode === 'calendar';
+
   return (
     <div className="flex-1 flex h-full overflow-hidden">
       {/* Super Smooth Animated & Resizable Left Sidebar */}
@@ -286,6 +395,10 @@ export const NotesModule: React.FC<NotesModuleProps> = ({
             onSelectEvent={handleSelectEvent}
             selectedReminderId={selectedReminderId}
             onSelectReminder={handleSelectReminder}
+            onOpenCalendar={handleOpenCalendar}
+            isCalendarOpen={isCalendarActive}
+            sidebarSection={sidebarSection}
+            onSectionChange={handleSectionChange}
             onCreateNote={handleCreateNoteInFolder}
             onCreateFolder={createFolder}
             onUpdateFolder={updateFolder}
@@ -321,7 +434,7 @@ export const NotesModule: React.FC<NotesModuleProps> = ({
         </div>
       </div>
 
-      {/* Main Center Stage: EventDetailView, ReminderDetailView, or NoteEditor */}
+      {/* Main Center Stage: CalendarView, EventDetailView, ReminderDetailView, or NoteEditor */}
       {selectedEventId && eventsHook.loading ? (
         <div className="flex-1 flex flex-col items-center justify-center p-8 text-center text-veyra-muted bg-veyra-canvas">
           <Loader2 className="w-6 h-6 text-accent animate-spin mb-3" />
@@ -346,6 +459,7 @@ export const NotesModule: React.FC<NotesModuleProps> = ({
           onClose={() => handleSelectEvent(null)}
           isSidebarOpen={isSidebarOpen}
           onToggleSidebar={onToggleSidebar}
+          currentUserId={userId}
         />
       ) : selectedReminderId && remindersHook?.loading ? (
         <div className="flex-1 flex flex-col items-center justify-center p-8 text-center text-veyra-muted bg-veyra-canvas">
@@ -363,8 +477,9 @@ export const NotesModule: React.FC<NotesModuleProps> = ({
           onClose={() => handleSelectReminder(null)}
           isSidebarOpen={isSidebarOpen}
           onToggleSidebar={onToggleSidebar}
+          currentUserId={userId}
         />
-      ) : (
+      ) : selectedNote ? (
         <NoteEditor
           note={selectedNote}
           currentUserId={userId}
@@ -379,6 +494,50 @@ export const NotesModule: React.FC<NotesModuleProps> = ({
           events={eventsHook.events}
           onSelectFolder={setSelectedFolderId}
           onSelectEvent={handleSelectEvent}
+        />
+      ) : isCalendarActive ? (
+        <CalendarView
+          eventsHook={eventsHook}
+          remindersHook={remindersHook}
+          allNotes={allNotes}
+          onSelectEvent={handleSelectEvent}
+          onSelectReminder={handleSelectReminder}
+          onClose={handleCloseCalendar}
+          onOpenDashboard={handleOpenDashboard}
+          isSidebarOpen={isSidebarOpen}
+          onToggleSidebar={onToggleSidebar}
+        />
+      ) : (
+        <AgendaDashboardView
+          eventsHook={eventsHook}
+          remindersHook={remindersHook}
+          allNotes={allNotes}
+          folders={folders}
+          userName={userName}
+          userEmail={userEmail}
+          onSelectEvent={handleSelectEvent}
+          onSelectReminder={handleSelectReminder}
+          onSelectNote={handleSelectNote}
+          onCreateNote={async (folderId, eventId, title, contentJson) => {
+            const newNote = await createNote(folderId || null, eventId || null, title);
+            if (newNote) {
+              if (contentJson) {
+                const pageId = crypto.randomUUID();
+                const paginated = {
+                  isPaginated: true,
+                  version: 2,
+                  layout: 'vertical',
+                  pages: [{ id: pageId, content: contentJson }],
+                };
+                await saveNote(newNote.id, { content: JSON.stringify(paginated) });
+              }
+              return newNote;
+            }
+            return null;
+          }}
+          onOpenFullCalendar={handleOpenCalendar}
+          isSidebarOpen={isSidebarOpen}
+          onToggleSidebar={onToggleSidebar}
         />
       )}
     </div>

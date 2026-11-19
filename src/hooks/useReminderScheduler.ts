@@ -3,6 +3,8 @@ import type { Reminder } from '../types/reminders';
 import type { CalendarEvent } from './useEvents';
 import { alertSoundPlayer } from '../lib/audio/alertSounds';
 import type { AlertItem } from '../components/common/InAppReminderAlertModal';
+import { useUserSettings } from '../context/UserSettingsContext';
+import { expandOccurrences } from '../services/recurrence/recurrenceEngine';
 
 interface UseReminderSchedulerProps {
   reminders: Reminder[];
@@ -13,12 +15,50 @@ interface UseReminderSchedulerProps {
 
 const BROADCAST_CHANNEL_NAME = 'veyra_alert_coordination';
 
+function parseTimeMinutes(hhmm: string): number {
+  const [hStr, mStr] = (hhmm || '').split(':');
+  const h = Number(hStr);
+  const m = Number(mStr);
+  if (!Number.isFinite(h) || !Number.isFinite(m)) return 0;
+  return h * 60 + m;
+}
+
+export function isWithinQuietHours(now: Date, startStr: string, endStr: string): boolean {
+  const curMin = now.getHours() * 60 + now.getMinutes();
+  const startMin = parseTimeMinutes(startStr);
+  const endMin = parseTimeMinutes(endStr);
+  if (startMin === endMin) return false;
+  if (startMin > endMin) {
+    return curMin >= startMin || curMin < endMin;
+  }
+  return curMin >= startMin && curMin < endMin;
+}
+
+function parseEventOffsets(ev: CalendarEvent, defaultLeadMinutes: number): number[] {
+  if (ev.notification_offsets) {
+    try {
+      const parsed = JSON.parse(ev.notification_offsets);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        const nums = parsed.map(Number).filter((n) => Number.isFinite(n) && n >= 0);
+        if (nums.length > 0) return nums;
+      }
+    } catch {
+      // ignore malformed JSON
+    }
+  }
+  if (typeof ev.notification_offset_min === 'number' && ev.notification_offset_min >= 0) {
+    return [ev.notification_offset_min];
+  }
+  return [defaultLeadMinutes > 0 ? defaultLeadMinutes : 15];
+}
+
 export function useReminderScheduler({
   reminders,
   events = [],
   onCompleteReminder,
   onSnoozeReminder,
 }: UseReminderSchedulerProps) {
+  const { settings } = useUserSettings();
   const [activeAlert, setActiveAlert] = useState<AlertItem | null>(null);
   const broadcastChannelRef = useRef<BroadcastChannel | null>(null);
 
@@ -37,10 +77,12 @@ export function useReminderScheduler({
       if (!data) return;
 
       if (data.type === 'ALERT_TRIGGERED') {
-        // Mark as triggered so this tab doesn't sound duplicate alarm
         triggeredSetRef.current.add(data.key);
-      } else if (data.type === 'ALERT_DISMISSED' || data.type === 'ALERT_COMPLETED' || data.type === 'ALERT_SNOOZED') {
-        // Close modal if active for this reminder
+      } else if (
+        data.type === 'ALERT_DISMISSED' ||
+        data.type === 'ALERT_COMPLETED' ||
+        data.type === 'ALERT_SNOOZED'
+      ) {
         setActiveAlert((current) => (current && current.id === data.id ? null : current));
       }
     };
@@ -52,51 +94,72 @@ export function useReminderScheduler({
   }, []);
 
   // Fire an alert
-  const triggerAlert = useCallback((item: AlertItem, alertKey: string) => {
-    if (triggeredSetRef.current.has(alertKey)) return;
-    triggeredSetRef.current.add(alertKey);
+  const triggerAlert = useCallback(
+    (item: AlertItem, alertKey: string) => {
+      if (triggeredSetRef.current.has(alertKey)) return;
+      triggeredSetRef.current.add(alertKey);
 
-    // Notify other tabs to avoid duplicate audio
-    broadcastChannelRef.current?.postMessage({
-      type: 'ALERT_TRIGGERED',
-      key: alertKey,
-      id: item.id,
-    });
+      broadcastChannelRef.current?.postMessage({
+        type: 'ALERT_TRIGGERED',
+        key: alertKey,
+        id: item.id,
+      });
 
-    const isTabFocused = typeof document !== 'undefined' && document.hasFocus && document.hasFocus();
+      const isTabFocused =
+        typeof document !== 'undefined' && document.hasFocus && document.hasFocus();
 
-    // 1. Play offline synthesized audio
-    alertSoundPlayer.play(item.controlLevel);
+      const inQuietHours =
+        settings.quietHoursEnabled &&
+        isWithinQuietHours(new Date(), settings.quietHoursStart, settings.quietHoursEnd);
+      const shouldPlaySound =
+        settings.soundAlertsEnabled && (!inQuietHours || item.controlLevel === 'critical');
 
-    // 2. If tab is focused, show in-app modal
-    if (isTabFocused) {
-      setActiveAlert(item);
-    } else {
-      // 3. Tab unfocused: Use Web Notification if permitted, and queue modal for focus
-      if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
-        try {
-          const notif = new Notification(`Recordatorio: ${item.title}`, {
-            body: item.description || (item.isEvent ? 'Evento agendado' : 'Tienes un recordatorio pendiente'),
-            tag: `reminder-${item.id}`,
-            requireInteraction: item.controlLevel === 'critical' || item.controlLevel === 'strict',
-            icon: '/pwa-192x192.svg',
-          });
+      // 1. Play offline synthesized audio if allowed by sound & quiet hours settings
+      if (shouldPlaySound) {
+        alertSoundPlayer.play(item.controlLevel);
+      }
 
-          notif.onclick = () => {
-            window.focus();
+      // 2. If tab is focused, show in-app modal
+      if (isTabFocused) {
+        setActiveAlert(item);
+      } else {
+        // 3. Tab unfocused: Use Web Notification if permitted, and queue modal for focus
+        if (
+          typeof window !== 'undefined' &&
+          'Notification' in window &&
+          Notification.permission === 'granted'
+        ) {
+          try {
+            const notif = new Notification(
+              item.isEvent ? `Evento: ${item.title}` : `Recordatorio: ${item.title}`,
+              {
+                body:
+                  item.description ||
+                  (item.isEvent ? 'Evento agendado' : 'Tienes un recordatorio pendiente'),
+                tag: item.isEvent ? `event-${item.id}` : `reminder-${item.id}`,
+                requireInteraction:
+                  item.controlLevel === 'critical' || item.controlLevel === 'strict',
+                silent: !shouldPlaySound,
+                icon: '/pwa-192x192.svg',
+              }
+            );
+
+            notif.onclick = () => {
+              window.focus();
+              setActiveAlert(item);
+              notif.close();
+            };
+          } catch (e) {
+            console.warn('[useReminderScheduler] Native notification failed:', e);
             setActiveAlert(item);
-            notif.close();
-          };
-        } catch (e) {
-          console.warn('[useReminderScheduler] Native notification failed:', e);
+          }
+        } else {
           setActiveAlert(item);
         }
-      } else {
-        // Fallback: show modal anyway so user sees it when returning
-        setActiveAlert(item);
       }
-    }
-  }, []);
+    },
+    [settings.quietHoursEnabled, settings.quietHoursStart, settings.quietHoursEnd, settings.soundAlertsEnabled]
+  );
 
   // Scheduler check loop (every 5 seconds)
   useEffect(() => {
@@ -107,15 +170,39 @@ export function useReminderScheduler({
       for (const r of reminders) {
         if (r.status === 'completed' || r.deleted === 1) continue;
 
-        // Effective trigger time (snooze takes precedence)
-        let effectiveTime = r.due_date_ms;
-        if (r.snooze_until_ms && r.snooze_until_ms > 0) {
-          effectiveTime = r.snooze_until_ms;
-        }
-
+        const isSnoozed = Boolean(r.snooze_until_ms && r.snooze_until_ms > 0);
+        const effectiveTime = isSnoozed ? r.snooze_until_ms! : r.due_date_ms;
         if (!effectiveTime) continue;
 
         const level = r.control_level || 'normal';
+        const leadMinutes = isSnoozed
+          ? 0
+          : (typeof r.offset_minutes === 'number'
+              ? r.offset_minutes
+              : settings.defaultLeadMinutes || 0);
+
+        // Optional advance lead notice before due_date_ms
+        if (!isSnoozed && leadMinutes > 0) {
+          const leadTime = effectiveTime - leadMinutes * 60 * 1000;
+          const leadDiff = now - leadTime;
+          if (leadDiff >= 0 && leadDiff < 5 * 60 * 1000 && now < effectiveTime) {
+            const leadKey = `${r.id}-${effectiveTime}-lead-${leadMinutes}`;
+            if (!triggeredSetRef.current.has(leadKey)) {
+              triggerAlert(
+                {
+                  id: r.id,
+                  title: `En ${leadMinutes} min: ${r.title}`,
+                  description: r.description,
+                  controlLevel: level,
+                  dueDateMs: effectiveTime,
+                  isEvent: false,
+                },
+                leadKey
+              );
+            }
+          }
+        }
+
         const diff = now - effectiveTime;
 
         // Base notification: trigger within a 15-minute window if not yet fired
@@ -191,35 +278,70 @@ export function useReminderScheduler({
         }
       }
 
-      // 2. Check Calendar Events (start_time_ms)
+      // 2. Check Calendar Events (including recurring occurrences & notification_offsets)
+      const nowDate = new Date(now);
+      const rangeStart = new Date(
+        nowDate.getFullYear(),
+        nowDate.getMonth(),
+        nowDate.getDate(),
+        0,
+        0,
+        0,
+        0
+      );
+      // Look ahead 7 days to support offsets up to 1 week (10080 min)
+      const rangeEnd = new Date(rangeStart.getTime() + 8 * 24 * 60 * 60 * 1000);
+
       for (const ev of events) {
         if (ev.deleted === 1) continue;
-        const diff = now - ev.start_time_ms;
-        // Trigger at start time or within 5 min
-        if (diff >= 0 && diff < 5 * 60 * 1000) {
-          const eventKey = `ev-${ev.id}-${ev.start_time_ms}`;
-          if (!triggeredSetRef.current.has(eventKey)) {
-            triggerAlert(
-              {
-                id: ev.id,
-                title: ev.title,
-                description: ev.description || (ev.location ? `Ubicación: ${ev.location}` : undefined),
-                controlLevel: 'normal',
-                dueDateMs: ev.start_time_ms,
-                isEvent: true,
-              },
-              eventKey
-            );
+
+        const offsets = parseEventOffsets(ev, settings.defaultLeadMinutes || 0);
+        const occurrences = expandOccurrences(
+          {
+            id: ev.id,
+            start_time_ms: Number(ev.start_time_ms),
+            end_time_ms: Number(ev.end_time_ms),
+            repeat_rule: ev.repeat_rule,
+            recurrence_rule: ev.recurrence_rule,
+            timezone: ev.timezone,
+            is_all_day: ev.is_all_day,
+            all_day_date: ev.all_day_date,
+          },
+          rangeStart,
+          rangeEnd
+        );
+
+        for (const occ of occurrences) {
+          for (const offsetMin of offsets) {
+            const triggerAtMs = occ.startTimeMs - offsetMin * 60 * 1000;
+            const diff = now - triggerAtMs;
+            if (diff >= 0 && diff < 5 * 60 * 1000) {
+              const eventKey = `ev-${ev.id}-${occ.startTimeMs}-offset-${offsetMin}`;
+              if (!triggeredSetRef.current.has(eventKey)) {
+                const titlePrefix = offsetMin > 0 ? `En ${offsetMin} min: ` : '';
+                triggerAlert(
+                  {
+                    id: ev.id,
+                    title: `${titlePrefix}${ev.title}`,
+                    description:
+                      ev.description || (ev.location ? `Ubicación: ${ev.location}` : undefined),
+                    controlLevel: 'normal',
+                    dueDateMs: occ.startTimeMs,
+                    isEvent: true,
+                  },
+                  eventKey
+                );
+              }
+            }
           }
         }
       }
     };
 
-    // Run immediately then poll every 5s
     checkSchedule();
     const interval = setInterval(checkSchedule, 5000);
     return () => clearInterval(interval);
-  }, [reminders, events, triggerAlert]);
+  }, [reminders, events, settings.defaultLeadMinutes, triggerAlert]);
 
   // Actions
   const handleComplete = useCallback(

@@ -13,7 +13,7 @@ export const AuthPage: React.FC = () => {
       </main>
 
       <footer className="relative z-10 mt-8 text-center text-xs text-veyra-subtle">
-        <p>Veyra — Sincronización Web en Tiempo Real</p>
+        <p>Veyra — Notas, Recordatorios y Agenda en Tiempo Real</p>
       </footer>
     </div>
   );

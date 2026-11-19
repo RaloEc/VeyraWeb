@@ -34,6 +34,9 @@ export class YjsSupabaseProvider {
   private catchUpInterval: number | null = null;
   private lastProcessedReadId = 0;
   private isCatchingUp = false;
+  private localUpdatesSinceSnapshot = 0;
+  private compactDebounceTimer: number | null = null;
+  private isCompacting = false;
 
   constructor(options: YjsSupabaseProviderOptions) {
     this.options = options;
@@ -360,6 +363,7 @@ export class YjsSupabaseProvider {
 
     // 2. Persistir delta en PostgreSQL vía RPC en segundo plano sin frenar el broadcast en tiempo real
     if (this.options.syncMode !== 'rest') {
+      this.localUpdatesSinceSnapshot += 1;
       (async () => {
         try {
           const hashHex = await computeSha256(update);
@@ -373,8 +377,22 @@ export class YjsSupabaseProvider {
           if (error) {
             console.error('❌ [Yjs RPC Error] append_note_yjs_update falló:', error);
           } else {
-            if (typeof data === 'number' && data > this.lastProcessedReadId) {
-              this.lastProcessedReadId = data;
+            const updateId =
+              typeof data === 'number'
+                ? data
+                : typeof (data as { update_id?: unknown } | null)?.update_id === 'number'
+                  ? Number((data as { update_id: number }).update_id)
+                  : 0;
+            if (updateId > this.lastProcessedReadId) {
+              this.lastProcessedReadId = updateId;
+            }
+            if (this.localUpdatesSinceSnapshot >= 50 && !this.isDestroyed) {
+              if (this.compactDebounceTimer) {
+                window.clearTimeout(this.compactDebounceTimer);
+              }
+              this.compactDebounceTimer = window.setTimeout(() => {
+                this.compactSnapshot().catch(() => {});
+              }, 1000);
             }
           }
         } catch (err) {
@@ -384,12 +402,52 @@ export class YjsSupabaseProvider {
     }
   };
 
+  public async compactSnapshot(): Promise<void> {
+    if (this.isCompacting || this.options.syncMode === 'rest') return;
+    if (this.lastProcessedReadId <= 0) return;
+
+    this.isCompacting = true;
+    try {
+      const snapshotBytes = Y.encodeStateAsUpdate(this.doc);
+      const svBytes = Y.encodeStateVector(this.doc);
+      const snapshotBase64 = uint8ArrayToBase64(snapshotBytes);
+      const svBase64 = uint8ArrayToBase64(svBytes);
+      const snapshotHash = await computeSha256(snapshotBytes);
+
+      const { error } = await supabase.rpc('compact_note_yjs_snapshot', {
+        p_note_id: this.noteId,
+        p_snapshot_data: snapshotBase64,
+        p_state_vector: svBase64,
+        p_up_to_update_id: this.lastProcessedReadId,
+        p_snapshot_hash: snapshotHash,
+      });
+
+      if (error) {
+        console.warn('⚠️ [Yjs Compaction] compact_note_yjs_snapshot warning:', error.message);
+      } else {
+        this.localUpdatesSinceSnapshot = 0;
+        console.log(`🗜️ [Yjs Compaction] Snapshot compactado en clock ${this.lastProcessedReadId}`);
+      }
+    } catch (err) {
+      console.warn('⚠️ [Yjs Compaction] Error:', err);
+    } finally {
+      this.isCompacting = false;
+    }
+  }
+
   private setStatus(status: 'connecting' | 'connected' | 'disconnected') {
     this.status = status;
     this.options.onStatusChange?.(status);
   }
 
   public destroy() {
+    if (this.compactDebounceTimer) {
+      window.clearTimeout(this.compactDebounceTimer);
+      this.compactDebounceTimer = null;
+    }
+    if (this.localUpdatesSinceSnapshot >= 10 && this.lastProcessedReadId > 0) {
+      this.compactSnapshot().catch(() => {});
+    }
     this.isDestroyed = true;
     if (this.awarenessHeartbeatInterval) {
       window.clearInterval(this.awarenessHeartbeatInterval);

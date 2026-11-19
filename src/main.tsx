@@ -11,7 +11,7 @@ createRoot(document.getElementById('root')!).render(
   </StrictMode>
 );
 
-// Register Service Worker in production or supporting browsers
-if (import.meta.env.PROD || 'serviceWorker' in navigator) {
+// Register Service Worker only in production
+if (import.meta.env.PROD && 'serviceWorker' in navigator) {
   registerServiceWorkerPrompt();
 }

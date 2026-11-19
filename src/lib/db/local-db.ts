@@ -21,9 +21,44 @@ export interface UserTemplateRecord {
   deleted: number;
 }
 
+export interface ComplianceEventRecord {
+  id: string;
+  user_id: string;
+  reminder_id: string;
+  event_type: 'completed' | 'failed' | 'snoozed' | 'mass_snooze' | string;
+  timestamp_ms: number;
+  synced: number;
+}
+
+export interface TagRecord {
+  id: string;
+  user_id: string;
+  name: string;
+  slug: string;
+  color: string | null;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface ItemTagRecord {
+  user_id: string;
+  item_type: 'event' | 'reminder' | 'note' | string;
+  item_id: string;
+  tag_id: string;
+}
+
 export interface OutboxEntry {
   id?: number;
-  table: 'reminders' | 'events' | 'folders' | 'notes' | 'profiles' | 'note_templates';
+  table:
+    | 'reminders'
+    | 'events'
+    | 'folders'
+    | 'notes'
+    | 'profiles'
+    | 'note_templates'
+    | 'compliance_events'
+    | 'tags'
+    | 'item_tags';
   op: 'upsert' | 'delete';
   record_id: string;
   payload: any;
@@ -46,6 +81,9 @@ export class VeyraLocalDB extends Dexie {
   notes!: Table<Note, string>;
   profiles!: Table<ProfileRow, string>;
   note_templates!: Table<UserTemplateRecord, string>;
+  compliance_events!: Table<ComplianceEventRecord, string>;
+  tags!: Table<TagRecord, string>;
+  item_tags!: Table<ItemTagRecord, [string, string, string]>;
   outbox!: Table<OutboxEntry, number>;
   sync_metadata!: Table<SyncMetadata, string>;
 
@@ -65,8 +103,13 @@ export class VeyraLocalDB extends Dexie {
     this.version(2).stores({
       note_templates: 'id, user_id, type, category, last_modified_ms, deleted',
     });
+
+    this.version(3).stores({
+      compliance_events: 'id, user_id, reminder_id, event_type, timestamp_ms, synced',
+      tags: 'id, user_id, slug, name, updated_at',
+      item_tags: '[item_type+item_id+tag_id], user_id, item_type, item_id, tag_id',
+    });
   }
 }
 
 export const localDB = new VeyraLocalDB();
-

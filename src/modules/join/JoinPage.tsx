@@ -446,7 +446,7 @@ export const JoinPage: React.FC<JoinPageProps> = ({ currentUser: initialUser }) 
               Unirse a un recurso
             </h2>
             <p className="text-xs text-veyra-muted mb-6 max-w-xs leading-relaxed">
-              Introduce el código de invitación o enlace compartido desde la aplicación móvil o web.
+              Introduce el código de invitación o enlace compartido desde cualquiera de tus dispositivos o colaboradores.
             </p>
 
             <form onSubmit={handleManualSubmit} className="w-full space-y-4 text-left">

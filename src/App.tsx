@@ -72,7 +72,7 @@ function AppContent() {
   }
 
   // Authenticated -> Show Main App Layout with ErrorBoundary and check Onboarding
-  const needsOnboarding = profile && profile.onboarding_completed === false;
+  const needsOnboarding = !loading && Boolean(user) && (profile === null || profile.onboarding_completed === false);
 
   return (
     <ErrorBoundary>

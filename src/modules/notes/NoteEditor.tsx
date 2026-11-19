@@ -47,6 +47,7 @@ import {
 } from './extensions/TableExtensions';
 import {
   ensureCompleteTableHtml,
+  sanitizeTableHtml,
   isMarkdownTable,
   convertMarkdownTableToHtml,
   isTsvTable,
@@ -72,7 +73,7 @@ import { cn } from '../../lib/utils';
 import type { Note, CollabUser, Folder, NoteContentPaginated, NotePage } from '../../types/notes';
 import type { CalendarEvent } from '../../hooks/useEvents';
 import { getEventCategoryTag } from './NotesSidebar';
-import { Loader2, PanelLeft, X, Layers, GraduationCap, Folder as FolderIcon, Calendar, FileDown, FileText, ScrollText } from 'lucide-react';
+import { Loader2, PanelLeft, X, Layers, GraduationCap, Folder as FolderIcon, Calendar, FileDown, FileText, ScrollText, Share2, Eye } from 'lucide-react';
 import { useTheme } from '../../theme/ThemeProvider';
 import { PagesSidebar, type PageMeta, type PageBlock } from './PagesSidebar';
 import { ExportPdfModal } from './pdf/ExportPdfModal';
@@ -82,6 +83,8 @@ import { useTemplates } from './templates/useTemplates';
 import { type NoteTemplate, type TemplateType } from './templates/templatesData';
 import { DOMSerializer } from '@tiptap/pm/model';
 import { HashtagInput } from '../../components/common/HashtagInput';
+import { ShareModal } from '../../components/common/ShareModal';
+import { CollaborationService, type ResourceUserRole } from '../../lib/collaborationService';
 import {
   type A4HeaderFooterConfig,
   getEffectiveZoneHeightPx,
@@ -377,6 +380,22 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
 
   const displayName = userName || userEmail.split('@')[0] || 'Usuario';
   const { palette, isPaperLight, isDark, isAmoled } = useTheme();
+  const [isShareModalOpen, setIsShareModalOpen] = useState(false);
+  const [userRole, setUserRole] = useState<ResourceUserRole>(() =>
+    note.user_id && currentUserId && note.user_id !== currentUserId ? 'editor' : 'owner'
+  );
+
+  useEffect(() => {
+    let active = true;
+    CollaborationService.getUserRoleForResource('note', note.id, note.user_id, currentUserId)
+      .then((role) => {
+        if (active) setUserRole(role);
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [note.id, note.user_id, currentUserId]);
 
   // Si loadYjsNote obtuvo un título más reciente (desde Supabase o Y.Doc meta) que aún no estaba en el listado de notas (Explorador), sincronizarlo de inmediato
   useEffect(() => {
@@ -606,7 +625,8 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
       const currentEditor = editorRef.current;
       if (!currentEditor || currentEditor.isDestroyed) return;
 
-      const contentHtml = template.getContent({ userName });
+      const rawHtml = template.getContent({ userName });
+      const contentHtml = sanitizeTableHtml(rawHtml);
 
       if (mode === 'replace') {
         currentEditor.chain().focus().setContent(contentHtml).run();
@@ -620,28 +640,29 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
         const { selection } = state;
         const tableParent = findParentNode((node) => node.type.name === 'table')(selection);
 
-        if (tableParent) {
-          // Si el cursor está dentro de una tabla: evitar fragmentar o pegar celdas dentro
-          const isTableEmpty = !tableParent.node.textContent.trim();
+        const isInsideTable = currentEditor.isActive('table') || !!tableParent;
+
+        if (isInsideTable) {
+          // Si el cursor está dentro de una tabla: evitar fusionar o incrustar celdas dentro
+          const isTableEmpty = tableParent ? !tableParent.node.textContent.trim() : false;
           if (isTableEmpty) {
-            // Reemplazar la tabla vacía por la plantilla
+            // Eliminar la tabla vacía limpiamente con deleteTable() y colocar la plantilla
             currentEditor
               .chain()
               .focus()
-              .deleteRange({
-                from: tableParent.pos,
-                to: tableParent.pos + tableParent.node.nodeSize,
-              })
-              .insertContentAt(tableParent.pos, contentHtml)
+              .deleteTable()
+              .insertContent(contentHtml)
               .run();
-          } else {
-            // Si la tabla actual tiene contenido, insertar la plantilla justo después
+          } else if (tableParent) {
+            // Si la tabla actual tiene contenido, insertar la plantilla en un bloque limpio justo después
             const insertPos = tableParent.pos + tableParent.node.nodeSize;
             currentEditor
               .chain()
               .focus()
               .insertContentAt(insertPos, `<p></p>${contentHtml}<p></p>`)
               .run();
+          } else {
+            currentEditor.chain().focus('end').insertContent(`<p></p>${contentHtml}<p></p>`).run();
           }
         } else {
           currentEditor.chain().focus().insertContent(contentHtml).run();
@@ -695,7 +716,10 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
     setIsExportPdfOpen(true);
   }, [ydoc]);
 
+  const lastCollabNotifyRef = useRef<number>(0);
+
   const performSave = useCallback(async () => {
+    if (userRole === 'viewer') return;
     if (isSavingRef.current) {
       pendingSaveRef.current = true;
       return;
@@ -712,6 +736,17 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
       });
       setSaveStatus('saved');
       setLastSavedAt(new Date());
+
+      const now = Date.now();
+      if (now - lastCollabNotifyRef.current > 60000) {
+        lastCollabNotifyRef.current = now;
+        CollaborationService.notifyChange({
+          targetType: 'note',
+          targetId: noteRef.current.id,
+          action: 'edited',
+          itemTitle: currentTitle,
+        }).catch(() => {});
+      }
     } catch (err) {
       console.error('[NoteEditor] Auto-save error:', err);
       setSaveStatus('error');
@@ -722,7 +757,7 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
         performSave();
       }
     }
-  }, [serializeNoteContent]);
+  }, [serializeNoteContent, userRole]);
 
   const triggerAutoSave = useCallback(() => {
     setSaveStatus('saving');
@@ -1267,6 +1302,12 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
   // Keep editorRef in sync and log instance verification once editor is ready
   useEffect(() => {
     editorRef.current = editor;
+    if (editor && !editor.isDestroyed) {
+      const canEdit = userRole !== 'viewer';
+      if (editor.isEditable !== canEdit) {
+        editor.setEditable(canEdit);
+      }
+    }
     if (editor && !editor.isDestroyed && providerRef.current) {
       console.log('[AWARENESS-INSTANCE-CHECK]', {
         providerAwarenessClientID: providerRef.current.awareness.clientID,
@@ -1277,7 +1318,7 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
         hasCursor: Boolean(awareness.getLocalState()?.cursor),
       });
     }
-  }, [editor, awareness]);
+  }, [editor, userRole, awareness]);
 
   // Paginación A4 con verificación en tiempo real sobre el DOM y empuje vía CSS externo (:nth-child)
   useEffect(() => {
@@ -1720,6 +1761,7 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
           blocks: [] as PageBlock[],
           headingTitle: '',
           allTexts: [] as string[],
+          htmlParts: [] as string[],
           stats: {
             words: 0,
             paragraphs: 0,
@@ -1743,9 +1785,13 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
           if (tag === 'ul' || tag === 'ol') {
             const isTaskList = child.getAttribute('data-type') === 'taskList';
             const lis = Array.from(child.querySelectorAll('li')) as HTMLElement[];
+            const lisBySheet = new Map<number, string[]>();
             for (let j = 0; j < lis.length; j++) {
               const li = lis[j];
               const sIdx = getElSheetIdx(li);
+              if (!lisBySheet.has(sIdx)) lisBySheet.set(sIdx, []);
+              lisBySheet.get(sIdx)!.push(li.outerHTML);
+
               const clone = li.cloneNode(true) as HTMLElement;
               clone.querySelectorAll('ul, ol').forEach((n) => n.remove());
               const liText = (clone.textContent || '').trim();
@@ -1773,6 +1819,12 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
               }
               buckets[sIdx].allTexts.push(liText);
             }
+            lisBySheet.forEach((liHtmls, sIdx) => {
+              const attrs = Array.from(child.attributes)
+                .map((a) => `${a.name}="${a.value}"`)
+                .join(' ');
+              buckets[sIdx].htmlParts.push(`<${tag} ${attrs}>${liHtmls.join('')}</${tag}>`);
+            });
             continue;
           }
 
@@ -1780,14 +1832,24 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
             const rows = Array.from(child.querySelectorAll('tr')) as HTMLElement[];
             const touchedSheets = new Set<number>();
             if (rows.length > 0) {
+              const rowsBySheet = new Map<number, string[]>();
               for (const row of rows) {
                 const sIdx = getElSheetIdx(row);
                 touchedSheets.add(sIdx);
+                if (!rowsBySheet.has(sIdx)) rowsBySheet.set(sIdx, []);
+                rowsBySheet.get(sIdx)!.push(row.outerHTML);
                 const rowText = (row.textContent || '').trim();
                 if (rowText) buckets[sIdx].allTexts.push(rowText);
               }
+              rowsBySheet.forEach((rowHtmls, sIdx) => {
+                buckets[sIdx].htmlParts.push(
+                  `<div class="tableWrapper"><table class="border-collapse table-auto w-full"><tbody>${rowHtmls.join('')}</tbody></table></div>`
+                );
+              });
             } else {
-              touchedSheets.add(getElSheetIdx(child));
+              const sIdx = getElSheetIdx(child);
+              touchedSheets.add(sIdx);
+              buckets[sIdx].htmlParts.push(child.outerHTML);
             }
             touchedSheets.forEach((sIdx) => {
               buckets[sIdx].blocks.push({
@@ -1801,6 +1863,7 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
           }
 
           const sIdx = getElSheetIdx(child);
+          buckets[sIdx].htmlParts.push(child.outerHTML);
           const text = (child.textContent || '').trim();
 
           if (child.querySelector('img') || tag === 'img') {
@@ -1908,11 +1971,12 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
             bulletCount: b.stats.bullets,
             taskCount: b.stats.tasks,
             badgeText,
+            html: b.htmlParts.join(''),
           };
         });
 
         const sig = nextA4Sheets
-          .map((s) => `${s.id}:${s.title}:${s.badgeText}:${s.blocks.length}:${s.snippet}`)
+          .map((s) => `${s.id}:${s.title}:${s.badgeText}:${s.blocks.length}:${s.snippet}:${s.html?.length || 0}`)
           .join('|');
         if (lastA4SheetsSignatureRef.current !== sig) {
           lastA4SheetsSignatureRef.current = sig;
@@ -2200,7 +2264,11 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
               )}
               <HashtagInput
                 value={title}
-                onChange={(newTitle) => handleTitleChange(newTitle)}
+                onChange={(newTitle) => {
+                  if (userRole === 'viewer') return;
+                  handleTitleChange(newTitle);
+                }}
+                readOnly={userRole === 'viewer'}
                 availableTags={['clase', 'apuntes', 'deberes', 'taller', 'examen', 'universidad', 'trabajo', 'proyecto']}
                 placeholder="Sin título"
                 multiline={false}
@@ -2218,6 +2286,12 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
 
         {/* Right: Presence Avatars, Status Dot & Actions */}
         <div className="flex items-center gap-2">
+          {userRole === 'viewer' && (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-blue-500/15 border border-blue-500/30 text-blue-400 text-[10.5px] font-medium">
+              <Eye className="w-3 h-3" />
+              <span>Solo lectura</span>
+            </span>
+          )}
           <CollabPresence users={collabUsers} currentUserId={currentUserId} />
 
           {/* Discreet 6px status dot (Combina estado de sincronización y guardado) */}
@@ -2292,6 +2366,17 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
             )}
           >
             <Layers className="w-3.5 h-3.5" />
+          </button>
+
+          {/* Share Button */}
+          <button
+            type="button"
+            onClick={() => setIsShareModalOpen(true)}
+            title="Compartir y colaborar en esta nota"
+            className="flex items-center gap-1.5 px-2.5 py-0.5 rounded text-xs transition-colors cursor-pointer border bg-white/5 border-veyra-border text-veyra-muted hover:text-veyra-text hover:bg-white/10"
+          >
+            <Share2 className="w-3.5 h-3.5 text-accent" />
+            <span className="hidden sm:inline font-medium">Compartir</span>
           </button>
 
           {/* Export to PDF Button */}
@@ -2379,7 +2464,7 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
         <div
           ref={scrollContainerRef}
           className={cn(
-            'flex-1 overflow-y-auto px-4 sm:px-8 py-6 sm:py-8 transition-all duration-300',
+            'flex-1 overflow-y-auto px-4 sm:px-8 py-6 sm:py-8 transition-colors duration-150',
             isDark && isAmoled ? 'bg-black' : 'bg-[#e4e7ec] dark:bg-[#0B0B0C]'
           )}
           onClick={(e) => {
@@ -2397,7 +2482,7 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
             ref={docSheetRef}
             data-sheet-theme={isPaperLight ? 'light' : undefined}
             className={cn(
-              'mx-auto w-full flex flex-col transition-all duration-200 relative',
+              'mx-auto w-full flex flex-col transition-[min-height,background-color,border-color,box-shadow] duration-150 ease-[cubic-bezier(0.16,1,0.3,1)] relative',
               isPaperLight && 'sheet-light-mode',
               pageFormat === 'a4'
                 ? cn(
@@ -2443,7 +2528,7 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
                 <div
                   key={idx}
                   style={{ top: `${breakTop}px` }}
-                  className="absolute -left-[1px] -right-[1px] h-[36px] pointer-events-none select-none z-20 flex flex-col justify-between"
+                  className="absolute -left-[1px] -right-[1px] h-[36px] pointer-events-none select-none z-20 flex flex-col justify-between animate-in fade-in duration-150 ease-out"
                 >
                   {/* Borde inferior de la hoja anterior + sombra de papel físico */}
                   <div
@@ -2460,7 +2545,7 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
                     <div className="flex items-center gap-2">
                       <span
                         className={cn(
-                          'px-3 py-0.5 rounded-full text-[10px] font-bold tracking-wider uppercase border shadow-sm',
+                          'px-3 py-0.5 rounded-full text-[10px] font-bold tracking-wider uppercase border shadow-sm transition-all duration-150 animate-in fade-in zoom-in-95',
                           isPaperLight
                             ? 'bg-white text-slate-700 border-slate-300'
                             : 'bg-white dark:bg-[#161619] text-slate-600 dark:text-zinc-300 border border-slate-300/80 dark:border-zinc-700'
@@ -2503,7 +2588,11 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
               {pageFormat !== 'a4' && (
                 <HashtagInput
                   value={title}
-                  onChange={(newTitle) => handleTitleChange(newTitle)}
+                  onChange={(newTitle) => {
+                    if (userRole === 'viewer') return;
+                    handleTitleChange(newTitle);
+                  }}
+                  readOnly={userRole === 'viewer'}
                   availableTags={['clase', 'apuntes', 'deberes', 'taller', 'examen', 'universidad', 'trabajo', 'proyecto']}
                   placeholder="Sin título"
                   multiline={true}
@@ -2581,6 +2670,9 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
               a4Sheets={a4SheetsMeta}
               activeA4SheetIndex={activeA4SheetIndex}
               onSelectA4Sheet={handleSelectA4Sheet}
+              editor={editor}
+              a4HeaderFooterConfig={a4HeaderFooterConfig}
+              authorName={displayName}
             />
           </div>
         </div>
@@ -2621,6 +2713,18 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
         defaultContent={templateContentToSave}
         defaultType={templateTypeToSave}
         defaultTitle={title || note.title || ''}
+      />
+
+      {/* Modal para Compartir / Colaboración */}
+      <ShareModal
+        isOpen={isShareModalOpen}
+        onClose={() => setIsShareModalOpen(false)}
+        targetType="note"
+        targetId={note.id}
+        targetName={title || note.title || 'Nota sin título'}
+        ownerId={note.user_id}
+        currentUserId={currentUserId}
+        onLeftCollaboration={onCloseNote}
       />
     </div>
   );

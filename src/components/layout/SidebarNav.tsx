@@ -87,7 +87,7 @@ export const SidebarNav: React.FC<SidebarNavProps> = ({
           Sincronizado
         </div>
         <p className="text-[11px] text-veyra-subtle leading-relaxed">
-          Los cambios se sincronizan en 0 ms con tu app móvil de Veyra.
+          Tus datos se sincronizan al instante en todos tus dispositivos conectados (Web y Móvil).
         </p>
       </div>
     </aside>

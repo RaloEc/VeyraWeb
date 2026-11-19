@@ -36,6 +36,8 @@ export interface ReminderModalProps {
   events?: CalendarEvent[];
   defaultEventId?: string | null;
   defaultControlLevel?: ReminderControlLevel | string | null;
+  initialDateStr?: string;
+  initialTimeStr?: string;
   onSave: (payload: {
     id?: string;
     title: string;
@@ -72,6 +74,8 @@ export const ReminderModal: React.FC<ReminderModalProps> = ({
   events,
   defaultEventId,
   defaultControlLevel,
+  initialDateStr,
+  initialTimeStr,
   onSave,
   onDelete,
 }) => {
@@ -162,8 +166,8 @@ export const ReminderModal: React.FC<ReminderModalProps> = ({
       // Default new reminder: today + 2 hours
       const now = new Date();
       now.setHours(now.getHours() + 2);
-      setDateStr(toLocalYmd(now));
-      setTimeStr(now.toTimeString().substring(0, 5));
+      setDateStr(initialDateStr || toLocalYmd(now));
+      setTimeStr(initialTimeStr || now.toTimeString().substring(0, 5));
       setTitle('');
       setDescription('');
       setSelectedEventId(defaultEventId || null);

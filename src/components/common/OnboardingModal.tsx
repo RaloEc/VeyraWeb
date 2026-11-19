@@ -10,6 +10,7 @@ import {
 import { Button } from './Button';
 import { supabase } from '../../lib/supabase';
 import { cn } from '../../lib/utils';
+import { useUserSettings } from '../../context/UserSettingsContext';
 import confetti from 'canvas-confetti';
 
 export interface OnboardingModalProps {
@@ -18,15 +19,16 @@ export interface OnboardingModalProps {
   onComplete: () => void;
 }
 
-export type ControlLevelChoice = 'gentle' | 'strict' | 'critical';
+export type ControlLevelChoice = 'normal' | 'strict' | 'critical';
 
 export const OnboardingModal: React.FC<OnboardingModalProps> = ({
   userId,
-  userEmail: _userEmail,
+  userEmail,
   onComplete,
 }) => {
+  const { updateSetting } = useUserSettings();
   const [step, setStep] = useState<1 | 2>(1);
-  const [selectedControlLevel, setSelectedControlLevel] = useState<ControlLevelChoice>('gentle');
+  const [selectedControlLevel, setSelectedControlLevel] = useState<ControlLevelChoice>('normal');
   const [notificationStatus, setNotificationStatus] = useState<NotificationPermission>(() => {
     if (typeof window !== 'undefined' && 'Notification' in window) {
       return Notification.permission;
@@ -37,8 +39,8 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
 
   const controlLevelOptions = [
     {
-      id: 'gentle' as ControlLevelChoice,
-      title: 'Estándar / Suave',
+      id: 'normal' as ControlLevelChoice,
+      title: 'Estándar / Normal',
       desc: 'Aviso puntual al vencer la tarea, ideal para un ritmo sin presiones.',
       icon: Bell,
       color: '#64748B',
@@ -75,16 +77,22 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
       setSaving(true);
       const { error } = await supabase
         .from('profiles')
-        .update({
-          default_control_level: selectedControlLevel,
-          onboarding_completed: true,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', userId);
+        .upsert(
+          {
+            id: userId,
+            email: userEmail ?? null,
+            default_control_level: selectedControlLevel,
+            onboarding_completed: true,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: 'id' }
+        );
 
       if (error) {
-        console.error('[Onboarding] Failed to update profile:', error);
+        console.error('[Onboarding] Failed to upsert profile:', error);
       }
+
+      await updateSetting('defaultControlLevel', selectedControlLevel);
 
       confetti({
         particleCount: 60,

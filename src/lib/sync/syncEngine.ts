@@ -163,6 +163,24 @@ class SyncEngine {
 
       console.log(`📤 [SyncEngine] Procesando ${items.length} mutaciones pendientes...`);
 
+      // Saneamiento proactivo de notas en el outbox sin created_at_ms
+      for (const item of items) {
+        if (item.table === 'notes' && item.payload && !item.payload.created_at_ms) {
+          try {
+            const local = await localDB.notes.get(item.record_id);
+            const validCreatedAt =
+              local?.created_at_ms ||
+              item.payload.updated_at_ms ||
+              item.payload.last_modified_ms ||
+              Date.now();
+            item.payload.created_at_ms = validCreatedAt;
+            if (item.id !== undefined) {
+              await localDB.outbox.update(item.id, { payload: item.payload });
+            }
+          } catch (_) { }
+        }
+      }
+
       for (const item of items) {
         if (!this.isOnline()) break;
 
@@ -191,7 +209,8 @@ class SyncEngine {
                 if (updateRes.error) {
                   const local = await localDB.reminders.get(item.record_id);
                   if (local) {
-                    const full = { ...local, ...item.payload, id: item.record_id };
+                    const { is_shared: _isShared, shared_owner_id: _owner, ...cleanLocal } = local as Reminder & { is_shared?: number; shared_owner_id?: string };
+                    const full = { ...cleanLocal, ...item.payload, id: item.record_id };
                     const res = await supabase.from('reminders').upsert(full, { onConflict: 'id' });
                     error = res.error;
                   } else {
@@ -269,16 +288,47 @@ class SyncEngine {
                 .eq('id', item.record_id);
               error = res.error;
             } else {
-              const isFullPayload = item.payload && item.payload.id && item.payload.user_id;
-              if (isFullPayload) {
-                const res = await supabase.from('notes').upsert(item.payload, { onConflict: 'id' });
+              // Si es una actualización parcial (o no tiene todas las columnas esenciales de inserción),
+              // intentar UPDATE primero para no violar constraints NOT NULL en Supabase.
+              const hasAllInsertColumns =
+                item.payload &&
+                item.payload.id &&
+                item.payload.user_id &&
+                item.payload.created_at_ms &&
+                item.payload.title !== undefined;
+
+              if (hasAllInsertColumns) {
+                const safePayload = {
+                  ...item.payload,
+                  created_at_ms: item.payload.created_at_ms || Date.now(),
+                  updated_at_ms: item.payload.updated_at_ms || Date.now(),
+                  last_modified_ms: item.last_modified_ms || Date.now(),
+                };
+                const res = await supabase.from('notes').upsert(safePayload, { onConflict: 'id' });
                 error = res.error;
               } else {
-                const updateRes = await supabase.from('notes').update(item.payload).eq('id', item.record_id);
+                // Mutación parcial -> intentar UPDATE directo primero
+                const updateRes = await supabase
+                  .from('notes')
+                  .update(item.payload)
+                  .eq('id', item.record_id);
+
                 if (updateRes.error) {
+                  // Si falló el UPDATE (ej: la fila todavía no existe en Supabase), reconstruir nota completa local
                   const local = await localDB.notes.get(item.record_id);
                   if (local) {
-                    const full = { ...local, ...item.payload, id: item.record_id };
+                    const full = {
+                      ...local,
+                      ...item.payload,
+                      id: item.record_id,
+                      created_at_ms:
+                        local.created_at_ms ||
+                        item.payload?.created_at_ms ||
+                        local.updated_at_ms ||
+                        Date.now(),
+                      updated_at_ms: item.payload?.updated_at_ms || local.updated_at_ms || Date.now(),
+                      last_modified_ms: item.last_modified_ms || Date.now(),
+                    };
                     const res = await supabase.from('notes').upsert(full, { onConflict: 'id' });
                     error = res.error;
                   } else {
@@ -316,15 +366,56 @@ class SyncEngine {
                 }
               }
             }
+          } else if (item.table === 'compliance_events') {
+            if (item.op === 'upsert' && item.payload) {
+              const res = await supabase
+                .from('compliance_events')
+                .upsert({ ...item.payload, synced: 1 }, { onConflict: 'id' });
+              error = res.error;
+              if (!error) {
+                await localDB.compliance_events.update(item.record_id, { synced: 1 }).catch(() => {});
+              }
+            }
+          } else if (item.table === 'tags') {
+            if (item.op === 'delete') {
+              const res = await supabase.from('tags').delete().eq('id', item.record_id);
+              error = res.error;
+            } else if (item.payload) {
+              const res = await supabase.from('tags').upsert(item.payload, { onConflict: 'id' });
+              error = res.error;
+            }
+          } else if (item.table === 'item_tags') {
+            if (item.op === 'delete' && item.payload) {
+              const res = await supabase
+                .from('item_tags')
+                .delete()
+                .match({
+                  item_type: item.payload.item_type,
+                  item_id: item.payload.item_id,
+                  tag_id: item.payload.tag_id,
+                });
+              error = res.error;
+            } else if (item.payload) {
+              const res = await supabase
+                .from('item_tags')
+                .upsert(item.payload, { onConflict: 'item_type,item_id,tag_id' });
+              error = res.error;
+            }
           }
 
           if (error) {
             console.warn(`⚠️ [SyncEngine] Error en mutación [${item.table}:${item.record_id}]:`, error);
             if (item.id !== undefined) {
-              await localDB.outbox.update(item.id, {
-                retries: (item.retries || 0) + 1,
-                error: error.message,
-              });
+              const retries = (item.retries || 0) + 1;
+              if (retries >= 5) {
+                console.warn(`🗑️ [SyncEngine] Mutación [${item.table}:${item.record_id}] descartada tras ${retries} intentos fallidos.`);
+                await localDB.outbox.delete(item.id);
+              } else {
+                await localDB.outbox.update(item.id, {
+                  retries,
+                  error: error.message || String(error),
+                });
+              }
             }
           } else {
             if (item.id !== undefined) {
@@ -359,7 +450,6 @@ class SyncEngine {
       const { data: remoteReminders, error: remErr } = await supabase
         .from('reminders')
         .select('*')
-        .eq('user_id', userId)
         .order('due_date_ms', { ascending: true });
 
       if (!remErr && remoteReminders) {
@@ -368,7 +458,12 @@ class SyncEngine {
           (await localDB.outbox.where({ table: 'reminders' }).toArray()).map((o) => o.record_id)
         );
 
-        for (const rem of remoteReminders as unknown as Reminder[]) {
+        for (const rawRem of remoteReminders as unknown as Reminder[]) {
+          const rem = {
+            ...rawRem,
+            is_shared: rawRem.user_id !== userId ? 1 : 0,
+            shared_owner_id: rawRem.user_id !== userId ? rawRem.user_id : undefined,
+          };
           // If we have an un-synced local edit in outbox for this reminder, skip overwrite
           if (outboxPending.has(rem.id)) continue;
 
@@ -383,7 +478,6 @@ class SyncEngine {
       const { data: remoteEvents, error: evErr } = await supabase
         .from('events')
         .select('*')
-        .eq('user_id', userId)
         .order('start_time_ms', { ascending: true });
 
       if (!evErr && remoteEvents) {
@@ -470,6 +564,58 @@ class SyncEngine {
             await localDB.note_templates.put(tpl as any);
           }
         }
+      }
+
+      // 6. Compliance Events
+      const { data: remoteCompliance, error: compErr } = await supabase
+        .from('compliance_events')
+        .select('*')
+        .eq('user_id', userId)
+        .order('timestamp_ms', { ascending: false })
+        .limit(500);
+
+      if (!compErr && remoteCompliance && remoteCompliance.length > 0) {
+        await localDB.compliance_events.bulkPut(
+          remoteCompliance.map((ce) => ({
+            id: ce.id,
+            user_id: ce.user_id || userId,
+            reminder_id: ce.reminder_id,
+            event_type: ce.event_type,
+            timestamp_ms: Number(ce.timestamp_ms),
+            synced: 1,
+          }))
+        );
+      }
+
+      // 7. Tags & Item Tags
+      const [{ data: remoteTags }, { data: remoteItemTags }] = await Promise.all([
+        supabase.from('tags').select('*').eq('user_id', userId),
+        supabase.from('item_tags').select('*').eq('user_id', userId),
+      ]);
+
+      if (remoteTags && remoteTags.length > 0) {
+        await localDB.tags.bulkPut(
+          remoteTags.map((t) => ({
+            id: t.id,
+            user_id: t.user_id || userId,
+            name: t.name,
+            slug: t.slug,
+            color: t.color,
+            created_at: Number(t.created_at),
+            updated_at: Number(t.updated_at),
+          }))
+        );
+      }
+
+      if (remoteItemTags && remoteItemTags.length > 0) {
+        await localDB.item_tags.bulkPut(
+          remoteItemTags.map((it) => ({
+            user_id: it.user_id || userId,
+            item_type: it.item_type,
+            item_id: it.item_id,
+            tag_id: it.tag_id,
+          }))
+        );
       }
 
       await localDB.sync_metadata.put({

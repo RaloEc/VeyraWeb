@@ -5,6 +5,8 @@ import { isDateToday, parseSubtasks } from '../lib/utils';
 import { computeNextReminderOccurrence } from '../services/recurrence/recurrenceEngine';
 import { localDB } from '../lib/db/local-db';
 import { syncEngine } from '../lib/sync/syncEngine';
+import { extractHashtags, syncItemTags } from '../lib/tagUtils';
+import { CollaborationService } from '../lib/collaborationService';
 import confetti from 'canvas-confetti';
 
 export function useReminders(userId?: string) {
@@ -16,7 +18,7 @@ export function useReminders(userId?: string) {
   useEffect(() => {
     let isMounted = true;
     localDB.reminders
-      .filter((r) => r.deleted === 0 && (!userId || r.user_id === userId))
+      .filter((r) => r.deleted === 0 && (!userId || r.user_id === userId || (r as unknown as { is_shared?: number }).is_shared === 1))
       .sortBy('due_date_ms')
       .then((cached) => {
         if (isMounted && cached.length > 0) {
@@ -42,7 +44,7 @@ export function useReminders(userId?: string) {
       // Check offline first
       if (!syncEngine.isOnline()) {
         const cached = await localDB.reminders
-          .filter((r) => r.deleted === 0 && r.user_id === userId)
+          .filter((r) => r.deleted === 0 && (r.user_id === userId || (r as unknown as { is_shared?: number }).is_shared === 1))
           .sortBy('due_date_ms');
         setReminders(cached);
         setLoading(false);
@@ -53,13 +55,16 @@ export function useReminders(userId?: string) {
       const { data, error } = await supabase
         .from('reminders')
         .select('*')
-        .eq('user_id', userId)
         .eq('deleted', 0)
         .order('due_date_ms', { ascending: true });
 
       if (error) throw error;
 
-      const remoteList = (data as unknown as Reminder[]) || [];
+      const remoteList = ((data as unknown as Reminder[]) || []).map((r) => ({
+        ...r,
+        is_shared: r.user_id !== userId ? 1 : 0,
+        shared_owner_id: r.user_id !== userId ? r.user_id : undefined,
+      }));
 
       // Save to local IndexedDB for future offline usage
       if (remoteList.length > 0) {
@@ -72,7 +77,7 @@ export function useReminders(userId?: string) {
       setError((err as Error).message);
       // Fallback to local DB
       const cached = await localDB.reminders
-        .filter((r) => r.deleted === 0 && (!userId || r.user_id === userId))
+        .filter((r) => r.deleted === 0 && (!userId || r.user_id === userId || (r as unknown as { is_shared?: number }).is_shared === 1))
         .sortBy('due_date_ms');
       if (cached.length > 0) {
         setReminders(cached);
@@ -99,18 +104,22 @@ export function useReminders(userId?: string) {
           event: '*',
           schema: 'public',
           table: 'reminders',
-          filter: `user_id=eq.${userId}`,
         },
         async (payload) => {
           const { eventType, new: newRecord, old: oldRecord } = payload;
 
           if (eventType === 'INSERT') {
-            const item = newRecord as Reminder;
-            if (item.deleted === 1) {
-              await localDB.reminders.delete(item.id);
-              setReminders((prev) => prev.filter((r) => r.id !== item.id));
+            const raw = newRecord as Reminder;
+            if (raw.deleted === 1) {
+              await localDB.reminders.delete(raw.id);
+              setReminders((prev) => prev.filter((r) => r.id !== raw.id));
               return;
             }
+            const item = {
+              ...raw,
+              is_shared: raw.user_id !== userId ? 1 : 0,
+              shared_owner_id: raw.user_id !== userId ? raw.user_id : undefined,
+            };
             await localDB.reminders.put(item);
             setReminders((prev) => {
               if (prev.some((r) => r.id === item.id)) {
@@ -121,12 +130,17 @@ export function useReminders(userId?: string) {
           }
 
           if (eventType === 'UPDATE') {
-            const updated = newRecord as Reminder;
-            if (updated.deleted === 1) {
-              await localDB.reminders.delete(updated.id);
-              setReminders((prev) => prev.filter((r) => r.id !== updated.id));
+            const raw = newRecord as Reminder;
+            if (raw.deleted === 1) {
+              await localDB.reminders.delete(raw.id);
+              setReminders((prev) => prev.filter((r) => r.id !== raw.id));
               return;
             }
+            const updated = {
+              ...raw,
+              is_shared: raw.user_id !== userId ? 1 : 0,
+              shared_owner_id: raw.user_id !== userId ? raw.user_id : undefined,
+            };
             await localDB.reminders.put(updated);
             setReminders((prev) =>
               prev
@@ -232,6 +246,11 @@ export function useReminders(userId?: string) {
         },
         nowMs
       );
+
+      const extractedTags = extractHashtags(`${newReminder.title} ${newReminder.description || ''}`);
+      if (extractedTags.length > 0) {
+        syncItemTags(userId, 'reminder', newId, extractedTags).catch(() => {});
+      }
     },
     [userId]
   );
@@ -286,6 +305,15 @@ export function useReminders(userId?: string) {
         nowMs
       );
 
+      if (targetReminder && ((targetReminder as unknown as { is_shared?: number }).is_shared === 1 || targetReminder.user_id !== userId)) {
+        CollaborationService.notifyChange({
+          targetType: 'reminder',
+          targetId: id,
+          action: nextStatus === 'completed' ? 'completed' : 'uncompleted',
+          itemTitle: targetReminder.title,
+        }).catch(() => {});
+      }
+
       // 4. If completed and recurring, generate next occurrence
       if (nextStatus === 'completed' && targetReminder?.repeat_rule) {
         const nextDateMs = computeNextReminderOccurrence(
@@ -310,7 +338,7 @@ export function useReminders(userId?: string) {
         }
       }
     },
-    [reminders, createReminder]
+    [reminders, createReminder, userId]
   );
 
   // Snooze reminder
@@ -346,7 +374,7 @@ export function useReminders(userId?: string) {
         nowMs
       );
     },
-    []
+    [userId]
   );
 
   // Toggle Subtask
@@ -470,8 +498,16 @@ export function useReminders(userId?: string) {
 
       // 4. Outbox
       await syncEngine.enqueue('reminders', 'upsert', id, updatePayload, nowMs);
+
+      if (updates.title !== undefined || updates.description !== undefined) {
+        const localUpdated = await localDB.reminders.get(id);
+        const extractedTags = extractHashtags(
+          `${updates.title ?? localUpdated?.title ?? ''} ${updates.description ?? localUpdated?.description ?? ''}`
+        );
+        syncItemTags(userId, 'reminder', id, extractedTags).catch(() => {});
+      }
     },
-    []
+    [userId]
   );
 
   // Soft delete reminder

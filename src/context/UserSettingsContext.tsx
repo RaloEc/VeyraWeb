@@ -2,6 +2,8 @@ import React, { createContext, useContext, useState, useEffect, useCallback, use
 import { supabase } from '../lib/supabase';
 import { useTheme } from '../theme/ThemeProvider';
 import type { AccentTheme } from '../theme/accentColors';
+import { DeviceService } from '../lib/deviceService';
+import { PushService } from '../lib/pushService';
 import { toast } from 'sonner';
 
 export type UserProfileType = 'student' | 'work' | 'personal' | 'custom';
@@ -85,6 +87,11 @@ const UserSettingsContext = createContext<UserSettingsContextType | null>(null);
 
 const STORAGE_KEY = 'veyra_user_settings_cache_v1';
 
+const normalizeControlLevel = (raw?: string | null): ControlLevel => {
+  if (raw === 'strict' || raw === 'critical' || raw === 'normal') return raw;
+  return 'normal';
+};
+
 export const UserSettingsProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { setAccentTheme, setMode, setAmoledEnabled, setNotePaperMode } = useTheme();
 
@@ -106,6 +113,7 @@ export const UserSettingsProvider: React.FC<{ children: React.ReactNode }> = ({ 
         ...(legacySort ? { explorerSortMode: legacySort } : {}),
         ...(legacyPaper ? { notePaperMode: legacyPaper } : {}),
         ...parsed,
+        defaultControlLevel: normalizeControlLevel(parsed.defaultControlLevel),
       };
     } catch {
       return DEFAULT_USER_SETTINGS;
@@ -169,7 +177,9 @@ export const UserSettingsProvider: React.FC<{ children: React.ReactNode }> = ({ 
             ...prev,
             ...remoteSettings,
             userName: remoteSettings.userName || profileName || prev.userName,
-            defaultControlLevel: (profileRow?.default_control_level as ControlLevel) || remoteSettings.defaultControlLevel || prev.defaultControlLevel,
+            defaultControlLevel: normalizeControlLevel(
+              profileRow?.default_control_level || remoteSettings.defaultControlLevel || prev.defaultControlLevel
+            ),
             accentTheme: remoteSettings.accentTheme || prev.accentTheme,
             themeMode: remoteSettings.theme || prev.themeMode,
             amoledEnabled: Boolean(resolvedAmoled),
@@ -189,7 +199,31 @@ export const UserSettingsProvider: React.FC<{ children: React.ReactNode }> = ({ 
               if (typeof payload.settings.amoledEnabled === 'boolean') {
                 setAmoledEnabled(payload.settings.amoledEnabled);
               }
-              setSettings((s) => ({ ...s, ...payload.settings }));
+              setSettings((s) => ({
+                ...s,
+                ...payload.settings,
+                ...(payload.settings.defaultControlLevel
+                  ? { defaultControlLevel: normalizeControlLevel(payload.settings.defaultControlLevel) }
+                  : {}),
+              }));
+            }
+          })
+          .on('broadcast', { event: 'FORCE_SIGNOUT_DEVICE' }, async ({ payload }) => {
+            try {
+              const myDeviceId = DeviceService.getOrCreateDeviceId();
+              const myEndpoint = (await PushService.getExistingSubscription())?.endpoint;
+              const isTarget =
+                payload?.targetDeviceId === '*' ||
+                (payload?.targetDeviceId && payload.targetDeviceId === myDeviceId) ||
+                (payload?.targetEndpoint && myEndpoint && payload.targetEndpoint === myEndpoint);
+              if (isTarget) {
+                await supabase.auth.signOut();
+                if (typeof window !== 'undefined') {
+                  window.location.href = '/';
+                }
+              }
+            } catch (err) {
+              console.warn('[UserSettings] Error handling FORCE_SIGNOUT_DEVICE:', err);
             }
           })
           .subscribe();
@@ -248,6 +282,7 @@ export const UserSettingsProvider: React.FC<{ children: React.ReactNode }> = ({ 
         editorFontFamily: newSettings.editorFontFamily,
         autoSaveDelayMs: newSettings.autoSaveDelayMs,
         notePaperMode: newSettings.notePaperMode,
+        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
       };
 
       // 1. Guardar en user_metadata (rápido, sin migración de esquema)

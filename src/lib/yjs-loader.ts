@@ -603,14 +603,18 @@ export async function loadYjsNote(noteId: string): Promise<YjsLoadedNote> {
 
   let resolvedSyncMode = syncMode;
   if (syncMode !== 'yjs') {
-    try {
-      const act = await activateNoteYjsMode(noteId, ydoc);
-      if (act.success) {
-        resolvedSyncMode = 'yjs';
-      }
-    } catch (actErr) {
-      console.warn('⚠️ [loadYjsNote] Error activando Yjs:', actErr);
-    }
+    // Activar modo Yjs de manera asíncrona en segundo plano sin bloquear la apertura de la nota
+    activateNoteYjsMode(noteId, ydoc)
+      .then((act) => {
+        if (act.success) {
+          console.log(`✅ [loadYjsNote] Nota ${noteId} promovida a modo Yjs en background`);
+        } else {
+          console.warn(`ℹ️ [loadYjsNote] Activación Yjs diferida para ${noteId}:`, act.error);
+        }
+      })
+      .catch((actErr) => {
+        console.warn('⚠️ [loadYjsNote] Error activando Yjs en background:', actErr);
+      });
   }
 
   const duration = (performance.now() - startTime).toFixed(1);

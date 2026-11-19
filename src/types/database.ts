@@ -418,7 +418,7 @@ export interface Database {
         };
         Insert: {
           id?: string;
-          invite_code: string;
+          invite_code?: string;
           owner_id: string;
           target_type: string;
           target_id: string;
@@ -533,6 +533,177 @@ export interface Database {
         };
         Relationships: [];
       };
+      event_notification_deliveries: {
+        Row: {
+          id: string;
+          event_id: string;
+          user_id: string;
+          attempt_key: string;
+          delivered_at: string;
+        };
+        Insert: {
+          id?: string;
+          event_id: string;
+          user_id: string;
+          attempt_key: string;
+          delivered_at?: string;
+        };
+        Update: {
+          id?: string;
+          event_id?: string;
+          user_id?: string;
+          attempt_key?: string;
+          delivered_at?: string;
+        };
+        Relationships: [];
+      };
+      collaborations: {
+        Row: {
+          id: string;
+          target_type: string;
+          target_id: string;
+          owner_id: string;
+          member_id: string;
+          role: string;
+          is_public_members: boolean | null;
+          joined_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          target_type: string;
+          target_id: string;
+          owner_id: string;
+          member_id: string;
+          role?: string;
+          is_public_members?: boolean | null;
+          joined_at?: string | null;
+        };
+        Update: {
+          id?: string;
+          target_type?: string;
+          target_id?: string;
+          owner_id?: string;
+          member_id?: string;
+          role?: string;
+          is_public_members?: boolean | null;
+          joined_at?: string | null;
+        };
+        Relationships: [];
+      };
+      collaboration_activity: {
+        Row: {
+          id: string;
+          target_type: string;
+          target_id: string;
+          actor_id: string;
+          actor_name: string | null;
+          action: string;
+          item_title: string | null;
+          details: string | null;
+          created_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          target_type: string;
+          target_id: string;
+          actor_id: string;
+          actor_name?: string | null;
+          action: string;
+          item_title?: string | null;
+          details?: string | null;
+          created_at?: string | null;
+        };
+        Update: {
+          id?: string;
+          target_type?: string;
+          target_id?: string;
+          actor_id?: string;
+          actor_name?: string | null;
+          action?: string;
+          item_title?: string | null;
+          details?: string | null;
+          created_at?: string | null;
+        };
+        Relationships: [];
+      };
+      compliance_events: {
+        Row: {
+          id: string;
+          user_id: string | null;
+          reminder_id: string;
+          event_type: string;
+          timestamp_ms: number;
+          synced: number | null;
+        };
+        Insert: {
+          id?: string;
+          user_id?: string | null;
+          reminder_id: string;
+          event_type: string;
+          timestamp_ms: number;
+          synced?: number | null;
+        };
+        Update: {
+          id?: string;
+          user_id?: string | null;
+          reminder_id?: string;
+          event_type?: string;
+          timestamp_ms?: number;
+          synced?: number | null;
+        };
+        Relationships: [];
+      };
+      tags: {
+        Row: {
+          id: string;
+          user_id: string | null;
+          name: string;
+          slug: string;
+          color: string | null;
+          created_at: number;
+          updated_at: number;
+        };
+        Insert: {
+          id: string;
+          user_id?: string | null;
+          name: string;
+          slug: string;
+          color?: string | null;
+          created_at: number;
+          updated_at: number;
+        };
+        Update: {
+          id?: string;
+          user_id?: string | null;
+          name?: string;
+          slug?: string;
+          color?: string | null;
+          created_at?: number;
+          updated_at?: number;
+        };
+        Relationships: [];
+      };
+      item_tags: {
+        Row: {
+          user_id: string | null;
+          item_type: string;
+          item_id: string;
+          tag_id: string;
+        };
+        Insert: {
+          user_id?: string | null;
+          item_type: string;
+          item_id: string;
+          tag_id: string;
+        };
+        Update: {
+          user_id?: string | null;
+          item_type?: string;
+          item_id?: string;
+          tag_id?: string;
+        };
+        Relationships: [];
+      };
     };
     Views: {
       [_ in never]: never;
@@ -559,9 +730,47 @@ export interface Database {
         };
         Returns: Json;
       };
+      compact_note_yjs_snapshot: {
+        Args: {
+          p_note_id: string;
+          p_snapshot_data: string;
+          p_state_vector: string;
+          p_up_to_update_id: number;
+          p_snapshot_hash: string;
+        };
+        Returns: Json;
+      };
       accept_share_invitation: {
         Args: {
           p_invite_code: string;
+        };
+        Returns: Json;
+      };
+      delete_user_account: {
+        Args: Record<string, never>;
+        Returns: undefined;
+      };
+      update_collaboration_role: {
+        Args: {
+          p_collaboration_id: string;
+          p_role: string;
+        };
+        Returns: Json;
+      };
+      update_collaboration_role_by_member: {
+        Args: {
+          p_target_type: string;
+          p_target_id: string;
+          p_member_id: string;
+          p_role: string;
+        };
+        Returns: Json;
+      };
+      set_guest_permission: {
+        Args: {
+          p_target_type: string;
+          p_target_id: string;
+          p_role: string;
         };
         Returns: Json;
       };

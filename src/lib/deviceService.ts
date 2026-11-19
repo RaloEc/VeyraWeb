@@ -7,6 +7,7 @@ export interface ConnectedDevice {
   model?: string;
   rawDeviceId?: string;
   token?: string;
+  endpoint?: string;
   os: string;
   browser?: string;
   isCurrent: boolean;
@@ -39,6 +40,24 @@ function parseUserAgent(ua: string): { browser: string; os: string; isMobile: bo
 
 export class DeviceService {
   /**
+   * Obtiene o genera un identificador estable para este navegador/dispositivo web.
+   */
+  public static getOrCreateDeviceId(): string {
+    if (typeof window === 'undefined') return 'web-ssr';
+    const key = 'veyra_web_device_id';
+    try {
+      let id = localStorage.getItem(key);
+      if (!id) {
+        id = `web-${crypto.randomUUID()}`;
+        localStorage.setItem(key, id);
+      }
+      return id;
+    } catch {
+      return `web-${crypto.randomUUID()}`;
+    }
+  }
+
+  /**
    * Obtiene la información del dispositivo/sesión actual local
    */
   public static getCurrentDeviceInfo(): ConnectedDevice {
@@ -48,11 +67,14 @@ export class DeviceService {
       window.matchMedia('(display-mode: standalone)').matches ||
       ('standalone' in navigator && (navigator as unknown as { standalone: boolean }).standalone === true)
     );
+    const deviceId = this.getOrCreateDeviceId();
 
     return {
       id: 'current-session',
+      rawDeviceId: deviceId,
       type: isStandalone ? 'desktop_pwa' : (isMobile ? 'mobile_android' : 'web_browser'),
       name: isStandalone ? `${browser} (App PWA)` : `${browser} en ${os}`,
+      model: `ID: ${deviceId.slice(0, 12)}...`,
       os,
       browser,
       isCurrent: true,
@@ -129,6 +151,7 @@ export class DeviceService {
           const parsed = parseUserAgent(sub.user_agent || '');
           devices.push({
             id: sub.id || `web-${sub.endpoint.slice(-8)}`,
+            endpoint: sub.endpoint,
             type: parsed.isMobile ? 'mobile_android' : 'web_browser',
             name: `${parsed.browser} en ${parsed.os}`,
             os: parsed.os,
@@ -169,8 +192,9 @@ export class DeviceService {
             type: 'broadcast',
             event: 'FORCE_SIGNOUT_DEVICE',
             payload: {
-              targetDeviceId: device.rawDeviceId || '*',
+              targetDeviceId: device.rawDeviceId || (device.source === 'web_push' ? undefined : '*'),
               targetToken: device.token,
+              targetEndpoint: device.endpoint,
               pushTokenId: device.id,
             },
           })

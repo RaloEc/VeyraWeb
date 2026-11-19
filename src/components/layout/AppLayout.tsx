@@ -37,6 +37,16 @@ function parseInitialRoute() {
     };
   }
 
+  if (path.startsWith('/calendar') || path.startsWith('/agenda')) {
+    return {
+      module: 'notes' as ActiveModule,
+      noteId: null,
+      eventId: null,
+      reminderId: null,
+      folderId,
+    };
+  }
+
   const reminderMatch = path.match(/^\/reminders\/([^/?#]+)/);
   if (reminderMatch) {
     return {

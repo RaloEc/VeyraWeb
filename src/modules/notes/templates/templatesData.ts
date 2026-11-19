@@ -27,75 +27,6 @@ export const NOTE_TEMPLATES: NoteTemplate[] = [
   // BLOQUES Y TABLAS (type: 'block')
   // ==========================================
   {
-    id: 'block-academic-header',
-    title: 'Carátula académica / Tarea',
-    category: 'academico',
-    categoryLabel: 'Académico',
-    type: 'block',
-    description: 'Encabezado institucional para tareas universitarias con datos del estudiante y materia.',
-    iconName: 'graduation-cap',
-    previewHtml: `
-      <div class="border border-slate-300 dark:border-zinc-700 rounded text-[11px] overflow-hidden">
-        <div class="grid grid-cols-4 bg-sky-100 dark:bg-sky-950/60 font-semibold text-center border-b border-slate-300 dark:border-zinc-700 text-sky-900 dark:text-sky-200 py-1">
-          <div class="col-span-1 border-r border-slate-300 dark:border-zinc-700">Asignatura</div>
-          <div class="col-span-2 border-r border-slate-300 dark:border-zinc-700">Datos del alumno</div>
-          <div class="col-span-1">Fecha</div>
-        </div>
-        <div class="grid grid-cols-4 text-[10px]">
-          <div class="col-span-1 p-2 font-bold flex items-center justify-center border-r border-slate-300 dark:border-zinc-700 text-center">
-            ASIGNATURA
-          </div>
-          <div class="col-span-2 border-r border-slate-300 dark:border-zinc-700 divide-y divide-slate-200 dark:divide-zinc-800">
-            <div class="grid grid-cols-2 p-1 gap-1">
-              <span class="font-medium text-slate-500">Apellidos y nombres</span>
-              <span>Estudiante</span>
-            </div>
-            <div class="grid grid-cols-2 p-1 gap-1">
-              <span class="font-medium text-slate-500">Cédula</span>
-              <span>1234567890</span>
-            </div>
-            <div class="grid grid-cols-2 p-1 gap-1">
-              <span class="font-medium text-slate-500">Paralelo</span>
-              <span>A-1</span>
-            </div>
-          </div>
-          <div class="col-span-1 p-2 flex items-center justify-center text-center">
-            ${getTodayFormatted()}
-          </div>
-        </div>
-      </div>
-    `,
-    getContent: (options) => {
-      const studentName = options?.userName?.trim() || 'Apellidos y nombres del alumno';
-      const dateStr = getTodayFormatted();
-
-      return `
-        <table class="veyra-table" style="width: 100%;">
-          <tr>
-            <th style="background-color: #dbeafe; text-align: center; font-weight: 700; width: 25%;" data-background-color="#dbeafe"><p><strong>Asignatura</strong></p></th>
-            <th colspan="2" style="background-color: #dbeafe; text-align: center; font-weight: 700; width: 55%;" data-background-color="#dbeafe"><p><strong>Datos del alumno</strong></p></th>
-            <th style="background-color: #dbeafe; text-align: center; font-weight: 700; width: 20%;" data-background-color="#dbeafe"><p><strong>Fecha</strong></p></th>
-          </tr>
-          <tr>
-            <td rowspan="3" style="text-align: center; font-weight: 700; vertical-align: middle;"><p><strong>ASIGNATURA</strong></p></td>
-            <td style="font-weight: 600; width: 28%;"><p><strong>Apellidos y nombres</strong></p></td>
-            <td><p>${studentName}</p></td>
-            <td rowspan="3" style="text-align: center; vertical-align: middle;"><p>${dateStr}</p></td>
-          </tr>
-          <tr>
-            <td style="font-weight: 600;"><p><strong>Cédula</strong></p></td>
-            <td><p>0000000000</p></td>
-          </tr>
-          <tr>
-            <td style="font-weight: 600;"><p><strong>Paralelo</strong></p></td>
-            <td><p>PARALELO-1</p></td>
-          </tr>
-        </table>
-        <p></p>
-      `;
-    },
-  },
-  {
     id: 'block-comparison-table',
     title: 'Tabla comparativa (Ventajas y Desventajas)',
     category: 'analisis',
@@ -123,35 +54,7 @@ export const NOTE_TEMPLATES: NoteTemplate[] = [
       </div>
     `,
     getContent: () => {
-      return `
-        <table class="veyra-table" style="width: 100%;">
-          <thead>
-            <tr>
-              <th style="width: 30%;"><p><strong>Criterio</strong></p></th>
-              <th style="background-color: #dcfce7; width: 35%;" data-background-color="#dcfce7"><p><strong>Ventajas</strong></p></th>
-              <th style="background-color: #fee2e2; width: 35%;" data-background-color="#fee2e2"><p><strong>Desventajas</strong></p></th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td><p><strong>Rendimiento</strong></p></td>
-              <td><p>Alta velocidad de respuesta y menor latencia.</p></td>
-              <td><p>Mayor consumo de recursos en memoria.</p></td>
-            </tr>
-            <tr>
-              <td><p><strong>Implementación</strong></p></td>
-              <td><p>Curva de aprendizaje sencilla y directa.</p></td>
-              <td><p>Requiere configuración inicial manual.</p></td>
-            </tr>
-            <tr>
-              <td><p><strong>Mantenimiento</strong></p></td>
-              <td><p>Estructura modular fácil de escalar.</p></td>
-              <td><p>Dependencia de librerías externas.</p></td>
-            </tr>
-          </tbody>
-        </table>
-        <p></p>
-      `;
+      return `<table class="veyra-table" style="width: 100%;"><thead><tr><th style="width: 30%;"><p><strong>Criterio</strong></p></th><th style="background-color: #dcfce7; width: 35%;" data-background-color="#dcfce7"><p><strong>Ventajas</strong></p></th><th style="background-color: #fee2e2; width: 35%;" data-background-color="#fee2e2"><p><strong>Desventajas</strong></p></th></tr></thead><tbody><tr><td><p><strong>Rendimiento</strong></p></td><td><p>Alta velocidad de respuesta y menor latencia.</p></td><td><p>Mayor consumo de recursos en memoria.</p></td></tr><tr><td><p><strong>Implementación</strong></p></td><td><p>Curva de aprendizaje sencilla y directa.</p></td><td><p>Requiere configuración inicial manual.</p></td></tr><tr><td><p><strong>Mantenimiento</strong></p></td><td><p>Estructura modular fácil de escalar.</p></td><td><p>Dependencia de librerías externas.</p></td></tr></tbody></table><p></p>`;
     },
   },
   {
@@ -186,39 +89,7 @@ export const NOTE_TEMPLATES: NoteTemplate[] = [
     `,
     getContent: () => {
       const dateStr = getTodayFormatted();
-      return `
-        <table class="veyra-table" style="width: 100%;">
-          <thead>
-            <tr>
-              <th style="width: 35%;"><p><strong>Fase / Entregable</strong></p></th>
-              <th style="width: 25%;"><p><strong>Responsable</strong></p></th>
-              <th style="width: 20%;"><p><strong>Fecha límite</strong></p></th>
-              <th style="width: 20%;"><p><strong>Estado</strong></p></th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td><p>1. Definición de requerimientos</p></td>
-              <td><p>Responsable 1</p></td>
-              <td><p>${dateStr}</p></td>
-              <td><p>Completado</p></td>
-            </tr>
-            <tr>
-              <td><p>2. Diseño y prototipo</p></td>
-              <td><p>Responsable 2</p></td>
-              <td><p>Pendiente</p></td>
-              <td><p>En progreso</p></td>
-            </tr>
-            <tr>
-              <td><p>3. Pruebas y validación</p></td>
-              <td><p>Equipo</p></td>
-              <td><p>Pendiente</p></td>
-              <td><p>No iniciado</p></td>
-            </tr>
-          </tbody>
-        </table>
-        <p></p>
-      `;
+      return `<table class="veyra-table" style="width: 100%;"><thead><tr><th style="width: 35%;"><p><strong>Fase / Entregable</strong></p></th><th style="width: 25%;"><p><strong>Responsable</strong></p></th><th style="width: 20%;"><p><strong>Fecha límite</strong></p></th><th style="width: 20%;"><p><strong>Estado</strong></p></th></tr></thead><tbody><tr><td><p>1. Definición de requerimientos</p></td><td><p>Responsable 1</p></td><td><p>${dateStr}</p></td><td><p>Completado</p></td></tr><tr><td><p>2. Diseño y prototipo</p></td><td><p>Responsable 2</p></td><td><p>Pendiente</p></td><td><p>En progreso</p></td></tr><tr><td><p>3. Pruebas y validación</p></td><td><p>Equipo</p></td><td><p>Pendiente</p></td><td><p>No iniciado</p></td></tr></tbody></table><p></p>`;
     },
   },
   {
@@ -230,27 +101,24 @@ export const NOTE_TEMPLATES: NoteTemplate[] = [
     description: 'Caja destacada con objetivo central, puntos clave analizados y decisiones tomadas.',
     iconName: 'check-square',
     previewHtml: `
-      <div class="border-l-4 border-sky-500 bg-sky-50/60 dark:bg-sky-950/20 p-2 rounded-r text-[11px] space-y-1">
-        <div class="font-bold text-sky-800 dark:text-sky-300">Síntesis ejecutiva</div>
-        <div class="text-slate-600 dark:text-zinc-400 text-[10px]">Objetivo: Desarrollar la solución técnica acordada.</div>
-        <div class="text-slate-500 text-[9.5px]">• Punto clave 1 validado</div>
-        <div class="text-slate-500 text-[9.5px]">• Conclusión principal redactada</div>
+      <div class="border-l-4 border-sky-500 bg-sky-50/70 dark:bg-sky-950/30 p-2.5 rounded-r text-[11px] space-y-1.5">
+        <div class="font-bold text-sky-900 dark:text-sky-200 text-xs">Síntesis y conclusiones clave</div>
+        <div class="text-slate-700 dark:text-zinc-300 text-[10.5px]"><strong>Objetivo central:</strong> Describir el propósito del análisis.</div>
+        <div class="space-y-1 pl-0.5">
+          <div class="flex items-center gap-1.5 text-slate-600 dark:text-zinc-400 text-[10px]">
+            <span class="w-2.5 h-2.5 rounded-sm border border-slate-400 dark:border-zinc-500 flex-shrink-0"></span>
+            <span>Hallazgo o punto crítico 1</span>
+          </div>
+          <div class="flex items-center gap-1.5 text-slate-600 dark:text-zinc-400 text-[10px]">
+            <span class="w-2.5 h-2.5 rounded-sm border border-slate-400 dark:border-zinc-500 flex-shrink-0"></span>
+            <span>Hallazgo o punto crítico 2</span>
+          </div>
+        </div>
+        <div class="text-slate-700 dark:text-zinc-300 text-[10.5px]"><strong>Decisión / Siguiente paso:</strong> Acción concreta a ejecutar.</div>
       </div>
     `,
     getContent: () => {
-      return `
-        <blockquote>
-          <p><strong>Síntesis y conclusiones clave</strong></p>
-          <p><strong>Objetivo central:</strong> Describir brevemente el propósito de esta sección o análisis.</p>
-          <p><strong>Hallazgos principales:</strong></p>
-          <ul data-type="taskList">
-            <li data-checked="false"><label><input type="checkbox"><span></span></label><div><p>Hallazgo o punto crítico 1</p></div></li>
-            <li data-checked="false"><label><input type="checkbox"><span></span></label><div><p>Hallazgo o punto crítico 2</p></div></li>
-          </ul>
-          <p><strong>Decisión / Siguiente paso:</strong> Acción concreta a ejecutar.</p>
-        </blockquote>
-        <p></p>
-      `;
+      return `<blockquote><p><strong>Síntesis y conclusiones clave</strong></p><p><strong>Objetivo central:</strong> Describir brevemente el propósito de esta sección o análisis.</p><p><strong>Hallazgos principales:</strong></p><ul data-type="taskList"><li data-type="taskItem" data-checked="false"><p>Hallazgo o punto crítico 1</p></li><li data-type="taskItem" data-checked="false"><p>Hallazgo o punto crítico 2</p></li></ul><p><strong>Decisión / Siguiente paso:</strong> Acción concreta a ejecutar.</p></blockquote><p></p>`;
     },
   },
 
@@ -285,42 +153,7 @@ export const NOTE_TEMPLATES: NoteTemplate[] = [
       const studentName = options?.userName?.trim() || 'Apellidos y nombres del alumno';
       const dateStr = getTodayFormatted();
 
-      return `
-        <table class="veyra-table" style="width: 100%;">
-          <tr>
-            <th style="background-color: #dbeafe; text-align: center; font-weight: 700; width: 25%;" data-background-color="#dbeafe"><p><strong>Asignatura</strong></p></th>
-            <th colspan="2" style="background-color: #dbeafe; text-align: center; font-weight: 700; width: 55%;" data-background-color="#dbeafe"><p><strong>Datos del alumno</strong></p></th>
-            <th style="background-color: #dbeafe; text-align: center; font-weight: 700; width: 20%;" data-background-color="#dbeafe"><p><strong>Fecha</strong></p></th>
-          </tr>
-          <tr>
-            <td rowspan="3" style="text-align: center; font-weight: 700; vertical-align: middle;"><p><strong>ASIGNATURA</strong></p></td>
-            <td style="font-weight: 600; width: 28%;"><p><strong>Apellidos y nombres</strong></p></td>
-            <td><p>${studentName}</p></td>
-            <td rowspan="3" style="text-align: center; vertical-align: middle;"><p>${dateStr}</p></td>
-          </tr>
-          <tr>
-            <td style="font-weight: 600;"><p><strong>Cédula</strong></p></td>
-            <td><p>0000000000</p></td>
-          </tr>
-          <tr>
-            <td style="font-weight: 600;"><p><strong>Paralelo</strong></p></td>
-            <td><p>PARALELO-1</p></td>
-          </tr>
-        </table>
-        <h1>Título del trabajo o práctica</h1>
-        <h2>1. Introducción y objetivos</h2>
-        <p>Describa aquí la contextualización del trabajo y los objetivos generales y específicos que se abordarán en este reporte.</p>
-        <ul>
-          <li><p><strong>Objetivo general:</strong> Analizar e implementar los conceptos desarrollados en la unidad.</p></li>
-          <li><p><strong>Objetivo específico:</strong> Resolver los ejercicios prácticos propuestos con rigurosidad conceptual.</p></li>
-        </ul>
-        <h2>2. Desarrollo conceptual y metodológico</h2>
-        <p>Explique el procedimiento, desarrollo de ejercicios, fórmulas aplicadas o diagramas explicativos correspondientes.</p>
-        <h2>3. Resultados obtenidos</h2>
-        <p>Detalle los resultados alcanzados a través de mediciones, capturas o descripciones técnicas.</p>
-        <h2>4. Conclusiones y recomendaciones</h2>
-        <p>Sintetice los aprendizajes alcanzados y recomendaciones prácticas derivadas de la actividad realizada.</p>
-      `;
+      return `<table class="veyra-table" style="width: 100%;"><tbody><tr><td style="width: 25%; font-weight: 600;"><p><strong>Asignatura</strong></p></td><td style="width: 25%;"><p>Materia</p></td><td style="width: 20%; font-weight: 600;"><p><strong>Fecha</strong></p></td><td style="width: 30%;"><p>${dateStr}</p></td></tr><tr><td style="font-weight: 600;"><p><strong>Estudiante</strong></p></td><td><p>${studentName}</p></td><td style="font-weight: 600;"><p><strong>Paralelo</strong></p></td><td><p>PARALELO-1</p></td></tr></tbody></table><h1>Título del trabajo o práctica</h1><h2>1. Introducción y objetivos</h2><p>Describa aquí la contextualización del trabajo y los objetivos generales y específicos que se abordarán en este reporte.</p><ul><li><p><strong>Objetivo general:</strong> Analizar e implementar los conceptos desarrollados en la unidad.</p></li><li><p><strong>Objetivo específico:</strong> Resolver los ejercicios prácticos propuestos con rigurosidad conceptual.</p></li></ul><h2>2. Desarrollo conceptual y metodológico</h2><p>Explique el procedimiento, desarrollo de ejercicios, fórmulas aplicadas o diagramas explicativos correspondientes.</p><h2>3. Resultados obtenidos</h2><p>Detalle los resultados alcanzados a través de mediciones, capturas o descripciones técnicas.</p><h2>4. Conclusiones y recomendaciones</h2><p>Sintetice los aprendizajes alcanzados y recomendaciones prácticas derivadas de la actividad realizada.</p>`;
     },
   },
   {
@@ -349,58 +182,7 @@ export const NOTE_TEMPLATES: NoteTemplate[] = [
     `,
     getContent: () => {
       const dateStr = getTodayFormatted();
-      return `
-        <h1>Minuta de reunión: [Nombre del proyecto o tema]</h1>
-        <table class="veyra-table" style="width: 100%;">
-          <tbody>
-            <tr>
-              <td style="width: 25%; font-weight: 600;"><p><strong>Fecha y hora</strong></p></td>
-              <td><p>${dateStr} - 10:00</p></td>
-            </tr>
-            <tr>
-              <td style="font-weight: 600;"><p><strong>Moderador / Redactor</strong></p></td>
-              <td><p>Nombre del responsable</p></td>
-            </tr>
-            <tr>
-              <td style="font-weight: 600;"><p><strong>Participantes</strong></p></td>
-              <td><p>Persona 1, Persona 2, Persona 3</p></td>
-            </tr>
-          </tbody>
-        </table>
-        <h2>1. Agenda y temas tratados</h2>
-        <ul>
-          <li><p>Revisión del estado de avances y compromisos anteriores.</p></li>
-          <li><p>Análisis de bloqueos y propuestas de solución.</p></li>
-          <li><p>Definición de prioridades para el siguiente ciclo.</p></li>
-        </ul>
-        <h2>2. Decisiones tomadas</h2>
-        <blockquote>
-          <p>Se aprueba por consenso la propuesta técnica y el calendario de entregas establecido.</p>
-        </blockquote>
-        <h2>3. Tareas y compromisos acordados</h2>
-        <table class="veyra-table" style="width: 100%;">
-          <thead>
-            <tr>
-              <th style="width: 50%;"><p><strong>Acción o entregable</strong></p></th>
-              <th style="width: 25%;"><p><strong>Responsable</strong></p></th>
-              <th style="width: 25%;"><p><strong>Fecha límite</strong></p></th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td><p>Enviar resumen técnico a los involucrados</p></td>
-              <td><p>Responsable 1</p></td>
-              <td><p>${dateStr}</p></td>
-            </tr>
-            <tr>
-              <td><p>Actualizar backlog y cronograma de tareas</p></td>
-              <td><p>Responsable 2</p></td>
-              <td><p>En 3 días</p></td>
-            </tr>
-          </tbody>
-        </table>
-        <p></p>
-      `;
+      return `<h1>Minuta de reunión: [Nombre del proyecto o tema]</h1><table class="veyra-table" style="width: 100%;"><tbody><tr><td style="width: 25%; font-weight: 600;"><p><strong>Fecha y hora</strong></p></td><td><p>${dateStr} - 10:00</p></td></tr><tr><td style="font-weight: 600;"><p><strong>Moderador / Redactor</strong></p></td><td><p>Nombre del responsable</p></td></tr><tr><td style="font-weight: 600;"><p><strong>Participantes</strong></p></td><td><p>Persona 1, Persona 2, Persona 3</p></td></tr></tbody></table><h2>1. Agenda y temas tratados</h2><ul><li><p>Revisión del estado de avances y compromisos anteriores.</p></li><li><p>Análisis de bloqueos y propuestas de solución.</p></li><li><p>Definición de prioridades para el siguiente ciclo.</p></li></ul><h2>2. Decisiones tomadas</h2><blockquote><p>Se aprueba por consenso la propuesta técnica y el calendario de entregas establecido.</p></blockquote><h2>3. Tareas y compromisos acordados</h2><table class="veyra-table" style="width: 100%;"><thead><tr><th style="width: 50%;"><p><strong>Acción o entregable</strong></p></th><th style="width: 25%;"><p><strong>Responsable</strong></p></th><th style="width: 25%;"><p><strong>Fecha límite</strong></p></th></tr></thead><tbody><tr><td><p>Enviar resumen técnico a los involucrados</p></td><td><p>Responsable 1</p></td><td><p>${dateStr}</p></td></tr><tr><td><p>Actualizar backlog y cronograma de tareas</p></td><td><p>Responsable 2</p></td><td><p>En 3 días</p></td></tr></tbody></table><p></p>`;
     },
   },
   {
@@ -429,69 +211,7 @@ export const NOTE_TEMPLATES: NoteTemplate[] = [
       const studentName = options?.userName?.trim() || 'Apellidos y nombres del alumno';
       const dateStr = getTodayFormatted();
 
-      return `
-        <table class="veyra-table" style="width: 100%;">
-          <tr>
-            <th style="background-color: #dbeafe; text-align: center; font-weight: 700; width: 25%;" data-background-color="#dbeafe"><p><strong>Laboratorio</strong></p></th>
-            <th colspan="2" style="background-color: #dbeafe; text-align: center; font-weight: 700; width: 55%;" data-background-color="#dbeafe"><p><strong>Datos del alumno</strong></p></th>
-            <th style="background-color: #dbeafe; text-align: center; font-weight: 700; width: 20%;" data-background-color="#dbeafe"><p><strong>Fecha</strong></p></th>
-          </tr>
-          <tr>
-            <td rowspan="3" style="text-align: center; font-weight: 700; vertical-align: middle;"><p><strong>PRÁCTICA N° 1</strong></p></td>
-            <td style="font-weight: 600; width: 28%;"><p><strong>Apellidos y nombres</strong></p></td>
-            <td><p>${studentName}</p></td>
-            <td rowspan="3" style="text-align: center; vertical-align: middle;"><p>${dateStr}</p></td>
-          </tr>
-          <tr>
-            <td style="font-weight: 600;"><p><strong>Cédula</strong></p></td>
-            <td><p>0000000000</p></td>
-          </tr>
-          <tr>
-            <td style="font-weight: 600;"><p><strong>Grupo / Mesa</strong></p></td>
-            <td><p>Mesa 1</p></td>
-          </tr>
-        </table>
-        <h1>Informe de práctica de laboratorio</h1>
-        <h2>1. Materiales y equipos utilizados</h2>
-        <ul>
-          <li><p>Instrumento de medición principal.</p></li>
-          <li><p>Cables, fuentes de alimentación o reactivos.</p></li>
-          <li><p>Software de registro o captura de datos.</p></li>
-        </ul>
-        <h2>2. Procedimiento experimental</h2>
-        <ol>
-          <li><p>Calibración y verificación de los instrumentos.</p></li>
-          <li><p>Montaje del circuito o esquema experimental.</p></li>
-          <li><p>Toma sistemática de lecturas en los diferentes puntos de prueba.</p></li>
-        </ol>
-        <h2>3. Tabla de datos y mediciones</h2>
-        <table class="veyra-table" style="width: 100%;">
-          <thead>
-            <tr>
-              <th><p><strong>Muestra #</strong></p></th>
-              <th><p><strong>Valor teórico</strong></p></th>
-              <th><p><strong>Valor medido</strong></p></th>
-              <th><p><strong>Margen de error (%)</strong></p></th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td><p>1</p></td>
-              <td><p>10.0</p></td>
-              <td><p>9.8</p></td>
-              <td><p>2.0 %</p></td>
-            </tr>
-            <tr>
-              <td><p>2</p></td>
-              <td><p>20.0</p></td>
-              <td><p>19.7</p></td>
-              <td><p>1.5 %</p></td>
-            </tr>
-          </tbody>
-        </table>
-        <h2>4. Discusión de resultados y conclusiones</h2>
-        <p>Analice las fuentes de incertidumbre y contraste los valores observados con la teoría formal.</p>
-      `;
+      return `<table class="veyra-table" style="width: 100%;"><tbody><tr><td style="width: 25%; font-weight: 600;"><p><strong>Práctica</strong></p></td><td style="width: 25%;"><p>Práctica N° 1</p></td><td style="width: 20%; font-weight: 600;"><p><strong>Fecha</strong></p></td><td style="width: 30%;"><p>${dateStr}</p></td></tr><tr><td style="font-weight: 600;"><p><strong>Estudiante</strong></p></td><td><p>${studentName}</p></td><td style="font-weight: 600;"><p><strong>Grupo / Mesa</strong></p></td><td><p>Mesa 1</p></td></tr></tbody></table><h1>Informe de práctica de laboratorio</h1><h2>1. Materiales y equipos utilizados</h2><ul><li><p>Instrumento de medición principal.</p></li><li><p>Cables, fuentes de alimentación o reactivos.</p></li><li><p>Software de registro o captura de datos.</p></li></ul><h2>2. Procedimiento experimental</h2><ol><li><p>Calibración y verificación de los instrumentos.</p></li><li><p>Montaje del circuito o esquema experimental.</p></li><li><p>Toma sistemática de lecturas en los diferentes puntos de prueba.</p></li></ol><h2>3. Tabla de datos y mediciones</h2><table class="veyra-table" style="width: 100%;"><thead><tr><th><p><strong>Muestra #</strong></p></th><th><p><strong>Valor teórico</strong></p></th><th><p><strong>Valor medido</strong></p></th><th><p><strong>Margen de error (%)</strong></p></th></tr></thead><tbody><tr><td><p>1</p></td><td><p>10.0</p></td><td><p>9.8</p></td><td><p>2.0 %</p></td></tr><tr><td><p>2</p></td><td><p>20.0</p></td><td><p>19.7</p></td><td><p>1.5 %</p></td></tr></tbody></table><h2>4. Discusión de resultados y conclusiones</h2><p>Analice las fuentes de incertidumbre y contraste los valores observados con la teoría formal.</p>`;
     },
   },
   {
@@ -515,38 +235,7 @@ export const NOTE_TEMPLATES: NoteTemplate[] = [
       </div>
     `,
     getContent: () => {
-      return `
-        <h1>Planificador semanal de estudio</h1>
-        <h2>Objetivos de la semana</h2>
-        <ul data-type="taskList">
-          <li data-checked="false"><label><input type="checkbox"><span></span></label><div><p>Objetivo primordial 1</p></div></li>
-          <li data-checked="false"><label><input type="checkbox"><span></span></label><div><p>Objetivo primordial 2</p></div></li>
-          <li data-checked="false"><label><input type="checkbox"><span></span></label><div><p>Lectura y repaso de apuntes</p></div></li>
-        </ul>
-        <h2>Distribución horaria</h2>
-        <table class="veyra-table" style="width: 100%;">
-          <thead>
-            <tr>
-              <th style="width: 20%;"><p><strong>Lunes</strong></p></th>
-              <th style="width: 20%;"><p><strong>Martes</strong></p></th>
-              <th style="width: 20%;"><p><strong>Miércoles</strong></p></th>
-              <th style="width: 20%;"><p><strong>Jueves</strong></p></th>
-              <th style="width: 20%;"><p><strong>Viernes</strong></p></th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td><p>Revisión teórica</p></td>
-              <td><p>Ejercicios prácticos</p></td>
-              <td><p>Laboratorio / Proyecto</p></td>
-              <td><p>Redacción de informes</p></td>
-              <td><p>Autoevaluación y dudas</p></td>
-            </tr>
-          </tbody>
-        </table>
-        <h2>Notas y recordatorios adicionales</h2>
-        <p>Anotar entregas de la próxima semana, fechas de evaluaciones o recursos pendientes por consultar.</p>
-      `;
+      return `<h1>Planificador semanal de estudio</h1><h2>Objetivos de la semana</h2><ul data-type="taskList"><li data-type="taskItem" data-checked="false"><p>Objetivo primordial 1</p></li><li data-type="taskItem" data-checked="false"><p>Objetivo primordial 2</p></li><li data-type="taskItem" data-checked="false"><p>Lectura y repaso de apuntes</p></li></ul><h2>Distribución horaria</h2><table class="veyra-table" style="width: 100%;"><thead><tr><th style="width: 20%;"><p><strong>Lunes</strong></p></th><th style="width: 20%;"><p><strong>Martes</strong></p></th><th style="width: 20%;"><p><strong>Miércoles</strong></p></th><th style="width: 20%;"><p><strong>Jueves</strong></p></th><th style="width: 20%;"><p><strong>Viernes</strong></p></th></tr></thead><tbody><tr><td><p>Revisión teórica</p></td><td><p>Ejercicios prácticos</p></td><td><p>Laboratorio / Proyecto</p></td><td><p>Redacción de informes</p></td><td><p>Autoevaluación y dudas</p></td></tr></tbody></table><h2>Notas y recordatorios adicionales</h2><p>Anotar entregas de la próxima semana, fechas de evaluaciones o recursos pendientes por consultar.</p>`;
     },
   },
 ];
