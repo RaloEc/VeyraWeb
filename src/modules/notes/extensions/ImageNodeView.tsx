@@ -2,7 +2,8 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { NodeViewWrapper, useEditorState, type NodeViewProps } from '@tiptap/react';
 import { toast } from 'sonner';
 import { cn } from '../../../lib/utils';
-import { uploadNoteImage } from '../../../lib/storage-upload';
+import { compressImage } from '../../../lib/image-pipeline';
+import { uploadFile, isVeyraAttachmentUri, useResolvedAttachmentSrc } from '../../../lib/storage';
 import { deleteNoteImage } from '../../../lib/storage-delete';
 import { InlineImageCropper } from '../components/InlineImageCropper';
 
@@ -15,6 +16,18 @@ export const ImageNodeView: React.FC<NodeViewProps> = ({
 }) => {
   const { src, alt, width } = node.attrs;
   const textAlign = node.attrs.textAlign || 'center';
+
+  // Resuelve `veyra-attachment://<id>` en tiempo de render sin mutar `node.attrs.src` en Yjs
+  const {
+    resolvedSrc,
+    isLoading: isResolvingSrc,
+    error: resolveError,
+    refresh: refreshSignedSrc,
+  } = useResolvedAttachmentSrc(src);
+  const hasRetriedErrorRef = useRef(false);
+  useEffect(() => {
+    hasRetriedErrorRef.current = false;
+  }, [src]);
 
   // Posición del nodo en el documento ProseMirror
   const pos = typeof getPos === 'function' ? getPos() : null;
@@ -94,12 +107,19 @@ export const ImageNodeView: React.FC<NodeViewProps> = ({
   const handleApplyCropped = async (croppedBlob: Blob) => {
     try {
       const oldSrc = src;
-      const currentUserId = editor.storage.image?.currentUserId;
-      const newUrl = await uploadNoteImage(croppedBlob, currentUserId || undefined);
+      const noteId = editor.storage.image?.noteId;
+      if (!noteId) {
+        throw new Error('No se pudo determinar la nota para subir el recorte.');
+      }
 
-      updateAttributes({ src: newUrl });
+      const webpBlob = await compressImage(croppedBlob);
+      const uploaded = await uploadFile(webpBlob, 'note', noteId, {
+        filename: `cropped_${Date.now()}.webp`,
+      });
 
-      if (oldSrc && oldSrc.includes('attachments')) {
+      updateAttributes({ src: uploaded.attachment_uri });
+
+      if (oldSrc && (isVeyraAttachmentUri(oldSrc) || oldSrc.includes('attachments'))) {
         deleteNoteImage(oldSrc);
       }
 
@@ -261,7 +281,7 @@ export const ImageNodeView: React.FC<NodeViewProps> = ({
       {isCropping ? (
         <div style={{ width: widthStyle, marginLeft }} className="mr-auto">
           <InlineImageCropper
-            src={src}
+            src={resolvedSrc || src}
             alt={alt || ''}
             onApply={handleApplyCropped}
             onCancel={handleCancelCrop}
@@ -286,12 +306,38 @@ export const ImageNodeView: React.FC<NodeViewProps> = ({
               }
             }}
           >
-            <img
-              src={src}
-              alt={alt || ''}
-              draggable={false}
-              className="w-full h-auto block rounded-lg object-contain shadow-sm pointer-events-none"
-            />
+            {isResolvingSrc && !resolvedSrc ? (
+              <div className="min-h-[120px] w-full flex items-center justify-center rounded-lg bg-zinc-100 dark:bg-zinc-800/60 text-xs text-zinc-500">
+                Cargando imagen...
+              </div>
+            ) : resolveError && !resolvedSrc ? (
+              <div className="min-h-[120px] w-full flex flex-col items-center justify-center gap-2 rounded-lg border border-red-200 dark:border-red-900/50 bg-red-50/50 dark:bg-red-950/20 p-3 text-xs text-red-600 dark:text-red-400">
+                <span>{resolveError}</span>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    void refreshSignedSrc();
+                  }}
+                  className="px-2.5 py-1 rounded bg-red-600 text-white hover:bg-red-700 transition-colors"
+                >
+                  Reintentar
+                </button>
+              </div>
+            ) : (
+              <img
+                src={resolvedSrc || undefined}
+                alt={alt || ''}
+                draggable={false}
+                onError={() => {
+                  if (!hasRetriedErrorRef.current) {
+                    hasRetriedErrorRef.current = true;
+                    void refreshSignedSrc();
+                  }
+                }}
+                className="w-full h-auto block rounded-lg object-contain shadow-sm pointer-events-none"
+              />
+            )}
 
             {/* Tiradores de redimensión en las 4 esquinas si está seleccionado y NO editando caption */}
             {selected && !isEditingCaption && (

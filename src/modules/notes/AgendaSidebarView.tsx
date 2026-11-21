@@ -119,7 +119,7 @@ export const AgendaSidebarView: React.FC<AgendaSidebarViewProps> = ({
         offset_minutes: payload.offset_minutes,
       });
     } else {
-      await remindersHook?.createReminder({
+      return await remindersHook?.createReminder({
         title: payload.title,
         description: payload.description,
         due_date_ms: payload.due_date_ms,
@@ -176,7 +176,7 @@ export const AgendaSidebarView: React.FC<AgendaSidebarViewProps> = ({
         attachments: payload.attachments,
       });
     } else {
-      await eventsHook?.createEvent({
+      return await eventsHook?.createEvent({
         title: payload.title,
         description: payload.description,
         start_time_ms: payload.start_time_ms,

@@ -234,11 +234,14 @@ export function loadSavedA4Templates(): A4HeaderFooterSavedTemplate[] {
   }
 }
 
-export async function ensureSlotImagesUploaded(slots: A4ZoneSlots): Promise<A4ZoneSlots> {
+export async function ensureSlotImagesUploaded(
+  slots: A4ZoneSlots,
+  noteId?: string
+): Promise<A4ZoneSlots> {
   const nextSlots: A4ZoneSlots = { ...slots };
   if (nextSlots.logoUrl && nextSlots.logoUrl.startsWith('data:image/')) {
     try {
-      const res = await uploadHeaderFooterLogo(nextSlots.logoUrl);
+      const res = await uploadHeaderFooterLogo(nextSlots.logoUrl, undefined, noteId);
       nextSlots.logoUrl = res.url;
     } catch {}
   }
@@ -247,7 +250,7 @@ export async function ensureSlotImagesUploaded(slots: A4ZoneSlots): Promise<A4Zo
     for (const img of nextSlots.images) {
       if (img.src && img.src.startsWith('data:image/')) {
         try {
-          const res = await uploadHeaderFooterLogo(img.src);
+          const res = await uploadHeaderFooterLogo(img.src, undefined, noteId);
           updatedImages.push({ ...img, src: res.url });
         } catch {
           updatedImages.push(img);
@@ -262,7 +265,8 @@ export async function ensureSlotImagesUploaded(slots: A4ZoneSlots): Promise<A4Zo
 }
 
 export async function ensureConfigImagesUploaded(
-  config: A4HeaderFooterConfig
+  config: A4HeaderFooterConfig,
+  noteId?: string
 ): Promise<A4HeaderFooterConfig> {
   const cloned = normalizeA4HeaderFooterConfig(JSON.parse(JSON.stringify(config)));
   const [
@@ -273,12 +277,12 @@ export async function ensureConfigImagesUploaded(
     evenPageHeaderSlots,
     evenPageFooterSlots,
   ] = await Promise.all([
-    ensureSlotImagesUploaded(cloned.headerSlots),
-    ensureSlotImagesUploaded(cloned.footerSlots),
-    ensureSlotImagesUploaded(cloned.firstPageHeaderSlots),
-    ensureSlotImagesUploaded(cloned.firstPageFooterSlots),
-    ensureSlotImagesUploaded(cloned.evenPageHeaderSlots),
-    ensureSlotImagesUploaded(cloned.evenPageFooterSlots),
+    ensureSlotImagesUploaded(cloned.headerSlots, noteId),
+    ensureSlotImagesUploaded(cloned.footerSlots, noteId),
+    ensureSlotImagesUploaded(cloned.firstPageHeaderSlots, noteId),
+    ensureSlotImagesUploaded(cloned.firstPageFooterSlots, noteId),
+    ensureSlotImagesUploaded(cloned.evenPageHeaderSlots, noteId),
+    ensureSlotImagesUploaded(cloned.evenPageFooterSlots, noteId),
   ]);
 
   return {
@@ -396,10 +400,11 @@ export async function syncSavedA4TemplatesFromCloud(): Promise<A4HeaderFooterSav
 
 export async function saveNewA4Template(
   name: string,
-  config: A4HeaderFooterConfig
+  config: A4HeaderFooterConfig,
+  noteId?: string
 ): Promise<A4HeaderFooterSavedTemplate[]> {
   const current = loadSavedA4Templates();
-  const uploadedConfig = await ensureConfigImagesUploaded(config);
+  const uploadedConfig = await ensureConfigImagesUploaded(config, noteId);
   const newTemplate: A4HeaderFooterSavedTemplate = {
     id: `tpl_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
     name: name.trim() || `Plantilla ${current.length + 1}`,

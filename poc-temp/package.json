@@ -1,0 +1,14 @@
+{
+  "name": "veyra-poc-phase0b",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node server.mjs",
+    "test:tus": "node poc-tus-test.mjs"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.118.0",
+    "tus-js-client": "^4.3.1"
+  }
+}

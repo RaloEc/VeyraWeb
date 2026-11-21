@@ -14,6 +14,9 @@ export class ImageUploadError extends Error {
 
 export function humanizeUploadError(err: unknown): string {
   if (err instanceof ImageUploadError) return err.message;
+  if (err instanceof Error && err.name === 'StorageUploadError' && err.message) {
+    return err.message;
+  }
   if (typeof navigator !== 'undefined' && navigator.onLine === false) {
     return 'Sin conexión. Revisa tu internet e inténtalo de nuevo.';
   }

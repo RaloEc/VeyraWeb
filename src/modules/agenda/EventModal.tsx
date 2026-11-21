@@ -19,14 +19,22 @@ import {
   Cake,
   Paperclip,
   Link as LinkIcon,
-  ExternalLink,
   Loader2,
 } from 'lucide-react';
+import { toast } from 'sonner';
 import type { CalendarEvent } from '../../hooks/useEvents';
 import type { Note } from '../../types/notes';
-import { cn, isImageAttachment, toLocalYmd, type AttachmentItem } from '../../lib/utils';
+import { cn, toLocalYmd, type AttachmentItem } from '../../lib/utils';
 import { getDeviceTimezone } from '../../services/recurrence/recurrenceEngine';
-import { uploadNoteImage } from '../../lib/storage-upload';
+import {
+  cleanupRemovedAttachment,
+  clearPendingAttachmentMap,
+  flushPendingEntityAttachments,
+  prepareAttachmentFile,
+  uploadEntityAttachment,
+  type PendingAttachmentFile,
+} from '../../lib/storage/entityAttachments';
+import { AttachmentPreviewRow } from '../../components/common/AttachmentPreviewRow';
 
 export interface EventModalProps {
   isOpen: boolean;
@@ -54,7 +62,7 @@ export interface EventModalProps {
     notification_offsets?: string | null;
     note_id?: string | null;
     attachments?: string | null;
-  }) => Promise<void>;
+  }) => Promise<string | undefined | void>;
   onDelete?: (id: string) => Promise<void> | void;
 }
 
@@ -146,8 +154,17 @@ export const EventModal: React.FC<EventModalProps> = ({
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const notesInputRef = useRef<HTMLTextAreaElement>(null);
+  const pendingFilesRef = useRef<Map<string, PendingAttachmentFile>>(new Map());
+  const handleUploadFilesRef = useRef<(files: (File | Blob)[]) => Promise<void>>(async () => {});
 
   useEffect(() => {
+    return () => {
+      clearPendingAttachmentMap(pendingFilesRef.current);
+    };
+  }, []);
+
+  useEffect(() => {
+    clearPendingAttachmentMap(pendingFilesRef.current);
     if (event) {
       setTitle(event.title || '');
       setDescription(event.description || '');
@@ -319,44 +336,34 @@ export const EventModal: React.FC<EventModalProps> = ({
 
       const uploaded: AttachmentItem[] = [];
 
-      for (const file of files) {
-        let fileName = 'imagen.png';
-        if ('name' in file && file.name) {
-          fileName = file.name;
+      for (const rawFile of files) {
+        const prepared = await prepareAttachmentFile(rawFile);
+        if (event?.id) {
+          const item = await uploadEntityAttachment(
+            prepared.file,
+            prepared.name,
+            'event',
+            event.id
+          );
+          uploaded.push(item);
         } else {
-          const ext = file.type ? file.type.split('/')[1] || 'png' : 'png';
-          fileName = `captura_${Date.now()}.${ext}`;
+          // Nuevo evento sin ID persistido en PostgreSQL: diferir subida hasta guardar
+          const previewUrl = URL.createObjectURL(prepared.file);
+          pendingFilesRef.current.set(previewUrl, prepared);
+          uploaded.push({ uri: previewUrl, name: prepared.name });
         }
-
-        if (fileName === 'image.png') {
-          const ext = file.type ? file.type.split('/')[1] || 'png' : 'png';
-          fileName = `captura_${Date.now()}.${ext}`;
-        }
-
-        const namedFile =
-          'name' in file && file.name === fileName
-            ? (file as File)
-            : new File([file], fileName, { type: file.type || 'image/png' });
-
-        let uri = '';
-        try {
-          uri = await uploadNoteImage(namedFile);
-        } catch (uploadErr) {
-          console.warn('[EventModal] uploadNoteImage failed, using fallback Object URL:', uploadErr);
-          uri = URL.createObjectURL(namedFile);
-        }
-        uploaded.push({ uri, name: fileName });
       }
 
       setAttachments((prev) => [...prev, ...uploaded]);
     } catch (err: unknown) {
       console.error('[EventModal] Error uploading files:', err);
-      setError((err as Error).message || 'Error cargando imagen');
+      setError((err as Error).message || 'Error cargando archivo adjunto');
     } finally {
       setIsUploading(false);
       if (fileInputRef.current) fileInputRef.current.value = '';
     }
   };
+  handleUploadFilesRef.current = handleUploadFiles;
 
   const handleFileInputChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const fileList = e.target.files;
@@ -378,6 +385,8 @@ export const EventModal: React.FC<EventModalProps> = ({
   };
 
   const handleRemoveAttachment = (idx: number) => {
+    const removed = attachments[idx];
+    cleanupRemovedAttachment(removed, pendingFilesRef.current);
     setAttachments(attachments.filter((_, i) => i !== idx));
   };
 
@@ -403,7 +412,7 @@ export const EventModal: React.FC<EventModalProps> = ({
       if (imageFiles.length > 0) {
         e.preventDefault();
         e.stopPropagation();
-        handleUploadFiles(imageFiles);
+        handleUploadFilesRef.current(imageFiles);
       }
     };
 
@@ -536,7 +545,17 @@ export const EventModal: React.FC<EventModalProps> = ({
 
       const detectedBirthday = isBirthdayLike || looksLikeBirthday(title);
 
-      await onSave({
+      const nonPendingAttachments = attachments.filter(
+        (att) => !pendingFilesRef.current.has(att.uri)
+      );
+      const pendingEntries = attachments
+        .filter((att) => pendingFilesRef.current.has(att.uri))
+        .map((att) => ({
+          previewUrl: att.uri,
+          entry: pendingFilesRef.current.get(att.uri)!,
+        }));
+
+      const createdId = await onSave({
         id: event?.id,
         title: title.trim(),
         description: description.trim() || undefined,
@@ -554,8 +573,29 @@ export const EventModal: React.FC<EventModalProps> = ({
         notification_offset_min: primaryOffset,
         notification_offsets: notificationOffsetsJson,
         note_id: linkedNoteId || null,
-        attachments: attachments.length > 0 ? JSON.stringify(attachments) : null,
+        attachments:
+          nonPendingAttachments.length > 0
+            ? JSON.stringify(nonPendingAttachments)
+            : null,
       });
+
+      const targetId =
+        event?.id || (typeof createdId === 'string' ? createdId : undefined);
+      if (pendingEntries.length > 0 && targetId) {
+        pendingFilesRef.current.clear();
+        const flushRes = await flushPendingEntityAttachments({
+          targetType: 'event',
+          targetId,
+          nonPending: nonPendingAttachments,
+          pendingEntries,
+        });
+        if (flushRes.failedCount > 0) {
+          toast.error(
+            flushRes.lastError ||
+              `No se pudieron subir ${flushRes.failedCount} adjuntos`
+          );
+        }
+      }
 
       onClose();
     } catch (err: unknown) {
@@ -1112,48 +1152,13 @@ export const EventModal: React.FC<EventModalProps> = ({
 
         {attachments.length > 0 && (
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 pt-1">
-            {attachments.map((att, idx) => {
-              const isImg = isImageAttachment(att.uri) || isImageAttachment(att.name);
-              return (
-                <div
-                  key={idx}
-                  className="flex items-center justify-between gap-2 p-1.5 rounded-lg bg-veyra-card border border-veyra-border text-xs group hover:border-accent/40 transition-colors"
-                >
-                  <a
-                    href={att.uri}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex items-center gap-2 flex-1 min-w-0 hover:text-accent transition-colors"
-                    title={att.name}
-                  >
-                    {isImg ? (
-                      <img
-                        src={att.uri}
-                        alt={att.name}
-                        className="w-8 h-8 rounded object-cover border border-veyra-border/60 shrink-0 bg-black/10"
-                        onError={(e) => {
-                          (e.target as HTMLElement).style.display = 'none';
-                        }}
-                      />
-                    ) : (
-                      <FileText className="w-3.5 h-3.5 text-accent shrink-0" />
-                    )}
-                    <span className="truncate text-veyra-text font-medium text-[11px]">
-                      {att.name}
-                    </span>
-                    <ExternalLink className="w-3 h-3 text-veyra-subtle shrink-0 opacity-0 group-hover:opacity-100 transition-opacity" />
-                  </a>
-                  <button
-                    type="button"
-                    onClick={() => handleRemoveAttachment(idx)}
-                    className="p-1 text-veyra-subtle hover:text-red-400 opacity-60 group-hover:opacity-100 transition-opacity cursor-pointer shrink-0"
-                    title="Eliminar adjunto"
-                  >
-                    <X className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              );
-            })}
+            {attachments.map((att, idx) => (
+              <AttachmentPreviewRow
+                key={`${att.uri}_${idx}`}
+                attachment={att}
+                onRemove={() => handleRemoveAttachment(idx)}
+              />
+            ))}
           </div>
         )}
       </div>

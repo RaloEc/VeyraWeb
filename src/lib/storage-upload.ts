@@ -1,6 +1,7 @@
 import { supabase } from './supabase';
 import { compressImage, isGif, ImageUploadError } from './image-pipeline';
 import { computeSha256 } from './crypto-utils';
+import { uploadFile, buildAttachmentUri, isVeyraAttachmentUri } from './storage';
 
 const ALLOWED_MIME_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
 
@@ -124,15 +125,18 @@ export async function uploadNoteImage(file: File | Blob, userId?: string): Promi
 
 /**
  * Comprime un logo de encabezado/pie a WebP ligero (máx 520px, calidad 85%, ~8-18 KB)
- * y lo sube una única vez a Supabase Storage deduplicado por su hash SHA-256:
- * `${uid}/notes/hf_logo_${sha256_20}.webp`.
- * Si la misma imagen se pega o se usa en múltiples plantillas/notas, reutiliza exactamente el mismo archivo.
+ * y lo sube al bucket privado `veyra-attachments` deduplicado por su hash SHA-256
+ * (reutilizando `veyra-attachment://<id>` si ya existe para este usuario).
  */
 export async function uploadHeaderFooterLogo(
   fileOrDataUrl: File | Blob | string,
-  userId?: string
+  userId?: string,
+  noteId?: string
 ): Promise<{ url: string; naturalWidth: number; naturalHeight: number }> {
-  if (typeof fileOrDataUrl === 'string' && /^https?:\/\//i.test(fileOrDataUrl)) {
+  if (
+    typeof fileOrDataUrl === 'string' &&
+    (/^https?:\/\//i.test(fileOrDataUrl) || isVeyraAttachmentUri(fileOrDataUrl))
+  ) {
     return { url: fileOrDataUrl, naturalWidth: 160, naturalHeight: 65 };
   }
 
@@ -214,25 +218,36 @@ export async function uploadHeaderFooterLogo(
       const bytes = new Uint8Array(await webpBlob.arrayBuffer());
       const fullHash = await computeSha256(bytes);
       const shortHash = fullHash.slice(0, 20);
-      const filePath = `${uid}/notes/hf_logo_${shortHash}.webp`;
 
-      const { error: uploadError } = await supabase.storage
+      // 1. Deduplicación en `public.attachments` por SHA-256 (sin upsert)
+      const { data: existing } = await (supabase as any)
         .from('attachments')
-        .upload(filePath, webpBlob, {
-          cacheControl: '31536000',
-          upsert: true,
-          contentType: 'image/webp',
+        .select('id')
+        .eq('storage_owner_id', uid)
+        .eq('checksum_sha256', fullHash)
+        .eq('availability', 'available')
+        .is('deleted_at', null)
+        .limit(1)
+        .maybeSingle();
+
+      if (existing?.id) {
+        return {
+          url: buildAttachmentUri(existing.id),
+          naturalWidth: natW,
+          naturalHeight: natH,
+        };
+      }
+
+      // 2. Subida nueva al bucket privado `veyra-attachments` si hay `noteId`
+      if (noteId) {
+        const uploaded = await uploadFile(webpBlob, 'note', noteId, {
+          filename: `hf_logo_${shortHash}.webp`,
         });
-
-      const isAlreadyExists =
-        uploadError &&
-        /already exists|duplicate/i.test(String(uploadError.message || ''));
-
-      if (!uploadError || isAlreadyExists) {
-        const { data } = supabase.storage.from('attachments').getPublicUrl(filePath);
-        if (data?.publicUrl) {
-          return { url: data.publicUrl, naturalWidth: natW, naturalHeight: natH };
-        }
+        return {
+          url: uploaded.attachment_uri,
+          naturalWidth: natW,
+          naturalHeight: natH,
+        };
       }
     }
   } catch (err) {

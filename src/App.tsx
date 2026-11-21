@@ -1,6 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from './hooks/useAuth';
 import { AuthPage } from './modules/auth/AuthPage';
+import { AuthCallbackPage } from './modules/auth/AuthCallbackPage';
+import { GoogleDriveCallbackPage } from './modules/auth/GoogleDriveCallbackPage';
 import { ResetPasswordPage } from './modules/auth/ResetPasswordPage';
 import { JoinPage } from './modules/join/JoinPage';
 import { AppLayout } from './components/layout/AppLayout';
@@ -24,6 +26,32 @@ function AppContent() {
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
   }, []);
+
+  const handleCallbackComplete = useCallback(() => {
+    if (typeof window !== 'undefined') {
+      setCurrentPath(window.location.pathname || '/');
+    } else {
+      setCurrentPath('/');
+    }
+  }, []);
+
+  // /auth/google-drive/callback route - Separate Google Drive OAuth flow
+  if (currentPath.startsWith('/auth/google-drive/callback')) {
+    return (
+      <ErrorBoundary>
+        <GoogleDriveCallbackPage onComplete={handleCallbackComplete} />
+      </ErrorBoundary>
+    );
+  }
+
+  // /auth/callback route - Supabase Auth OAuth & linkIdentity callback
+  if (currentPath.startsWith('/auth/callback')) {
+    return (
+      <ErrorBoundary>
+        <AuthCallbackPage onComplete={handleCallbackComplete} />
+      </ErrorBoundary>
+    );
+  }
 
   // /reset-password route or recovery hash
   if (currentPath.startsWith('/reset-password') || (typeof window !== 'undefined' && window.location.hash.includes('type=recovery'))) {

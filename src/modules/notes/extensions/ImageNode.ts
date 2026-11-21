@@ -14,6 +14,7 @@ export interface ImageStorage {
   editingCaptionPos: number | null;
   croppingPos: number | null;
   currentUserId?: string | null;
+  noteId?: string | null;
 }
 
 declare module '@tiptap/core' {
@@ -39,6 +40,7 @@ export const ImageNode = Image.extend({
       editingCaptionPos: null as number | null,
       croppingPos: null as number | null,
       currentUserId: null as string | null,
+      noteId: null as string | null,
     };
   },
 

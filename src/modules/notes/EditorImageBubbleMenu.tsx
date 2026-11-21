@@ -22,13 +22,14 @@ import {
 import { toast } from 'sonner';
 import { cn } from '../../lib/utils';
 import { compressImage, isGif } from '../../lib/image-pipeline';
-import { uploadNoteImage } from '../../lib/storage-upload';
+import { uploadFile, isVeyraAttachmentUri, resolveAttachmentUri } from '../../lib/storage';
 import { deleteNoteImage } from '../../lib/storage-delete';
 import { copyImageToClipboard } from './utils/clipboardImageUtils';
 
 export interface EditorImageBubbleMenuProps {
   editor: Editor | null;
   currentUserId?: string | null;
+  noteId?: string | null;
 }
 
 const shouldShowImageBubbleMenu = ({ editor }: { editor: Editor }) => {
@@ -42,6 +43,7 @@ const shouldShowImageBubbleMenu = ({ editor }: { editor: Editor }) => {
 export const EditorImageBubbleMenu: React.FC<EditorImageBubbleMenuProps> = ({
   editor,
   currentUserId,
+  noteId,
 }) => {
   if (!editor) return null;
 
@@ -123,26 +125,24 @@ export const EditorImageBubbleMenu: React.FC<EditorImageBubbleMenuProps> = ({
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (!file || !currentUserId) return;
+    const activeNoteId = noteId || editor.storage.image?.noteId;
+    if (!file || !activeNoteId || !currentUserId) return;
 
     try {
       setIsUploading(true);
       const oldSrc = currentSrc;
 
-      // Compresión si no es GIF
-      let fileToUpload: File | Blob = file;
-      if (!isGif(file.name) && !file.type.includes('gif')) {
-        fileToUpload = await compressImage(file);
-      }
+      const isAnimation = isGif(file.name) || file.type.includes('gif');
+      const fileToUpload: File | Blob = isAnimation ? file : await compressImage(file);
+      const filename = `replaced_${Date.now()}.${isAnimation ? 'gif' : 'webp'}`;
 
-      // Subida a Supabase Storage
-      const newUrl = await uploadNoteImage(fileToUpload, currentUserId);
+      const uploaded = await uploadFile(fileToUpload, 'note', activeNoteId, { filename });
 
-      // Actualizar src de la imagen en Tiptap / Yjs
-      editor.chain().focus().updateAttributes('image', { src: newUrl }).run();
+      // Actualizar src de la imagen en Tiptap / Yjs (veyra-attachment://<id>)
+      editor.chain().focus().updateAttributes('image', { src: uploaded.attachment_uri }).run();
 
       // Borrado best-effort de la imagen anterior
-      if (oldSrc && oldSrc.includes('attachments')) {
+      if (oldSrc && (isVeyraAttachmentUri(oldSrc) || oldSrc.includes('attachments'))) {
         deleteNoteImage(oldSrc);
       }
 
@@ -159,7 +159,8 @@ export const EditorImageBubbleMenu: React.FC<EditorImageBubbleMenuProps> = ({
   const handleDownload = async () => {
     if (!currentSrc) return;
     try {
-      const response = await fetch(currentSrc);
+      const downloadUrl = await resolveAttachmentUri(currentSrc);
+      const response = await fetch(downloadUrl);
       const blob = await response.blob();
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -178,10 +179,15 @@ export const EditorImageBubbleMenu: React.FC<EditorImageBubbleMenuProps> = ({
   // Copiar imagen al portapapeles
   const handleCopyImage = async () => {
     if (!currentSrc) return;
-    const ok = await copyImageToClipboard(currentSrc);
-    if (ok) {
-      toast.success('Imagen copiada al portapapeles');
-    } else {
+    try {
+      const resolvedUrl = await resolveAttachmentUri(currentSrc);
+      const ok = await copyImageToClipboard(resolvedUrl);
+      if (ok) {
+        toast.success('Imagen copiada al portapapeles');
+      } else {
+        toast.error('No se pudo copiar la imagen');
+      }
+    } catch {
       toast.error('No se pudo copiar la imagen');
     }
   };
@@ -189,11 +195,16 @@ export const EditorImageBubbleMenu: React.FC<EditorImageBubbleMenuProps> = ({
   // Cortar imagen (copiar y eliminar del editor)
   const handleCutImage = async () => {
     if (!currentSrc) return;
-    const ok = await copyImageToClipboard(currentSrc);
-    if (ok) {
-      editor.chain().focus().deleteSelection().run();
-      toast.success('Imagen cortada al portapapeles');
-    } else {
+    try {
+      const resolvedUrl = await resolveAttachmentUri(currentSrc);
+      const ok = await copyImageToClipboard(resolvedUrl);
+      if (ok) {
+        editor.chain().focus().deleteSelection().run();
+        toast.success('Imagen cortada al portapapeles');
+      } else {
+        toast.error('No se pudo cortar la imagen');
+      }
+    } catch {
       toast.error('No se pudo cortar la imagen');
     }
   };
@@ -217,7 +228,7 @@ export const EditorImageBubbleMenu: React.FC<EditorImageBubbleMenuProps> = ({
     editor.chain().focus().deleteSelection().run();
 
     // Borrado best-effort en Storage
-    if (oldSrc && oldSrc.includes('attachments')) {
+    if (oldSrc && (isVeyraAttachmentUri(oldSrc) || oldSrc.includes('attachments'))) {
       deleteNoteImage(oldSrc);
     }
 

@@ -1,7 +1,10 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Mail, Lock, ArrowRight, ShieldCheck, ArrowLeft } from 'lucide-react';
 import { Input } from '../../components/common/Input';
 import { Button } from '../../components/common/Button';
+import { GoogleIcon } from '../../components/common/GoogleIcon';
+import { AUTH_INTENT_STORAGE_KEY } from '../../lib/googleDriveIntegration';
+import { AUTH_CALLBACK_ERROR_KEY } from './AuthCallbackPage';
 import { supabase } from '../../lib/supabase';
 
 export interface LoginCardProps {
@@ -14,8 +17,42 @@ export const LoginCard: React.FC<LoginCardProps> = ({ onSuccess }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [infoMsg, setInfoMsg] = useState<string | null>(null);
+
+  useEffect(() => {
+    const callbackError = sessionStorage.getItem(AUTH_CALLBACK_ERROR_KEY);
+    if (callbackError) {
+      sessionStorage.removeItem(AUTH_CALLBACK_ERROR_KEY);
+      setErrorMsg(callbackError);
+    }
+  }, []);
+
+  const handleGoogleSignIn = async () => {
+    try {
+      setGoogleLoading(true);
+      setErrorMsg(null);
+      setInfoMsg(null);
+      sessionStorage.removeItem(AUTH_INTENT_STORAGE_KEY);
+
+      const redirectTo = window.location.origin.includes('localhost')
+        ? `${window.location.origin}/auth/callback`
+        : 'https://veyra-lake.vercel.app/auth/callback';
+
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo,
+        },
+      });
+      if (error) throw error;
+    } catch (err: unknown) {
+      console.error('[LoginCard] Google OAuth error:', err);
+      setErrorMsg((err as Error).message || 'No se pudo iniciar sesión con Google.');
+      setGoogleLoading(false);
+    }
+  };
 
   const handleResetPassword = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -211,6 +248,7 @@ export const LoginCard: React.FC<LoginCardProps> = ({ onSuccess }) => {
           <Button
             type="submit"
             loading={loading}
+            disabled={googleLoading}
             className="w-full mt-2"
             size="md"
           >
@@ -221,21 +259,47 @@ export const LoginCard: React.FC<LoginCardProps> = ({ onSuccess }) => {
       )}
 
       {!isForgotPassword && (
-        <div className="mt-6 pt-5 border-t border-veyra-border text-center">
-          <button
+        <>
+          <div className="relative my-5">
+            <div className="absolute inset-0 flex items-center">
+              <span className="w-full border-t border-veyra-border" />
+            </div>
+            <div className="relative flex justify-center text-[10px] uppercase tracking-wider">
+              <span className="bg-veyra-card px-2.5 text-veyra-subtle font-medium">
+                o continúa con
+              </span>
+            </div>
+          </div>
+
+          <Button
             type="button"
-            onClick={() => {
-              setIsSignUp(!isSignUp);
-              setErrorMsg(null);
-              setInfoMsg(null);
-            }}
-            className="text-xs text-veyra-muted hover:text-teal-400 transition-colors"
+            variant="secondary"
+            size="md"
+            loading={googleLoading}
+            disabled={loading}
+            onClick={handleGoogleSignIn}
+            className="w-full"
           >
-            {isSignUp
-              ? '¿Ya tienes una cuenta? Inicia sesión'
-              : '¿No tienes cuenta? Regístrate aquí'}
-          </button>
-        </div>
+            {!googleLoading && <GoogleIcon className="w-4 h-4 shrink-0" />}
+            <span>Continuar con Google</span>
+          </Button>
+
+          <div className="mt-5 pt-4 border-t border-veyra-border text-center">
+            <button
+              type="button"
+              onClick={() => {
+                setIsSignUp(!isSignUp);
+                setErrorMsg(null);
+                setInfoMsg(null);
+              }}
+              className="text-xs text-veyra-muted hover:text-teal-400 transition-colors"
+            >
+              {isSignUp
+                ? '¿Ya tienes una cuenta? Inicia sesión'
+                : '¿No tienes cuenta? Regístrate aquí'}
+            </button>
+          </div>
+        </>
       )}
     </div>
   );

@@ -127,7 +127,7 @@ export const RemindersModule: React.FC<RemindersModuleProps> = ({
         offset_minutes: payload.offset_minutes,
       });
     } else {
-      await createReminder({
+      return await createReminder({
         title: payload.title,
         description: payload.description,
         due_date_ms: payload.due_date_ms,

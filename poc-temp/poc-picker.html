@@ -1,0 +1,643 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Veyra Phase 0B — PoC Google OAuth + Picker + Backend Proxy (P6/P7/P10)</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #0b0f17;
+        --card: #131a26;
+        --border: #253147;
+        --text: #e6edf7;
+        --muted: #93a4bd;
+        --accent: #3b82f6;
+        --accent-hover: #2563eb;
+        --ok: #10b981;
+        --warn: #f59e0b;
+        --err: #ef4444;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        padding: 24px;
+        font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+        background: var(--bg);
+        color: var(--text);
+        line-height: 1.5;
+      }
+      .container {
+        max-width: 920px;
+        margin: 0 auto;
+        display: grid;
+        gap: 16px;
+      }
+      .card {
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 18px 20px;
+      }
+      h1 {
+        margin: 0 0 6px;
+        font-size: 20px;
+      }
+      h2 {
+        margin: 0 0 12px;
+        font-size: 16px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+      }
+      p.sub {
+        margin: 0;
+        color: var(--muted);
+        font-size: 13px;
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+        gap: 12px;
+      }
+      label {
+        display: block;
+        font-size: 12px;
+        color: var(--muted);
+        margin-bottom: 4px;
+      }
+      input {
+        width: 100%;
+        padding: 9px 11px;
+        border-radius: 8px;
+        border: 1px solid var(--border);
+        background: #0d131d;
+        color: var(--text);
+        font-size: 13px;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      }
+      input:focus {
+        outline: 1px solid var(--accent);
+        border-color: var(--accent);
+      }
+      .row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        align-items: center;
+      }
+      button {
+        border: none;
+        border-radius: 8px;
+        padding: 10px 16px;
+        font-size: 14px;
+        font-weight: 600;
+        cursor: pointer;
+        background: var(--accent);
+        color: #fff;
+        transition: background 0.15s ease, opacity 0.15s ease;
+      }
+      button:hover:not(:disabled) {
+        background: var(--accent-hover);
+      }
+      button:disabled {
+        opacity: 0.45;
+        cursor: not-allowed;
+      }
+      button.secondary {
+        background: #1f293b;
+        border: 1px solid var(--border);
+      }
+      button.secondary:hover:not(:disabled) {
+        background: #28354b;
+      }
+      .badge {
+        font-size: 11px;
+        font-weight: 600;
+        padding: 2px 8px;
+        border-radius: 999px;
+        border: 1px solid var(--border);
+        color: var(--muted);
+      }
+      .badge.ok {
+        color: var(--ok);
+        border-color: rgba(16, 185, 129, 0.4);
+        background: rgba(16, 185, 129, 0.1);
+      }
+      .badge.err {
+        color: var(--err);
+        border-color: rgba(239, 68, 68, 0.4);
+        background: rgba(239, 68, 68, 0.1);
+      }
+      .badge.warn {
+        color: var(--warn);
+        border-color: rgba(245, 158, 11, 0.4);
+        background: rgba(245, 158, 11, 0.1);
+      }
+      pre {
+        margin: 12px 0 0;
+        padding: 12px;
+        border-radius: 8px;
+        background: #090d14;
+        border: 1px solid var(--border);
+        font-size: 12px;
+        overflow-x: auto;
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+      .checkbox-label {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 12px;
+        color: var(--muted);
+        margin: 0;
+        cursor: pointer;
+      }
+      .checkbox-label input {
+        width: auto;
+      }
+    </style>
+  </head>
+  <body>
+    <main class="container">
+      <section class="card">
+        <h1>Veyra Phase 0B — Arnés PoC P6 / P7 / P10</h1>
+        <p class="sub">
+          Entorno aislado para validar OAuth Authorization Code Exchange (P6), Google Picker con scope
+          <code>drive.file</code> y lectura desde Edge Function (P7), más benchmark 5 MiB (P10).
+        </p>
+      </section>
+
+      <section class="card">
+        <h2>
+          Configuración (se guarda en localStorage)
+          <button id="clearStorageBtn" type="button" class="secondary" style="padding: 5px 10px; font-size: 12px">
+            Limpiar estado
+          </button>
+        </h2>
+        <div class="grid">
+          <div>
+            <label for="clientId">Google Web Client ID</label>
+            <input
+              id="clientId"
+              type="text"
+              placeholder="592135232115-tgbghktn14svjf2adbs880k38fuvoco1.apps.googleusercontent.com"
+            />
+          </div>
+          <div>
+            <label for="apiKey">Google API Key (para Google Picker)</label>
+            <input id="apiKey" type="password" placeholder="AIzaSy..." />
+          </div>
+          <div>
+            <label for="appId">Google App ID (Project Number)</label>
+            <input id="appId" type="text" value="592135232115" />
+          </div>
+          <div>
+            <label for="redirectUri">Redirect URI</label>
+            <input id="redirectUri" type="text" value="http://localhost:5173/poc-oauth-callback" />
+          </div>
+          <div>
+            <label for="exchangeUrl">Edge Function (poc-google-oauth-exchange)</label>
+            <input
+              id="exchangeUrl"
+              type="text"
+              value="https://rrwoompvuggcczggfgiq.supabase.co/functions/v1/poc-google-oauth-exchange"
+            />
+          </div>
+          <div>
+            <label for="harnessUrl">Edge Function (poc-drive-harness)</label>
+            <input
+              id="harnessUrl"
+              type="text"
+              value="https://rrwoompvuggcczggfgiq.supabase.co/functions/v1/poc-drive-harness"
+            />
+          </div>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>
+          Paso 1: OAuth Exchange (P6)
+          <span id="oauthBadge" class="badge">Sin conectar</span>
+        </h2>
+        <div class="row">
+          <button id="connectBtn" type="button">1. Conectar con Google</button>
+        </div>
+        <pre id="oauthOutput">Esperando conexión con Google...</pre>
+      </section>
+
+      <section class="card">
+        <h2>
+          Paso 2: Selección en Google Picker
+          <span id="pickerBadge" class="badge">Pendiente de OAuth</span>
+        </h2>
+        <div class="row">
+          <button id="pickerBtn" type="button" disabled>2. Abrir Google Picker</button>
+        </div>
+        <pre id="pickerOutput">Completa el Paso 1 para habilitar el Google Picker.</pre>
+      </section>
+
+      <section class="card">
+        <h2>
+          Paso 3: Lectura Backend /proxy (P7) y Benchmark (P10)
+          <span id="proxyBadge" class="badge">Pendiente de archivo</span>
+        </h2>
+        <div class="grid" style="margin-bottom: 12px">
+          <div>
+            <label for="fileIdInput">fileId seleccionado (o manual)</label>
+            <input id="fileIdInput" type="text" placeholder="Selecciona un archivo con el Picker..." />
+          </div>
+          <div style="display: flex; align-items: end">
+            <label class="checkbox-label">
+              <input id="includeTokenFallback" type="checkbox" />
+              Enviar accessToken en query param (solo si el isolate hizo cold-start)
+            </label>
+          </div>
+        </div>
+        <div class="row">
+          <button id="proxyBtn" type="button" disabled>3. Probar Lectura Backend (P7)</button>
+          <button id="harnessBtn" type="button" class="secondary" disabled>
+            3b. Probar Benchmark 5 MiB en Drive (P10)
+          </button>
+        </div>
+        <pre id="proxyOutput">Selecciona un archivo en el Paso 2 para probar /proxy.</pre>
+      </section>
+    </main>
+
+    <script>
+      const STORAGE_KEY = 'veyra_poc_picker_config_v1';
+      const SESSION_TOKEN_KEY = 'veyra_poc_google_access_token';
+      const SESSION_FILE_KEY = 'veyra_poc_picked_file';
+
+      const els = {
+        clientId: document.getElementById('clientId'),
+        apiKey: document.getElementById('apiKey'),
+        appId: document.getElementById('appId'),
+        redirectUri: document.getElementById('redirectUri'),
+        exchangeUrl: document.getElementById('exchangeUrl'),
+        harnessUrl: document.getElementById('harnessUrl'),
+        clearStorageBtn: document.getElementById('clearStorageBtn'),
+        connectBtn: document.getElementById('connectBtn'),
+        pickerBtn: document.getElementById('pickerBtn'),
+        proxyBtn: document.getElementById('proxyBtn'),
+        harnessBtn: document.getElementById('harnessBtn'),
+        fileIdInput: document.getElementById('fileIdInput'),
+        includeTokenFallback: document.getElementById('includeTokenFallback'),
+        oauthBadge: document.getElementById('oauthBadge'),
+        pickerBadge: document.getElementById('pickerBadge'),
+        proxyBadge: document.getElementById('proxyBadge'),
+        oauthOutput: document.getElementById('oauthOutput'),
+        pickerOutput: document.getElementById('pickerOutput'),
+        proxyOutput: document.getElementById('proxyOutput'),
+      };
+
+      function setBadge(el, text, kind = '') {
+        el.textContent = text;
+        el.className = kind ? `badge ${kind}` : 'badge';
+      }
+
+      function saveConfig() {
+        const cfg = {
+          clientId: els.clientId.value.trim(),
+          apiKey: els.apiKey.value.trim(),
+          appId: els.appId.value.trim(),
+          redirectUri: els.redirectUri.value.trim(),
+          exchangeUrl: els.exchangeUrl.value.trim(),
+          harnessUrl: els.harnessUrl.value.trim(),
+        };
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(cfg));
+        return cfg;
+      }
+
+      function loadConfig() {
+        try {
+          const raw = localStorage.getItem(STORAGE_KEY);
+          if (!raw) return;
+          const cfg = JSON.parse(raw);
+          if (cfg.clientId) els.clientId.value = cfg.clientId;
+          if (cfg.apiKey) els.apiKey.value = cfg.apiKey;
+          if (cfg.appId) els.appId.value = cfg.appId;
+          if (cfg.redirectUri) els.redirectUri.value = cfg.redirectUri;
+          if (cfg.exchangeUrl) els.exchangeUrl.value = cfg.exchangeUrl;
+          if (cfg.harnessUrl) els.harnessUrl.value = cfg.harnessUrl;
+        } catch {
+          // Ignore malformed localStorage
+        }
+      }
+
+      function getAccessToken() {
+        return sessionStorage.getItem(SESSION_TOKEN_KEY) || '';
+      }
+
+      function setAccessToken(token) {
+        if (token) {
+          sessionStorage.setItem(SESSION_TOKEN_KEY, token);
+          els.pickerBtn.disabled = false;
+          setBadge(els.pickerBadge, 'Listo para abrir Picker', 'ok');
+        }
+      }
+
+      function setPickedFile(doc) {
+        if (!doc?.id) return;
+        sessionStorage.setItem(SESSION_FILE_KEY, JSON.stringify(doc));
+        els.fileIdInput.value = doc.id;
+        els.proxyBtn.disabled = false;
+        els.harnessBtn.disabled = !getAccessToken();
+        setBadge(els.pickerBadge, `Seleccionado: ${doc.name || doc.id}`, 'ok');
+        setBadge(els.proxyBadge, 'Listo para probar /proxy', 'warn');
+        els.pickerOutput.textContent = JSON.stringify(doc, null, 2);
+      }
+
+      ['clientId', 'apiKey', 'appId', 'redirectUri', 'exchangeUrl', 'harnessUrl'].forEach((id) => {
+        els[id].addEventListener('change', saveConfig);
+      });
+
+      els.fileIdInput.addEventListener('input', () => {
+        const hasId = els.fileIdInput.value.trim().length > 0;
+        els.proxyBtn.disabled = !hasId;
+        els.harnessBtn.disabled = !hasId || !getAccessToken();
+      });
+
+      els.clearStorageBtn.addEventListener('click', () => {
+        localStorage.removeItem(STORAGE_KEY);
+        sessionStorage.removeItem(SESSION_TOKEN_KEY);
+        sessionStorage.removeItem(SESSION_FILE_KEY);
+        window.location.href = '/';
+      });
+
+      // --- Paso 1: Redirección a Google OAuth ---
+      els.connectBtn.addEventListener('click', () => {
+        const cfg = saveConfig();
+        if (!cfg.clientId) {
+          alert('Ingresa tu Google Web Client ID primero.');
+          els.clientId.focus();
+          return;
+        }
+
+        const params = new URLSearchParams({
+          client_id: cfg.clientId,
+          redirect_uri: cfg.redirectUri,
+          response_type: 'code',
+          scope: 'https://www.googleapis.com/auth/drive.file',
+          access_type: 'offline',
+          prompt: 'consent',
+        });
+
+        window.location.href = `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
+      });
+
+      // --- Callback Handler (/poc-oauth-callback?code=...) ---
+      async function handleOAuthCallbackIfPresent() {
+        const params = new URLSearchParams(window.location.search);
+        const oauthError = params.get('error');
+        const code = params.get('code');
+
+        if (!oauthError && !code) {
+          const existingToken = getAccessToken();
+          if (existingToken) {
+            setBadge(els.oauthBadge, 'Token en sessionStorage', 'ok');
+            els.oauthOutput.textContent = JSON.stringify(
+              {
+                note: 'access_token recuperado de sessionStorage (recarga segura)',
+                access_token_preview: `${existingToken.slice(0, 16)}...`,
+              },
+              null,
+              2,
+            );
+            setAccessToken(existingToken);
+          }
+          return;
+        }
+
+        // Clean query params from URL immediately so page reloads don't reuse a consumed auth code
+        window.history.replaceState({}, document.title, window.location.pathname);
+
+        if (oauthError) {
+          setBadge(els.oauthBadge, `Error OAuth: ${oauthError}`, 'err');
+          els.oauthOutput.textContent = JSON.stringify(
+            Object.fromEntries(params.entries()),
+            null,
+            2,
+          );
+          return;
+        }
+
+        const cfg = saveConfig();
+        setBadge(els.oauthBadge, 'Intercambiando code...', 'warn');
+        els.oauthOutput.textContent = `Intercambiando code (${code.slice(0, 14)}...) en ${cfg.exchangeUrl}...`;
+
+        try {
+          const res = await fetch(cfg.exchangeUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              code,
+              redirect_uri: cfg.redirectUri,
+            }),
+          });
+          const data = await res.json();
+          els.oauthOutput.textContent = JSON.stringify({ http_status: res.status, ...data }, null, 2);
+
+          if (!res.ok || !data.ok) {
+            setBadge(els.oauthBadge, `Error HTTP ${res.status}`, 'err');
+            return;
+          }
+
+          setBadge(
+            els.oauthBadge,
+            data.has_refresh_token ? 'OAuth OK (con refresh_token)' : 'OAuth OK (sin refresh_token)',
+            'ok',
+          );
+          if (data.access_token) {
+            setAccessToken(data.access_token);
+          } else {
+            setBadge(els.pickerBadge, 'Backend no devolvió access_token', 'err');
+          }
+        } catch (err) {
+          setBadge(els.oauthBadge, 'Error de red', 'err');
+          els.oauthOutput.textContent = String(err);
+        }
+      }
+
+      // --- Paso 2: Google Picker ---
+      let gapiLoadedPromise = null;
+      function loadGapiScript() {
+        if (window.gapi) return Promise.resolve();
+        if (gapiLoadedPromise) return gapiLoadedPromise;
+        gapiLoadedPromise = new Promise((resolve, reject) => {
+          const script = document.createElement('script');
+          script.src = 'https://apis.google.com/js/api.js';
+          script.async = true;
+          script.onload = () => resolve();
+          script.onerror = () => reject(new Error('No se pudo cargar https://apis.google.com/js/api.js'));
+          document.head.appendChild(script);
+        });
+        return gapiLoadedPromise;
+      }
+
+      els.pickerBtn.addEventListener('click', async () => {
+        const cfg = saveConfig();
+        const accessToken = getAccessToken();
+
+        if (!accessToken) {
+          alert('No hay access_token disponible. Ejecuta el Paso 1 primero.');
+          return;
+        }
+        if (!cfg.apiKey) {
+          alert('Ingresa tu Google API Key para configurar el Google Picker.');
+          els.apiKey.focus();
+          return;
+        }
+        if (!cfg.appId) {
+          alert('Ingresa tu Google App ID (Project Number, ej. 592135232115).');
+          els.appId.focus();
+          return;
+        }
+
+        try {
+          setBadge(els.pickerBadge, 'Cargando Google Picker...', 'warn');
+          await loadGapiScript();
+
+          window.gapi.load('picker', {
+            callback: () => {
+              const docsView = new window.google.picker.DocsView(window.google.picker.ViewId.DOCS)
+                .setIncludeFolders(true)
+                .setSelectFolderEnabled(false);
+
+              const picker = new window.google.picker.PickerBuilder()
+                .addView(docsView)
+                .setOAuthToken(accessToken)
+                .setDeveloperKey(cfg.apiKey)
+                .setAppId(cfg.appId)
+                .setOrigin(`${window.location.protocol}//${window.location.host}`)
+                .setCallback((data) => {
+                  if (data.action === window.google.picker.Action.PICKED && data.docs?.length) {
+                    const doc = data.docs[0];
+                    setPickedFile({
+                      id: doc.id,
+                      name: doc.name,
+                      mimeType: doc.mimeType,
+                      sizeBytes: doc.sizeBytes ?? null,
+                      url: doc.url ?? null,
+                    });
+                  } else if (data.action === window.google.picker.Action.CANCEL) {
+                    setBadge(els.pickerBadge, 'Picker cancelado', 'warn');
+                  }
+                })
+                .build();
+
+              picker.setVisible(true);
+            },
+            onerror: () => {
+              setBadge(els.pickerBadge, 'Error cargando módulo picker', 'err');
+            },
+          });
+        } catch (err) {
+          setBadge(els.pickerBadge, 'Error Picker', 'err');
+          els.pickerOutput.textContent = String(err);
+        }
+      });
+
+      // --- Paso 3: Probar /proxy (P7) ---
+      els.proxyBtn.addEventListener('click', async () => {
+        const cfg = saveConfig();
+        const fileId = els.fileIdInput.value.trim();
+        if (!fileId) return;
+
+        const base = cfg.exchangeUrl.replace(/\/+$/, '');
+        const proxyUrl = new URL(`${base}/proxy`);
+        proxyUrl.searchParams.set('fileId', fileId);
+
+        if (els.includeTokenFallback.checked && getAccessToken()) {
+          proxyUrl.searchParams.set('accessToken', getAccessToken());
+        }
+
+        setBadge(els.proxyBadge, 'Consultando /proxy...', 'warn');
+        els.proxyOutput.textContent = `GET ${proxyUrl.toString()}`;
+
+        try {
+          const res = await fetch(proxyUrl.toString(), { method: 'GET' });
+          const text = await res.text();
+          let parsed;
+          try {
+            parsed = JSON.parse(text);
+          } catch {
+            parsed = text;
+          }
+
+          els.proxyOutput.textContent = JSON.stringify(
+            {
+              endpoint: proxyUrl.pathname,
+              http_status: res.status,
+              response: parsed,
+            },
+            null,
+            2,
+          );
+          setBadge(
+            els.proxyBadge,
+            res.ok ? `P7 OK (HTTP ${res.status})` : `Error HTTP ${res.status}`,
+            res.ok ? 'ok' : 'err',
+          );
+        } catch (err) {
+          setBadge(els.proxyBadge, 'Error de red en /proxy', 'err');
+          els.proxyOutput.textContent = String(err);
+        }
+      });
+
+      // --- Paso 3b: Probar poc-drive-harness con archivo real de Drive (P10) ---
+      els.harnessBtn.addEventListener('click', async () => {
+        const cfg = saveConfig();
+        const fileId = els.fileIdInput.value.trim();
+        const accessToken = getAccessToken();
+        if (!fileId || !accessToken) return;
+
+        setBadge(els.proxyBadge, 'Ejecutando harness 5 MiB (P10)...', 'warn');
+        const fileUrl = `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}?alt=media`;
+
+        try {
+          const res = await fetch(cfg.harnessUrl, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Range: 'bytes=0-5242879',
+            },
+            body: JSON.stringify({ fileUrl, accessToken }),
+          });
+          const data = await res.json();
+          els.proxyOutput.textContent = JSON.stringify(
+            {
+              harness: 'poc-drive-harness',
+              http_status: res.status,
+              response: data,
+            },
+            null,
+            2,
+          );
+          setBadge(
+            els.proxyBadge,
+            res.ok ? `P10 OK (${data.cpu_time_ms} ms CPU)` : `P10 Error HTTP ${res.status}`,
+            res.ok ? 'ok' : 'err',
+          );
+        } catch (err) {
+          setBadge(els.proxyBadge, 'Error en harness P10', 'err');
+          els.proxyOutput.textContent = String(err);
+        }
+      });
+
+      loadConfig();
+      const savedFile = sessionStorage.getItem(SESSION_FILE_KEY);
+      if (savedFile) {
+        try {
+          setPickedFile(JSON.parse(savedFile));
+        } catch {
+          // ignore
+        }
+      }
+      handleOAuthCallbackIfPresent();
+    </script>
+  </body>
+</html>

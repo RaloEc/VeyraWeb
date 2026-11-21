@@ -251,6 +251,8 @@ export function useReminders(userId?: string) {
       if (extractedTags.length > 0) {
         syncItemTags(userId, 'reminder', newId, extractedTags).catch(() => {});
       }
+
+      return newId;
     },
     [userId]
   );

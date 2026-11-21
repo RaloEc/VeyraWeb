@@ -28,6 +28,10 @@ import {
   getEffectivePaperDimensions,
 } from './pdfTemplateBuilder';
 import { printHtmlDocument } from './pdfPrintService';
+import {
+  VEYRA_ATTACHMENT_SCHEME,
+  resolveAttachmentUrisInHtml,
+} from '../../../lib/storage/attachmentUriResolver';
 import { useTheme } from '../../../theme/ThemeProvider';
 import { cn } from '../../../lib/utils';
 import { toast } from 'sonner';
@@ -134,10 +138,31 @@ export const ExportPdfModal: React.FC<ExportPdfModalProps> = ({
 
     // Primera carga al abrir el modal
     if (doc) {
-      doc.open();
-      doc.write(previewHtml);
-      doc.close();
-      isIframeLoadedRef.current = true;
+      if (!previewHtml.includes(VEYRA_ATTACHMENT_SCHEME)) {
+        doc.open();
+        doc.write(previewHtml);
+        doc.close();
+        isIframeLoadedRef.current = true;
+        return;
+      }
+
+      let cancelled = false;
+      resolveAttachmentUrisInHtml(previewHtml)
+        .catch(() => previewHtml)
+        .then((resolvedHtml) => {
+          if (cancelled) return;
+          const currentDoc =
+            iframe.contentDocument || (iframe.contentWindow as any)?.document;
+          if (!currentDoc) return;
+          currentDoc.open();
+          currentDoc.write(resolvedHtml);
+          currentDoc.close();
+          isIframeLoadedRef.current = true;
+        });
+
+      return () => {
+        cancelled = true;
+      };
     }
   }, [isOpen, config, isDark, previewZoom, previewHtml]);
 

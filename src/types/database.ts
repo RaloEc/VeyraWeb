@@ -774,6 +774,23 @@ export interface Database {
         };
         Returns: Json;
       };
+      rpc_get_my_google_integration: {
+        Args: Record<string, never>;
+        Returns: {
+          id: string;
+          provider: string;
+          google_sub: string;
+          google_email: string | null;
+          oauth_client_kind: string;
+          scopes: string[];
+          status: string;
+          disconnect_requested: boolean;
+          connected_at: string;
+          last_refreshed_at: string | null;
+          last_error_code: string | null;
+          updated_at: string;
+        }[];
+      };
     };
     Enums: {
       [_ in never]: never;

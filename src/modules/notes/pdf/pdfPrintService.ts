@@ -2,8 +2,11 @@
  * Servicio para imprimir y exportar a PDF en navegadores web utilizando
  * un iframe invisible y el motor de impresión nativo del navegador.
  */
+import { resolveAttachmentUrisInHtml } from '../../../lib/storage/attachmentUriResolver';
 
 export async function printHtmlDocument(html: string): Promise<void> {
+  const resolvedHtml = await resolveAttachmentUrisInHtml(html).catch(() => html);
+
   return new Promise<void>((resolve, reject) => {
     try {
       // 1. Crear iframe invisible
@@ -36,7 +39,7 @@ export async function printHtmlDocument(html: string): Promise<void> {
       }
 
       iframeDoc.open();
-      iframeDoc.write(html);
+      iframeDoc.write(resolvedHtml);
       iframeDoc.close();
 
       // 2. Esperar a que las fuentes e imágenes carguen

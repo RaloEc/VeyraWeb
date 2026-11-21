@@ -22,8 +22,15 @@ import {
   RefreshCw,
   Apple,
   AlertTriangle,
+  Link2,
+  ShieldCheck,
+  Unlink,
 } from 'lucide-react';
+import type { UserIdentity } from '@supabase/supabase-js';
 import { Modal } from './Modal';
+import { GoogleIcon } from './GoogleIcon';
+import { IntegrationsSettingsPanel } from './IntegrationsSettingsPanel';
+import { AUTH_INTENT_STORAGE_KEY, getAuthCallbackUrl } from '../../lib/googleDriveIntegration';
 import { usePWAInstall } from '../../hooks/usePWAInstall';
 import { PushService } from '../../lib/pushService';
 import { DeviceService, type ConnectedDevice } from '../../lib/deviceService';
@@ -49,7 +56,14 @@ export interface UserSettingsModalProps {
   onSignOut?: () => void;
 }
 
-type TabType = 'account' | 'appearance' | 'notes' | 'reminders' | 'notifications' | 'devices';
+type TabType =
+  | 'account'
+  | 'integrations'
+  | 'appearance'
+  | 'notes'
+  | 'reminders'
+  | 'notifications'
+  | 'devices';
 
 export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
   isOpen,
@@ -76,6 +90,11 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
   const [devices, setDevices] = useState<ConnectedDevice[]>([]);
   const [devicesLoading, setDevicesLoading] = useState<boolean>(false);
   const [removingDeviceId, setRemovingDeviceId] = useState<string | null>(null);
+
+  // Identidades vinculadas (Fase 3: linkIdentity)
+  const [identities, setIdentities] = useState<UserIdentity[]>([]);
+  const [identitiesLoading, setIdentitiesLoading] = useState<boolean>(false);
+  const [linkingGoogle, setLinkingGoogle] = useState<boolean>(false);
 
   // Eliminación de cuenta
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<boolean>(false);
@@ -243,8 +262,66 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
     { id: 'critical', label: 'Crítico', desc: 'Alarma persistente hasta confirmación manual', color: '#EF4444' },
   ];
 
+  useEffect(() => {
+    if (!isOpen || activeTab !== 'account' || !userId) return;
+    let active = true;
+    setIdentitiesLoading(true);
+    supabase.auth
+      .getUserIdentities()
+      .then(({ data, error }) => {
+        if (!active) return;
+        if (!error && data?.identities) {
+          setIdentities(data.identities);
+        }
+      })
+      .finally(() => {
+        if (active) setIdentitiesLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [isOpen, activeTab, userId]);
+
+  const googleIdentity = identities.find((id) => id.provider === 'google');
+
+  const handleLinkGoogleIdentity = async () => {
+    setLinkingGoogle(true);
+    try {
+      sessionStorage.setItem(AUTH_INTENT_STORAGE_KEY, 'link_google');
+      const { error } = await supabase.auth.linkIdentity({
+        provider: 'google',
+        options: {
+          redirectTo: getAuthCallbackUrl(),
+        },
+      });
+      if (error) throw error;
+    } catch (err: unknown) {
+      sessionStorage.removeItem(AUTH_INTENT_STORAGE_KEY);
+      console.error('[UserSettingsModal] linkIdentity error:', err);
+      toast.error((err as Error).message || 'No se pudo vincular la cuenta de Google.');
+      setLinkingGoogle(false);
+    }
+  };
+
+  const handleUnlinkGoogleIdentity = async () => {
+    if (!googleIdentity || identities.length <= 1) return;
+    setLinkingGoogle(true);
+    try {
+      const { error } = await supabase.auth.unlinkIdentity(googleIdentity);
+      if (error) throw error;
+      setIdentities((prev) => prev.filter((item) => item.id !== googleIdentity.id));
+      toast.success('Cuenta de Google desvinculada del inicio de sesión.');
+    } catch (err: unknown) {
+      console.error('[UserSettingsModal] unlinkIdentity error:', err);
+      toast.error((err as Error).message || 'No se pudo desvincular la cuenta de Google.');
+    } finally {
+      setLinkingGoogle(false);
+    }
+  };
+
   const tabs = [
     { id: 'account' as TabType, label: 'Cuenta y Perfil', icon: User },
+    { id: 'integrations' as TabType, label: 'Integraciones', icon: Link2 },
     { id: 'appearance' as TabType, label: 'Apariencia', icon: Palette },
     { id: 'reminders' as TabType, label: 'Recordatorios & Agenda', icon: Clock },
     { id: 'notes' as TabType, label: 'Notas & Editor', icon: FileText },
@@ -396,6 +473,78 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
                 </div>
               </div>
 
+              {/* Métodos de inicio de sesión y vinculación (Fase 3: linkIdentity) */}
+              <div className="p-3.5 rounded-lg bg-veyra-card/70 border border-veyra-border space-y-2.5">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <h5 className="text-xs font-semibold text-veyra-text flex items-center gap-1.5">
+                      <GoogleIcon className="w-3.5 h-3.5" />
+                      <span>Métodos de inicio de sesión</span>
+                    </h5>
+                    <p className="text-[10.5px] text-veyra-muted mt-0.5">
+                      Vincula Google para iniciar sesión. Esto es independiente de conectar Google
+                      Drive (pestaña Integraciones).
+                    </p>
+                  </div>
+
+                  {identitiesLoading ? (
+                    <span className="inline-flex items-center gap-1 text-[11px] text-veyra-muted">
+                      <Loader2 className="w-3 h-3 animate-spin" />
+                      Cargando...
+                    </span>
+                  ) : googleIdentity ? (
+                    <div className="flex items-center gap-2">
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+                        <ShieldCheck className="w-3 h-3" />
+                        Google vinculado
+                      </span>
+                      {identities.length > 1 ? (
+                        <button
+                          type="button"
+                          onClick={handleUnlinkGoogleIdentity}
+                          disabled={linkingGoogle}
+                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-veyra-elevated hover:bg-red-500/15 text-veyra-muted hover:text-red-400 text-[11px] font-medium transition-colors cursor-pointer disabled:opacity-40"
+                        >
+                          {linkingGoogle ? (
+                            <Loader2 className="w-3 h-3 animate-spin" />
+                          ) : (
+                            <Unlink className="w-3 h-3" />
+                          )}
+                          <span>Desvincular</span>
+                        </button>
+                      ) : (
+                        <span className="text-[10px] text-veyra-subtle">
+                          Método único de acceso
+                        </span>
+                      )}
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={handleLinkGoogleIdentity}
+                      disabled={linkingGoogle}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-veyra-elevated hover:bg-veyra-elevated/80 border border-veyra-border text-veyra-text text-xs font-medium transition-colors cursor-pointer disabled:opacity-50"
+                    >
+                      {linkingGoogle ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      ) : (
+                        <GoogleIcon className="w-3.5 h-3.5" />
+                      )}
+                      <span>Vincular con Google</span>
+                    </button>
+                  )}
+                </div>
+
+                {googleIdentity && (googleIdentity.identity_data?.email as string | undefined) && (
+                  <p className="text-[10.5px] text-veyra-subtle">
+                    Cuenta Google vinculada:{' '}
+                    <span className="font-mono text-veyra-text">
+                      {googleIdentity.identity_data?.email as string}
+                    </span>
+                  </p>
+                )}
+              </div>
+
               {/* Zona de peligro: Eliminación permanente de cuenta */}
               <div className="p-3.5 rounded-lg bg-red-500/5 border border-red-500/25 space-y-2.5">
                 <div className="flex items-center justify-between gap-2">
@@ -463,6 +612,11 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
               </div>
             </div>
           )}
+
+          {/* ══════════════════════════════════════════════════════════════ */}
+          {/* PESTAÑA: INTEGRACIONES                                        */}
+          {/* ══════════════════════════════════════════════════════════════ */}
+          {activeTab === 'integrations' && <IntegrationsSettingsPanel />}
 
           {/* ══════════════════════════════════════════════════════════════ */}
           {/* PESTAÑA: APARIENCIA                                           */}

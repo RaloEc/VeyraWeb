@@ -655,7 +655,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
         initialDateStr={modalInitialDate}
         initialTimeStr={modalInitialTime}
         onSave={async (payload) => {
-          await eventsHook?.createEvent(payload);
+          return await eventsHook?.createEvent(payload);
         }}
       />
 
@@ -666,7 +666,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
         initialDateStr={modalInitialDate}
         initialTimeStr={modalInitialTime}
         onSave={async (payload) => {
-          await remindersHook?.createReminder(payload);
+          return await remindersHook?.createReminder(payload);
         }}
       />
     </div>

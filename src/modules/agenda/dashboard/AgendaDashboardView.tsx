@@ -225,8 +225,17 @@ export const AgendaDashboardView: React.FC<AgendaDashboardViewProps> = ({
     color?: string;
     is_all_day?: boolean;
     all_day_date?: string | null;
+    timezone?: string;
+    tags?: string[] | null;
+    repeat_rule?: string | null;
+    recurrence_rule?: string | null;
+    is_birthday_like?: boolean;
+    notification_offset_min?: number | null;
+    notification_offsets?: string | null;
+    note_id?: string | null;
+    attachments?: string | null;
   }) => {
-    await eventsHook?.createEvent({
+    return await eventsHook?.createEvent({
       title: payload.title,
       description: payload.description,
       start_time_ms: payload.start_time_ms,
@@ -235,6 +244,15 @@ export const AgendaDashboardView: React.FC<AgendaDashboardViewProps> = ({
       color: payload.color,
       is_all_day: payload.is_all_day,
       all_day_date: payload.all_day_date,
+      timezone: payload.timezone,
+      tags: payload.tags,
+      repeat_rule: payload.repeat_rule,
+      recurrence_rule: payload.recurrence_rule,
+      is_birthday_like: payload.is_birthday_like,
+      notification_offset_min: payload.notification_offset_min,
+      notification_offsets: payload.notification_offsets,
+      note_id: payload.note_id,
+      attachments: payload.attachments,
     });
   };
 
@@ -251,7 +269,7 @@ export const AgendaDashboardView: React.FC<AgendaDashboardViewProps> = ({
     event_id?: string | null;
     offset_minutes?: number | null;
   }) => {
-    await remindersHook?.createReminder({
+    return await remindersHook?.createReminder({
       title: payload.title,
       description: payload.description,
       due_date_ms: payload.due_date_ms,

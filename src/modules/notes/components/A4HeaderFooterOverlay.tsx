@@ -34,6 +34,16 @@ import {
   syncSavedA4TemplatesFromCloud,
 } from './A4HeaderFooterTypes';
 import { uploadHeaderFooterLogo } from '../../../lib/storage-upload';
+import { useResolvedAttachmentSrc } from '../../../lib/storage';
+
+const ResolvedImg: React.FC<React.ImgHTMLAttributes<HTMLImageElement>> = ({
+  src,
+  ...rest
+}) => {
+  const { resolvedSrc } = useResolvedAttachmentSrc(src);
+  if (!resolvedSrc) return null;
+  return <img src={resolvedSrc} {...rest} />;
+};
 
 interface A4HeaderFooterRibbonProps {
   config: A4HeaderFooterConfig;
@@ -84,9 +94,14 @@ export function resolveSlotsKey(
  */
 export async function createHeaderFooterImageFromFile(
   file: File,
-  existingImages: A4HeaderFooterImage[]
+  existingImages: A4HeaderFooterImage[],
+  noteId?: string
 ): Promise<A4HeaderFooterImage> {
-  const { url, naturalWidth, naturalHeight } = await uploadHeaderFooterLogo(file);
+  const { url, naturalWidth, naturalHeight } = await uploadHeaderFooterLogo(
+    file,
+    undefined,
+    noteId
+  );
   const natW = naturalWidth || 160;
   const natH = naturalHeight || 65;
   const ratio = natW / natH;
@@ -1062,7 +1077,7 @@ const PresetGalleryDropdown: React.FC<{
                     {allImgs.length > 0 ? (
                       <div className="flex items-center gap-1.5 overflow-hidden">
                         {allImgs.slice(0, 3).map((im) => (
-                          <img
+                          <ResolvedImg
                             key={im.id}
                             src={im.src}
                             alt=""
@@ -1317,7 +1332,7 @@ const MovableResizableHeaderFooterImage: React.FC<{
         isEditingZone && isSelected && 'outline-1 outline-slate-600 dark:outline-zinc-300'
       )}
     >
-      <img
+      <ResolvedImg
         src={image.src}
         alt=""
         draggable={false}
@@ -1389,6 +1404,7 @@ interface A4SheetHeaderFooterZonesProps {
   config: A4HeaderFooterConfig;
   onChange: (next: A4HeaderFooterConfig) => void;
   totalSheets: number;
+  noteId?: string;
   noteTitle: string;
   authorName: string;
   activeZone: 'header' | 'footer' | null;
@@ -1406,6 +1422,7 @@ export const A4SheetHeaderFooterZones: React.FC<A4SheetHeaderFooterZonesProps> =
   config,
   onChange,
   totalSheets,
+  noteId,
   noteTitle,
   authorName,
   activeZone,
@@ -1467,7 +1484,7 @@ export const A4SheetHeaderFooterZones: React.FC<A4SheetHeaderFooterZonesProps> =
       const sheetNum = activeSheetIndex + 1;
       const key = resolveSlotsKey(config, activeZone, sheetNum);
       const currentImages = config[key].images || [];
-      const newImg = await createHeaderFooterImageFromFile(file, currentImages);
+      const newImg = await createHeaderFooterImageFromFile(file, currentImages, noteId);
       onChange({
         ...config,
         [key]: {
@@ -1477,7 +1494,7 @@ export const A4SheetHeaderFooterZones: React.FC<A4SheetHeaderFooterZonesProps> =
       });
       setSelectedImageId(newImg.id);
     },
-    [activeZone, activeSheetIndex, config, onChange]
+    [activeZone, activeSheetIndex, config, onChange, noteId]
   );
 
   useEffect(() => {

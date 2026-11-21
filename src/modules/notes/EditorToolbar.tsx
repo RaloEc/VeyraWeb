@@ -36,6 +36,8 @@ import {
   Sparkles,
   AArrowUp,
   AArrowDown,
+  HardDrive,
+  Loader2,
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import {
@@ -74,6 +76,8 @@ const NUMBERING_OPTIONS: NumberingOption[] = [
 export interface EditorToolbarProps {
   editor: Editor | null;
   onUploadImage?: (file: File) => Promise<void>;
+  onAttachFromDrive?: () => Promise<void> | void;
+  isAttachingDrive?: boolean;
   onOpenTemplates?: () => void;
   showFormattingMarks?: boolean;
   onToggleFormattingMarks?: () => void;
@@ -82,6 +86,8 @@ export interface EditorToolbarProps {
 export const EditorToolbar: React.FC<EditorToolbarProps> = ({
   editor,
   onUploadImage,
+  onAttachFromDrive,
+  isAttachingDrive = false,
   onOpenTemplates,
   showFormattingMarks,
   onToggleFormattingMarks,
@@ -938,6 +944,24 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({
               <ImageIcon className="w-3.5 h-3.5" />
             </button>
           </>
+        )}
+
+        {/* 6.5 Adjuntar desde Google Drive (Picker Web) */}
+        {onAttachFromDrive && (
+          <button
+            type="button"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => void onAttachFromDrive()}
+            disabled={isAttachingDrive}
+            title="Adjuntar archivo desde Google Drive"
+            className="h-7 px-1.5 rounded-md text-veyra-muted hover:text-veyra-text hover:bg-black/5 dark:hover:bg-white/5 disabled:opacity-50 transition-colors flex items-center gap-1 cursor-pointer shrink-0"
+          >
+            {isAttachingDrive ? (
+              <Loader2 className="w-3.5 h-3.5 animate-spin text-accent" />
+            ) : (
+              <HardDrive className="w-3.5 h-3.5 text-emerald-500" />
+            )}
+          </button>
         )}
 
         <div className="w-[1px] h-3.5 bg-veyra-border mx-1 shrink-0" />

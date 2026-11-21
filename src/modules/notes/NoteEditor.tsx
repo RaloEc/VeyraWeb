@@ -60,8 +60,17 @@ import type { A4VirtualBreakWidgetSpec } from './pagination/types';
 import { AICommandExtension } from './extensions/AICommandExtension';
 import { EditorToolbar } from './EditorToolbar';
 import { CollabPresence } from './CollabPresence';
-import { uploadNoteImage } from '../../lib/storage-upload';
-import { humanizeUploadError } from '../../lib/image-pipeline';
+import {
+  uploadFile,
+  buildAttachmentUri,
+  isVeyraAttachmentUri,
+  openAttachmentInNewTab,
+} from '../../lib/storage';
+import {
+  pickAndAttachFromGoogleDrive,
+  humanizeDriveAttachError,
+} from '../../lib/googleDrivePicker';
+import { compressImage, isGif, ImageUploadError, humanizeUploadError } from '../../lib/image-pipeline';
 import { YjsSupabaseProvider } from '../../lib/yjs-supabase-provider';
 import {
   loadYjsNote,
@@ -451,9 +460,30 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
     currentUserIdRef.current = currentUserId;
   }, [currentUserId]);
 
+  const uploadNoteImageToPrivateStorage = useCallback(async (file: File | Blob): Promise<string> => {
+    const allowedMimes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+    let mimeType = (file.type?.toLowerCase() || '').replace('image/jpg', 'image/jpeg');
+    if (!mimeType && 'name' in file && typeof (file as File).name === 'string') {
+      const name = (file as File).name.toLowerCase();
+      if (name.endsWith('.jpg') || name.endsWith('.jpeg')) mimeType = 'image/jpeg';
+      else if (name.endsWith('.png')) mimeType = 'image/png';
+      else if (name.endsWith('.webp')) mimeType = 'image/webp';
+      else if (name.endsWith('.gif')) mimeType = 'image/gif';
+    }
+    if (!allowedMimes.includes(mimeType)) {
+      throw new ImageUploadError('Formato no soportado. Usa JPG, PNG, WebP o GIF.', 'UNSUPPORTED_FORMAT');
+    }
+
+    const isAnimation = isGif(file) || mimeType === 'image/gif';
+    const blobToUpload = isAnimation ? file : await compressImage(file);
+    const filename = isAnimation ? `note_${Date.now()}.gif` : `note_${Date.now()}.webp`;
+    const uploaded = await uploadFile(blobToUpload, 'note', noteRef.current.id, { filename });
+    return uploaded.attachment_uri;
+  }, []);
+
   const handleUploadImage = useCallback(async (file: File) => {
     try {
-      const url = await uploadNoteImage(file, currentUserIdRef.current);
+      const url = await uploadNoteImageToPrivateStorage(file);
       if (editorRef.current && !editorRef.current.isDestroyed) {
         editorRef.current
           .chain()
@@ -466,7 +496,71 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
       console.warn('[NoteEditor] Error subiendo imagen:', err);
       toast.error(humanizeUploadError(err));
     }
-  }, []);
+  }, [uploadNoteImageToPrivateStorage]);
+
+  const [isAttachingDrive, setIsAttachingDrive] = useState(false);
+
+  const handleAttachFromDrive = useCallback(async () => {
+    if (isAttachingDrive) return;
+    setIsAttachingDrive(true);
+    try {
+      const result = await pickAndAttachFromGoogleDrive('note', noteRef.current.id);
+      if (result.cancelled) return;
+
+      const currentEditor = editorRef.current;
+      if (currentEditor && !currentEditor.isDestroyed) {
+        const escapeHtml = (str: string) =>
+          str
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;');
+
+        for (const att of result.attachments) {
+          const uri = buildAttachmentUri(att.id);
+          if (att.mime_type?.toLowerCase().startsWith('image/')) {
+            currentEditor
+              .chain()
+              .focus()
+              .setImage({ src: uri, alt: att.name, textAlign: 'center' } as any)
+              .updateAttributes('image', { textAlign: 'center' })
+              .run();
+          } else {
+            const safeName = escapeHtml(att.name || 'Archivo de Google Drive');
+            currentEditor
+              .chain()
+              .focus()
+              .insertContent(
+                `<p><a href="${uri}" title="${safeName}">📎 ${safeName} (Google Drive)</a></p>`,
+              )
+              .run();
+          }
+        }
+      }
+
+      if (result.attachments.length > 0) {
+        toast.success(
+          result.attachments.length === 1
+            ? `Adjuntado desde Drive: ${result.attachments[0].name}`
+            : `${result.attachments.length} archivos adjuntados desde Google Drive`,
+        );
+      }
+
+      if (result.errors.length > 0) {
+        const firstErr = result.errors[0];
+        toast.warning(
+          result.errors.length === 1
+            ? humanizeDriveAttachError(firstErr)
+            : `${result.errors.length} archivo(s) no se pudieron adjuntar: ${humanizeDriveAttachError(firstErr)}`,
+        );
+      }
+    } catch (err: any) {
+      console.warn('[NoteEditor] Error adjuntando desde Google Drive:', err);
+      toast.error(err?.message || 'No se pudo adjuntar desde Google Drive.');
+    } finally {
+      setIsAttachingDrive(false);
+    }
+  }, [isAttachingDrive]);
 
   // Prepopulate page HTML cache from note.content on initial mount
   useEffect(() => {
@@ -1053,7 +1147,7 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
                 .then(async (blob) => {
                   if (blob.type !== 'image/gif') throw new Error('No es GIF');
                   const file = new File([blob], 'pasted.gif', { type: 'image/gif' });
-                  return uploadNoteImage(file, currentUserIdRef.current);
+                  return uploadNoteImageToPrivateStorage(file);
                 })
                 .then((url) => {
                   editorRef.current
@@ -1068,7 +1162,7 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
                   // Fallback Opción B: Si falla la descarga del GIF por CORS/red, insertar el frame estático
                   if (fallbackImageFile) {
                     try {
-                      const fallbackUrl = await uploadNoteImage(fallbackImageFile, currentUserIdRef.current);
+                      const fallbackUrl = await uploadNoteImageToPrivateStorage(fallbackImageFile);
                       editorRef.current
                         ?.chain()
                         .focus()
@@ -1092,7 +1186,7 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
           }
 
           // Si el portapapeles contiene una imagen única en HTML (ej. copiada dentro de Veyra)
-          const singleImageMatch = html.trim().match(/^<img[^>]+src=["'](https?:\/\/[^"']+)["'][^>]*\/?>(?:<\/img>)?$/i);
+          const singleImageMatch = html.trim().match(/^<img[^>]+src=["']((?:https?:\/\/|veyra-attachment:\/\/)[^"']+)["'][^>]*\/?>(?:<\/img>)?$/i);
           if (singleImageMatch && singleImageMatch[1]) {
             const src = singleImageMatch[1];
             event.preventDefault();
@@ -1124,7 +1218,7 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
                     toast.error('Formato no soportado. Usa JPG, PNG, WebP o GIF.');
                     return true;
                   }
-                  uploadNoteImage(file, currentUserIdRef.current)
+                  uploadNoteImageToPrivateStorage(file)
                     .then((url) => {
                       if (editorRef.current && !editorRef.current.isDestroyed) {
                         editorRef.current
@@ -1259,7 +1353,7 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
               toast.error('Formato no soportado. Usa JPG, PNG, WebP o GIF.');
               return true;
             }
-            uploadNoteImage(imageFile, currentUserIdRef.current)
+            uploadNoteImageToPrivateStorage(imageFile)
               .then((url) => {
                 if (editorRef.current && !editorRef.current.isDestroyed) {
                   editorRef.current
@@ -1319,6 +1413,13 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
       });
     }
   }, [editor, userRole, awareness]);
+
+  useEffect(() => {
+    if (editor && !editor.isDestroyed && editor.storage.image) {
+      editor.storage.image.currentUserId = currentUserId || null;
+      editor.storage.image.noteId = note.id;
+    }
+  }, [editor, currentUserId, note.id]);
 
   // Paginación A4 con verificación en tiempo real sobre el DOM y empuje vía CSS externo (:nth-child)
   useEffect(() => {
@@ -2432,7 +2533,11 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
               sheetNum
             );
             const currentImages = a4HeaderFooterConfig[key].images || [];
-            const newImg = await createHeaderFooterImageFromFile(file, currentImages);
+            const newImg = await createHeaderFooterImageFromFile(
+              file,
+              currentImages,
+              noteRef.current.id
+            );
             handleUpdateHeaderFooterConfig({
               ...a4HeaderFooterConfig,
               [key]: {
@@ -2447,6 +2552,8 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
         <EditorToolbar
           editor={editor}
           onUploadImage={handleUploadImage}
+          onAttachFromDrive={userRole !== 'viewer' ? handleAttachFromDrive : undefined}
+          isAttachingDrive={isAttachingDrive}
           onOpenTemplates={() => setIsTemplatesModalOpen(true)}
           showFormattingMarks={showFormattingMarks}
           onToggleFormattingMarks={handleToggleFormattingMarks}
@@ -2509,6 +2616,7 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
                 config={a4HeaderFooterConfig}
                 onChange={handleUpdateHeaderFooterConfig}
                 totalSheets={a4PageBreaks.length + 1}
+                noteId={note.id}
                 noteTitle={title || note.title || 'Sin título'}
                 authorName={displayName}
                 activeZone={activeHeaderFooterZone}
@@ -2618,7 +2726,18 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
                   showFormattingMarks && 'show-formatting-marks',
                   isPaperLight ? 'text-slate-900' : 'text-veyra-text'
                 )}
-                onClick={() => {
+                onClick={(e) => {
+                  const target = e.target as HTMLElement | null;
+                  const anchor = target?.closest('a[href]') as HTMLAnchorElement | null;
+                  const href = anchor?.getAttribute('href');
+                  if (href && isVeyraAttachmentUri(href)) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    void openAttachmentInNewTab(href).catch((err: any) => {
+                      toast.error(err?.message || 'No se pudo abrir el adjunto.');
+                    });
+                    return;
+                  }
                   if (editor && !editor.isFocused) {
                     editor.commands.focus();
                   }
@@ -2626,7 +2745,11 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
               >
                 <EditorContent editor={editor} className="flex-1" />
                 <EditorBubbleMenu editor={editor} />
-                <EditorImageBubbleMenu editor={editor} currentUserId={currentUserIdRef.current} />
+                <EditorImageBubbleMenu
+                  editor={editor}
+                  currentUserId={currentUserIdRef.current}
+                  noteId={note.id}
+                />
                 <EditorTableBubbleMenu editor={editor} onSaveTableAsTemplate={handleOpenSaveTemplate} />
                 <EditorSlashMenu editor={editor} onOpenTemplates={() => setIsTemplatesModalOpen(true)} />
                 <EditorListNumberTooltip editor={editor} />

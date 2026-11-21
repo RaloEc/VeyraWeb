@@ -1,0 +1,33 @@
+// ============================================================================
+// Opción A: build.gradle para módulo local Expo en:
+//   D:\Programas\Veyra\modules\veyra-drive-picker\android\build.gradle
+// (autolinkeado automáticamente por expoAutolinking.useExpoModules() en settings.gradle)
+// ============================================================================
+plugins {
+  id 'com.android.library'
+  id 'expo-module-gradle-plugin'
+}
+
+group = 'com.ralo.veyra'
+version = '0.1.0-poc'
+
+android {
+  namespace "com.ralo.veyra.picker"
+  defaultConfig {
+    versionCode 1
+    versionName "0.1.0-poc"
+  }
+}
+
+dependencies {
+  implementation("com.google.android.gms:play-services-auth:21.3.0")
+}
+
+// ============================================================================
+// Opción B (referencia para D:\Programas\Veyra\android\app\build.gradle):
+// Si compilas dentro de app/src/main/java/com/ralo/veyra/picker/PickerModule.kt
+// agrega la siguiente línea dentro del bloque `dependencies { ... }` de
+// D:\Programas\Veyra\android\app\build.gradle (línea ~190):
+//
+//   implementation("com.google.android.gms:play-services-auth:21.3.0")
+// ============================================================================

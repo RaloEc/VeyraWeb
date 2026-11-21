@@ -18,14 +18,21 @@ import {
   Sliders,
   Check,
   Link as LinkIcon,
-  FileText,
-  ExternalLink,
   Loader2,
 } from 'lucide-react';
+import { toast } from 'sonner';
 import type { Reminder, ReminderPriority, ReminderControlLevel, Subtask } from '../../types/reminders';
 import type { CalendarEvent } from '../../hooks/useEvents';
-import { parseSubtasks, cn, isImageAttachment, toLocalYmd, type AttachmentItem } from '../../lib/utils';
-import { uploadNoteImage } from '../../lib/storage-upload';
+import { parseSubtasks, cn, toLocalYmd, type AttachmentItem } from '../../lib/utils';
+import {
+  cleanupRemovedAttachment,
+  clearPendingAttachmentMap,
+  flushPendingEntityAttachments,
+  prepareAttachmentFile,
+  uploadEntityAttachment,
+  type PendingAttachmentFile,
+} from '../../lib/storage/entityAttachments';
+import { AttachmentPreviewRow } from '../../components/common/AttachmentPreviewRow';
 
 export type ReminderAttachment = AttachmentItem;
 
@@ -51,7 +58,7 @@ export interface ReminderModalProps {
     links?: string | null;
     event_id?: string | null;
     offset_minutes?: number | null;
-  }) => Promise<void>;
+  }) => Promise<string | undefined | void>;
   onDelete?: (id: string) => Promise<void> | void;
 }
 
@@ -110,8 +117,17 @@ export const ReminderModal: React.FC<ReminderModalProps> = ({
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const notesInputRef = useRef<HTMLTextAreaElement>(null);
+  const pendingFilesRef = useRef<Map<string, PendingAttachmentFile>>(new Map());
+  const handleUploadFilesRef = useRef<(files: (File | Blob)[]) => Promise<void>>(async () => {});
 
   useEffect(() => {
+    return () => {
+      clearPendingAttachmentMap(pendingFilesRef.current);
+    };
+  }, []);
+
+  useEffect(() => {
+    clearPendingAttachmentMap(pendingFilesRef.current);
     if (reminder) {
       setTitle(reminder.title || '');
       setDescription(reminder.description || '');
@@ -273,44 +289,34 @@ export const ReminderModal: React.FC<ReminderModalProps> = ({
 
       const uploaded: ReminderAttachment[] = [];
 
-      for (const file of files) {
-        let fileName = 'imagen.png';
-        if ('name' in file && file.name) {
-          fileName = file.name;
+      for (const rawFile of files) {
+        const prepared = await prepareAttachmentFile(rawFile);
+        if (reminder?.id) {
+          const item = await uploadEntityAttachment(
+            prepared.file,
+            prepared.name,
+            'reminder',
+            reminder.id
+          );
+          uploaded.push(item);
         } else {
-          const ext = file.type ? file.type.split('/')[1] || 'png' : 'png';
-          fileName = `captura_${Date.now()}.${ext}`;
+          // Nuevo recordatorio sin ID persistido en PostgreSQL: diferir subida hasta guardar
+          const previewUrl = URL.createObjectURL(prepared.file);
+          pendingFilesRef.current.set(previewUrl, prepared);
+          uploaded.push({ uri: previewUrl, name: prepared.name });
         }
-
-        if (fileName === 'image.png') {
-          const ext = file.type ? file.type.split('/')[1] || 'png' : 'png';
-          fileName = `captura_${Date.now()}.${ext}`;
-        }
-
-        const namedFile =
-          'name' in file && file.name === fileName
-            ? (file as File)
-            : new File([file], fileName, { type: file.type || 'image/png' });
-
-        let uri = '';
-        try {
-          uri = await uploadNoteImage(namedFile);
-        } catch (uploadErr) {
-          console.warn('[ReminderModal] uploadNoteImage failed, using fallback Object URL:', uploadErr);
-          uri = URL.createObjectURL(namedFile);
-        }
-        uploaded.push({ uri, name: fileName });
       }
 
       setAttachments((prev) => [...prev, ...uploaded]);
     } catch (err: unknown) {
       console.error('[ReminderModal] Error uploading files:', err);
-      setError((err as Error).message || 'Error cargando imagen');
+      setError((err as Error).message || 'Error cargando archivo adjunto');
     } finally {
       setIsUploading(false);
       if (fileInputRef.current) fileInputRef.current.value = '';
     }
   };
+  handleUploadFilesRef.current = handleUploadFiles;
 
   const handleFileInputChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const fileList = e.target.files;
@@ -340,7 +346,7 @@ export const ReminderModal: React.FC<ReminderModalProps> = ({
       if (imageFiles.length > 0) {
         e.preventDefault();
         e.stopPropagation();
-        handleUploadFiles(imageFiles);
+        handleUploadFilesRef.current(imageFiles);
       }
     };
 
@@ -364,6 +370,8 @@ export const ReminderModal: React.FC<ReminderModalProps> = ({
   };
 
   const handleRemoveAttachment = (idx: number) => {
+    const removed = attachments[idx];
+    cleanupRemovedAttachment(removed, pendingFilesRef.current);
     setAttachments(attachments.filter((_, i) => i !== idx));
   };
 
@@ -394,7 +402,17 @@ export const ReminderModal: React.FC<ReminderModalProps> = ({
         repeatRule = JSON.stringify({ type: recurrenceType });
       }
 
-      await onSave({
+      const nonPendingAttachments = attachments.filter(
+        (att) => !pendingFilesRef.current.has(att.uri)
+      );
+      const pendingEntries = attachments
+        .filter((att) => pendingFilesRef.current.has(att.uri))
+        .map((att) => ({
+          previewUrl: att.uri,
+          entry: pendingFilesRef.current.get(att.uri)!,
+        }));
+
+      const createdId = await onSave({
         id: reminder?.id,
         title: title.trim(),
         description: description.trim() || undefined,
@@ -403,9 +421,30 @@ export const ReminderModal: React.FC<ReminderModalProps> = ({
         priority: priorityNum,
         subtasks: subtasks.length > 0 ? subtasks : undefined,
         repeat_rule: repeatRule,
-        attachments: attachments.length > 0 ? JSON.stringify(attachments) : null,
+        attachments:
+          nonPendingAttachments.length > 0
+            ? JSON.stringify(nonPendingAttachments)
+            : null,
         event_id: selectedEventId || null,
       });
+
+      const targetId =
+        reminder?.id || (typeof createdId === 'string' ? createdId : undefined);
+      if (pendingEntries.length > 0 && targetId) {
+        pendingFilesRef.current.clear();
+        const flushRes = await flushPendingEntityAttachments({
+          targetType: 'reminder',
+          targetId,
+          nonPending: nonPendingAttachments,
+          pendingEntries,
+        });
+        if (flushRes.failedCount > 0) {
+          toast.error(
+            flushRes.lastError ||
+              `No se pudieron subir ${flushRes.failedCount} adjuntos`
+          );
+        }
+      }
 
       onClose();
     } catch (err: unknown) {
@@ -950,48 +989,13 @@ export const ReminderModal: React.FC<ReminderModalProps> = ({
 
         {attachments.length > 0 && (
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 pt-1">
-            {attachments.map((att, idx) => {
-              const isImg = isImageAttachment(att.uri) || isImageAttachment(att.name);
-              return (
-                <div
-                  key={idx}
-                  className="flex items-center justify-between gap-2 p-1.5 rounded-lg bg-veyra-card border border-veyra-border text-xs group hover:border-accent/40 transition-colors"
-                >
-                  <a
-                    href={att.uri}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex items-center gap-2 flex-1 min-w-0 hover:text-accent transition-colors"
-                    title={att.name}
-                  >
-                    {isImg ? (
-                      <img
-                        src={att.uri}
-                        alt={att.name}
-                        className="w-8 h-8 rounded object-cover border border-veyra-border/60 shrink-0 bg-black/10"
-                        onError={(e) => {
-                          (e.target as HTMLElement).style.display = 'none';
-                        }}
-                      />
-                    ) : (
-                      <FileText className="w-3.5 h-3.5 text-accent shrink-0" />
-                    )}
-                    <span className="truncate text-veyra-text font-medium text-[11px]">
-                      {att.name}
-                    </span>
-                    <ExternalLink className="w-3 h-3 text-veyra-subtle shrink-0 opacity-0 group-hover:opacity-100 transition-opacity" />
-                  </a>
-                  <button
-                    type="button"
-                    onClick={() => handleRemoveAttachment(idx)}
-                    className="p-1 text-veyra-subtle hover:text-red-400 opacity-60 group-hover:opacity-100 transition-opacity cursor-pointer shrink-0"
-                    title="Eliminar adjunto"
-                  >
-                    <X className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              );
-            })}
+            {attachments.map((att, idx) => (
+              <AttachmentPreviewRow
+                key={`${att.uri}_${idx}`}
+                attachment={att}
+                onRemove={() => handleRemoveAttachment(idx)}
+              />
+            ))}
           </div>
         )}
       </div>
