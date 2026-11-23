@@ -8,6 +8,7 @@ import {
   ArrowDownToLine,
   ChevronUp,
   ChevronDown,
+  ChevronLeft,
   X,
   Hash,
   ChevronRight,
@@ -195,6 +196,42 @@ export const A4HeaderFooterRibbon: React.FC<A4HeaderFooterRibbonProps> = ({
 
   const dropdownPortalRef = useRef<HTMLDivElement>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
+  const ribbonScrollRef = useRef<HTMLDivElement>(null);
+  const [scrollState, setScrollState] = useState<{ canLeft: boolean; canRight: boolean }>({
+    canLeft: false,
+    canRight: false,
+  });
+
+  const updateScrollState = useCallback(() => {
+    const el = ribbonScrollRef.current;
+    if (!el) return;
+    const canLeft = el.scrollLeft > 2;
+    const canRight = el.scrollLeft + el.clientWidth < el.scrollWidth - 2;
+    setScrollState((prev) =>
+      prev.canLeft === canLeft && prev.canRight === canRight ? prev : { canLeft, canRight }
+    );
+  }, []);
+
+  useEffect(() => {
+    const el = ribbonScrollRef.current;
+    if (!el) return;
+
+    const rafId = requestAnimationFrame(updateScrollState);
+    const onScroll = () => updateScrollState();
+    el.addEventListener('scroll', onScroll, { passive: true });
+
+    let observer: ResizeObserver | null = null;
+    if (typeof ResizeObserver !== 'undefined') {
+      observer = new ResizeObserver(() => updateScrollState());
+      observer.observe(el);
+    }
+
+    return () => {
+      cancelAnimationFrame(rafId);
+      el.removeEventListener('scroll', onScroll);
+      observer?.disconnect();
+    };
+  }, [updateScrollState]);
 
   const sheetNum = activeSheetIndex + 1;
 
@@ -358,219 +395,257 @@ export const A4HeaderFooterRibbon: React.FC<A4HeaderFooterRibbonProps> = ({
 
   return (
     <>
-      <div className="h-9 border-b border-veyra-border px-2.5 flex items-center gap-0.5 bg-veyra-surface/40 overflow-x-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none] shrink-0 select-none text-xs">
-        {/* GRUPO 1: Plantillas de Encabezado, Pie y Número de página */}
-        <button
-          type="button"
-          onMouseDown={(e) => e.preventDefault()}
-          onClick={(e) => toggleMenu('header_presets', e)}
-          className={btnClass(openMenu === 'header_presets' || config.headerPreset !== 'none')}
-          title="Plantillas de Encabezado"
-        >
-          <ArrowUpToLine className="w-3.5 h-3.5 text-accent shrink-0" />
-          <span>Encabezado</span>
-          <ChevronDown className="w-2.5 h-2.5 opacity-60 shrink-0" />
-        </button>
-
-        <button
-          type="button"
-          onMouseDown={(e) => e.preventDefault()}
-          onClick={(e) => toggleMenu('footer_presets', e)}
-          className={btnClass(openMenu === 'footer_presets' || config.footerPreset !== 'none')}
-          title="Plantillas de Pie de página"
-        >
-          <ArrowDownToLine className="w-3.5 h-3.5 text-accent shrink-0" />
-          <span>Pie</span>
-          <ChevronDown className="w-2.5 h-2.5 opacity-60 shrink-0" />
-        </button>
-
-        <button
-          type="button"
-          onMouseDown={(e) => e.preventDefault()}
-          onClick={(e) => toggleMenu('page_number', e)}
-          className={btnClass(openMenu === 'page_number')}
-          title="Insertar o quitar Número de página"
-        >
-          <Hash className="w-3.5 h-3.5 shrink-0" />
-          <span>N.º pág.</span>
-          <ChevronDown className="w-2.5 h-2.5 opacity-60 shrink-0" />
-        </button>
-
-        <div className="w-[1px] h-3.5 bg-veyra-border mx-1 shrink-0" />
-
-        {/* GRUPO 2: Insertar campos dinámicos e Imágenes (también soporta Ctrl+V directo) */}
-        <button
-          type="button"
-          onMouseDown={(e) => e.preventDefault()}
-          onClick={() => updateCurrentSlotText('{date}')}
-          title="Insertar Fecha actual en la columna activa"
-          className={btnClass(false)}
-        >
-          <Calendar className="w-3.5 h-3.5 shrink-0" />
-          <span>Fecha</span>
-        </button>
-
-        <button
-          type="button"
-          onMouseDown={(e) => e.preventDefault()}
-          onClick={(e) => toggleMenu('quick_parts', e)}
-          className={btnClass(openMenu === 'quick_parts')}
-          title="Insertar Título, Autor o Elementos rápidos"
-        >
-          <Sparkles className="w-3.5 h-3.5 shrink-0" />
-          <span>Insertar</span>
-          <ChevronDown className="w-2.5 h-2.5 opacity-60 shrink-0" />
-        </button>
-
-        <input
-          ref={imageInputRef}
-          type="file"
-          accept="image/*"
-          className="hidden"
-          onChange={handleFileInputChange}
-        />
-        <button
-          type="button"
-          onMouseDown={(e) => e.preventDefault()}
-          onClick={() => imageInputRef.current?.click()}
-          title="Insertar imagen en el encabezado/pie (o pega directamente con Ctrl+V)"
-          className={btnClass(false)}
-        >
-          <ImageIcon className="w-3.5 h-3.5 shrink-0" />
-          <span>Imagen</span>
-        </button>
-
-        <div className="w-[1px] h-3.5 bg-veyra-border mx-1 shrink-0" />
-
-        {/* GRUPO 3: Navegación entre Encabezado / Pie y Hojas */}
-        <div className="inline-flex items-center h-7 rounded-md p-0.5 bg-black/[0.04] dark:bg-white/[0.04] border border-veyra-border/60 shrink-0">
+      <div className="h-9 border-b border-veyra-border bg-veyra-surface/40 flex items-center shrink-0 select-none text-xs overflow-hidden">
+        {scrollState.canLeft && (
           <button
             type="button"
-            onClick={() => onSelectZone('header')}
-            title="Ir al encabezado"
-            className={cn(
-              'h-6 px-1.5 rounded text-[11px] font-medium flex items-center gap-1 transition-colors cursor-pointer',
-              activeZone === 'header'
-                ? 'bg-accent/15 text-accent font-semibold shadow-2xs'
-                : 'text-veyra-muted hover:text-veyra-text'
-            )}
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => ribbonScrollRef.current?.scrollBy({ left: -160, behavior: 'smooth' })}
+            title="Desplazar herramientas a la izquierda"
+            aria-label="Desplazar herramientas a la izquierda"
+            className="h-9 w-6 shrink-0 flex items-center justify-center border-r border-veyra-border/60 text-veyra-muted hover:text-veyra-text hover:bg-black/5 dark:hover:bg-white/5 transition-colors cursor-pointer"
           >
-            <ArrowUpToLine className="w-3 h-3" />
-            <span>Sup.</span>
+            <ChevronLeft className="w-3.5 h-3.5" />
           </button>
-          <button
-            type="button"
-            onClick={() => onSelectZone('footer')}
-            title="Ir al pie de página"
-            className={cn(
-              'h-6 px-1.5 rounded text-[11px] font-medium flex items-center gap-1 transition-colors cursor-pointer',
-              activeZone === 'footer'
-                ? 'bg-accent/15 text-accent font-semibold shadow-2xs'
-                : 'text-veyra-muted hover:text-veyra-text'
-            )}
-          >
-            <ArrowDownToLine className="w-3 h-3" />
-            <span>Inf.</span>
-          </button>
-        </div>
+        )}
 
-        <button
-          type="button"
-          disabled={activeSheetIndex <= 0}
-          onClick={() => onNavigateSheet(Math.max(0, activeSheetIndex - 1))}
-          title="Hoja anterior"
-          className="h-7 w-6 rounded-md text-veyra-muted hover:text-veyra-text hover:bg-black/5 dark:hover:bg-white/5 disabled:opacity-30 disabled:pointer-events-none transition-colors flex items-center justify-center cursor-pointer shrink-0"
-        >
-          <ChevronUp className="w-3.5 h-3.5" />
-        </button>
-        <button
-          type="button"
-          disabled={activeSheetIndex >= totalSheets - 1}
-          onClick={() => onNavigateSheet(Math.min(totalSheets - 1, activeSheetIndex + 1))}
-          title="Hoja siguiente"
-          className="h-7 w-6 rounded-md text-veyra-muted hover:text-veyra-text hover:bg-black/5 dark:hover:bg-white/5 disabled:opacity-30 disabled:pointer-events-none transition-colors flex items-center justify-center cursor-pointer shrink-0"
-        >
-          <ChevronDown className="w-3.5 h-3.5" />
-        </button>
-
-        <div className="w-[1px] h-3.5 bg-veyra-border mx-1 shrink-0" />
-
-        {/* GRUPO 4: Posición (1,25 cm) y Opciones de Word */}
         <div
-          className="flex items-center h-6 bg-veyra-card border border-veyra-border rounded-md px-1.5 shrink-0"
-          title={
-            activeZone === 'header'
-              ? 'Distancia del encabezado desde el borde superior (cm)'
-              : 'Distancia del pie de página desde el borde inferior (cm)'
-          }
-        >
-          <input
-            type="number"
-            step={0.05}
-            min={0.3}
-            max={2.2}
-            value={
-              activeZone === 'header'
-                ? config.headerDistanceCm
-                : config.footerDistanceCm
+          ref={ribbonScrollRef}
+          onWheel={(e) => {
+            const el = ribbonScrollRef.current;
+            if (!el || el.scrollWidth <= el.clientWidth) return;
+            if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
+              el.scrollLeft += e.deltaY;
             }
-            onChange={(e) => {
-              const val = parseFloat(e.target.value);
-              if (!Number.isNaN(val)) {
-                const clamped = Math.min(2.2, Math.max(0.3, val));
-                onChange(
-                  activeZone === 'header'
-                    ? { ...config, headerDistanceCm: clamped }
-                    : { ...config, footerDistanceCm: clamped }
-                );
-              }
-            }}
-            className="w-10 bg-transparent text-right text-veyra-text font-medium focus:outline-none text-[11px]"
+          }}
+          className="flex-1 min-w-0 px-2 flex items-center gap-0.5 overflow-x-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]"
+        >
+          {/* GRUPO 1: Plantillas de Encabezado, Pie y Número de página */}
+          <button
+            type="button"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={(e) => toggleMenu('header_presets', e)}
+            className={btnClass(openMenu === 'header_presets' || config.headerPreset !== 'none')}
+            title="Plantillas de Encabezado"
+          >
+            <ArrowUpToLine className="w-3.5 h-3.5 text-accent shrink-0" />
+            <span>Encabezado</span>
+            <ChevronDown className="w-2.5 h-2.5 opacity-60 shrink-0" />
+          </button>
+
+          <button
+            type="button"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={(e) => toggleMenu('footer_presets', e)}
+            className={btnClass(openMenu === 'footer_presets' || config.footerPreset !== 'none')}
+            title="Plantillas de Pie de página"
+          >
+            <ArrowDownToLine className="w-3.5 h-3.5 text-accent shrink-0" />
+            <span>Pie</span>
+            <ChevronDown className="w-2.5 h-2.5 opacity-60 shrink-0" />
+          </button>
+
+          <button
+            type="button"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={(e) => toggleMenu('page_number', e)}
+            className={btnClass(openMenu === 'page_number')}
+            title="Insertar o quitar Número de página"
+          >
+            <Hash className="w-3.5 h-3.5 shrink-0" />
+            <span>N.º pág.</span>
+            <ChevronDown className="w-2.5 h-2.5 opacity-60 shrink-0" />
+          </button>
+
+          <div className="w-[1px] h-3.5 bg-veyra-border mx-1 shrink-0" />
+
+          {/* GRUPO 2: Insertar campos dinámicos e Imágenes (también soporta Ctrl+V directo) */}
+          <button
+            type="button"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => updateCurrentSlotText('{date}')}
+            title="Insertar Fecha actual en la columna activa"
+            className={btnClass(false)}
+          >
+            <Calendar className="w-3.5 h-3.5 shrink-0" />
+            <span className="hidden md:inline">Fecha</span>
+          </button>
+
+          <button
+            type="button"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={(e) => toggleMenu('quick_parts', e)}
+            className={btnClass(openMenu === 'quick_parts')}
+            title="Insertar Título, Autor o Elementos rápidos"
+          >
+            <Sparkles className="w-3.5 h-3.5 shrink-0" />
+            <span>Insertar</span>
+            <ChevronDown className="w-2.5 h-2.5 opacity-60 shrink-0" />
+          </button>
+
+          <input
+            ref={imageInputRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={handleFileInputChange}
           />
-          <span className="ml-0.5 text-[10px] text-veyra-subtle">cm</span>
+          <button
+            type="button"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => imageInputRef.current?.click()}
+            title="Insertar imagen en el encabezado/pie (o pega directamente con Ctrl+V)"
+            className={btnClass(false)}
+          >
+            <ImageIcon className="w-3.5 h-3.5 shrink-0" />
+            <span className="hidden md:inline">Imagen</span>
+          </button>
+
+          <div className="w-[1px] h-3.5 bg-veyra-border mx-1 shrink-0" />
+
+          {/* GRUPO 3: Navegación entre Encabezado / Pie y Hojas */}
+          <div className="inline-flex items-center h-7 rounded-md p-0.5 bg-black/[0.04] dark:bg-white/[0.04] border border-veyra-border/60 shrink-0">
+            <button
+              type="button"
+              onClick={() => onSelectZone('header')}
+              title="Ir al encabezado"
+              className={cn(
+                'h-6 px-1.5 rounded text-[11px] font-medium flex items-center gap-1 transition-colors cursor-pointer',
+                activeZone === 'header'
+                  ? 'bg-accent/15 text-accent font-semibold shadow-2xs'
+                  : 'text-veyra-muted hover:text-veyra-text'
+              )}
+            >
+              <ArrowUpToLine className="w-3 h-3" />
+              <span>Sup.</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => onSelectZone('footer')}
+              title="Ir al pie de página"
+              className={cn(
+                'h-6 px-1.5 rounded text-[11px] font-medium flex items-center gap-1 transition-colors cursor-pointer',
+                activeZone === 'footer'
+                  ? 'bg-accent/15 text-accent font-semibold shadow-2xs'
+                  : 'text-veyra-muted hover:text-veyra-text'
+              )}
+            >
+              <ArrowDownToLine className="w-3 h-3" />
+              <span>Inf.</span>
+            </button>
+          </div>
+
+          <button
+            type="button"
+            disabled={activeSheetIndex <= 0}
+            onClick={() => onNavigateSheet(Math.max(0, activeSheetIndex - 1))}
+            title="Hoja anterior"
+            className="h-7 w-6 rounded-md text-veyra-muted hover:text-veyra-text hover:bg-black/5 dark:hover:bg-white/5 disabled:opacity-30 disabled:pointer-events-none transition-colors flex items-center justify-center cursor-pointer shrink-0"
+          >
+            <ChevronUp className="w-3.5 h-3.5" />
+          </button>
+          <button
+            type="button"
+            disabled={activeSheetIndex >= totalSheets - 1}
+            onClick={() => onNavigateSheet(Math.min(totalSheets - 1, activeSheetIndex + 1))}
+            title="Hoja siguiente"
+            className="h-7 w-6 rounded-md text-veyra-muted hover:text-veyra-text hover:bg-black/5 dark:hover:bg-white/5 disabled:opacity-30 disabled:pointer-events-none transition-colors flex items-center justify-center cursor-pointer shrink-0"
+          >
+            <ChevronDown className="w-3.5 h-3.5" />
+          </button>
+
+          <div className="w-[1px] h-3.5 bg-veyra-border mx-1 shrink-0" />
+
+          {/* GRUPO 4: Posición (1,25 cm) y Opciones de Word */}
+          <div
+            className="flex items-center h-6 bg-veyra-card border border-veyra-border rounded-md px-1.5 shrink-0"
+            title={
+              activeZone === 'header'
+                ? 'Distancia del encabezado desde el borde superior (cm)'
+                : 'Distancia del pie de página desde el borde inferior (cm)'
+            }
+          >
+            <input
+              type="number"
+              step={0.05}
+              min={0.3}
+              max={2.2}
+              value={
+                activeZone === 'header'
+                  ? config.headerDistanceCm
+                  : config.footerDistanceCm
+              }
+              onChange={(e) => {
+                const val = parseFloat(e.target.value);
+                if (!Number.isNaN(val)) {
+                  const clamped = Math.min(2.2, Math.max(0.3, val));
+                  onChange(
+                    activeZone === 'header'
+                      ? { ...config, headerDistanceCm: clamped }
+                      : { ...config, footerDistanceCm: clamped }
+                  );
+                }
+              }}
+              className="w-10 bg-transparent text-right text-veyra-text font-medium focus:outline-none text-[11px]"
+            />
+            <span className="ml-0.5 text-[10px] text-veyra-subtle">cm</span>
+          </div>
+
+          <button
+            type="button"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={(e) => toggleMenu('options', e)}
+            className={btnClass(
+              openMenu === 'options' ||
+                config.differentFirstPage ||
+                config.differentOddEven ||
+                !config.showDocumentText
+            )}
+            title="Opciones de página (Primera página diferente, Pares e impares, Posición)"
+          >
+            <SlidersHorizontal className="w-3.5 h-3.5 shrink-0" />
+            <span>Opciones</span>
+            <ChevronDown className="w-2.5 h-2.5 opacity-60 shrink-0" />
+          </button>
+
+          <div className="w-[1px] h-3.5 bg-veyra-border mx-1 shrink-0" />
+
+          {/* BOTÓN LIMPIAR TODO (Borra cualquier contenido e imágenes de Encabezado y Pie de página) */}
+          <button
+            type="button"
+            disabled={!hasAnyContent}
+            onClick={handleClearAllHeaderFooter}
+            title="Limpiar todo el encabezado y pie de página"
+            className="h-7 px-2 rounded-md text-red-500 hover:bg-red-500/10 disabled:opacity-35 disabled:pointer-events-none transition-colors flex items-center justify-center gap-1 cursor-pointer shrink-0 text-[11px] font-medium"
+          >
+            <Eraser className="w-3.5 h-3.5 shrink-0" />
+            <span className="hidden md:inline">Limpiar</span>
+          </button>
         </div>
 
-        <button
-          type="button"
-          onMouseDown={(e) => e.preventDefault()}
-          onClick={(e) => toggleMenu('options', e)}
-          className={btnClass(
-            openMenu === 'options' ||
-              config.differentFirstPage ||
-              config.differentOddEven ||
-              !config.showDocumentText
-          )}
-          title="Opciones de página (Primera página diferente, Pares e impares, Posición)"
-        >
-          <SlidersHorizontal className="w-3.5 h-3.5 shrink-0" />
-          <span>Opciones</span>
-          <ChevronDown className="w-2.5 h-2.5 opacity-60 shrink-0" />
-        </button>
+        {scrollState.canRight && (
+          <button
+            type="button"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => ribbonScrollRef.current?.scrollBy({ left: 160, behavior: 'smooth' })}
+            title="Desplazar herramientas a la derecha"
+            aria-label="Desplazar herramientas a la derecha"
+            className="h-9 w-6 shrink-0 flex items-center justify-center border-l border-veyra-border/60 text-veyra-muted hover:text-veyra-text hover:bg-black/5 dark:hover:bg-white/5 transition-colors cursor-pointer"
+          >
+            <ChevronRight className="w-3.5 h-3.5" />
+          </button>
+        )}
 
-        <div className="w-[1px] h-3.5 bg-veyra-border mx-1 shrink-0" />
-
-        {/* BOTÓN LIMPIAR TODO (Borra cualquier contenido e imágenes de Encabezado y Pie de página) */}
-        <button
-          type="button"
-          disabled={!hasAnyContent}
-          onClick={handleClearAllHeaderFooter}
-          title="Limpiar todo el encabezado y pie de página"
-          className="h-7 px-2 rounded-md text-red-500 hover:bg-red-500/10 disabled:opacity-35 disabled:pointer-events-none transition-colors flex items-center justify-center gap-1 cursor-pointer shrink-0 text-[11px] font-medium"
-        >
-          <Eraser className="w-3.5 h-3.5 shrink-0" />
-          <span>Limpiar</span>
-        </button>
-
-        {/* GRUPO 5: Cerrar encabezado y pie de página */}
-        <div className="ml-auto pl-1.5 flex items-center shrink-0">
+        {/* GRUPO 5: Cerrar encabezado y pie de página (anclado a la derecha) */}
+        <div className="shrink-0 px-2 border-l border-veyra-border/60 flex items-center">
           <button
             type="button"
             onClick={onClose}
             title="Cerrar encabezado y pie de página (Esc)"
-            className="h-7 px-2 rounded-md bg-accent/15 hover:bg-accent/25 border border-accent/30 text-accent font-semibold text-[11px] flex items-center gap-1 transition-colors cursor-pointer"
+            className="h-7 px-2 rounded-md bg-accent/15 hover:bg-accent/25 border border-accent/30 text-accent font-semibold text-[11px] flex items-center gap-1 transition-colors cursor-pointer whitespace-nowrap"
           >
-            <X className="w-3.5 h-3.5" />
-            <span>Cerrar</span>
+            <X className="w-3.5 h-3.5 shrink-0" />
+            <span className="hidden sm:inline">Cerrar</span>
           </button>
         </div>
       </div>

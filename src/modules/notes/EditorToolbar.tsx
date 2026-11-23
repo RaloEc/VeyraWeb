@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import type { Editor } from '@tiptap/react';
 import {
@@ -38,6 +38,7 @@ import {
   AArrowDown,
   HardDrive,
   Loader2,
+  MoreHorizontal,
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import {
@@ -119,6 +120,16 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({
   const [orderedListCoords, setOrderedListCoords] = useState<{ top: number; left: number }>({ top: 0, left: 0 });
   const [customStartInput, setCustomStartInput] = useState<string>('2');
 
+  // Responsive overflow tray refs & state
+  const toolbarContainerRef = useRef<HTMLDivElement>(null);
+  const toolbarTrackRef = useRef<HTMLDivElement>(null);
+  const overflowBtnRef = useRef<HTMLButtonElement>(null);
+  const overflowMenuRef = useRef<HTMLDivElement>(null);
+  const itemWidthsRef = useRef<Map<string, number>>(new Map());
+  const [visibleCount, setVisibleCount] = useState<number | null>(null);
+  const [isOverflowOpen, setIsOverflowOpen] = useState(false);
+  const [overflowCoords, setOverflowCoords] = useState<{ top: number; right: number }>({ top: 0, right: 8 });
+
   // Hook de colores recientes y persistencia
   const {
     lastTextColor,
@@ -129,89 +140,72 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({
     saveHighlightColor,
   } = useRecentEditorColors();
 
+  const clampPopoverCoords = useCallback(
+    (rect: DOMRect, popoverWidth: number, estimatedHeight: number) => {
+      const margin = 10;
+      let left = rect.left;
+      if (left + popoverWidth > window.innerWidth - margin) {
+        left = window.innerWidth - popoverWidth - margin;
+      }
+      if (left < margin) left = margin;
+
+      let top = rect.bottom + 4;
+      if (top + estimatedHeight > window.innerHeight - margin) {
+        const aboveTop = rect.top - estimatedHeight - 4;
+        if (aboveTop >= margin) {
+          top = aboveTop;
+        } else {
+          top = Math.max(margin, window.innerHeight - estimatedHeight - margin);
+        }
+      }
+
+      return { top, left };
+    },
+    []
+  );
+
   // Actualizar coordenadas de los popovers respecto al viewport
   const updateTextColorPosition = useCallback(() => {
     if (!textColorBtnRef.current) return;
-    const rect = textColorBtnRef.current.getBoundingClientRect();
-    const popoverWidth = 210;
-    const margin = 10;
-    let left = rect.left;
-    if (left + popoverWidth > window.innerWidth - margin) {
-      left = window.innerWidth - popoverWidth - margin;
-    }
-    if (left < margin) left = margin;
-
-    setTextColorCoords({
-      top: rect.bottom + 4,
-      left,
-    });
-  }, []);
+    setTextColorCoords(
+      clampPopoverCoords(textColorBtnRef.current.getBoundingClientRect(), 215, 220)
+    );
+  }, [clampPopoverCoords]);
 
   const updateHighlightPosition = useCallback(() => {
     if (!highlightBtnRef.current) return;
-    const rect = highlightBtnRef.current.getBoundingClientRect();
-    const popoverWidth = 200;
-    const margin = 10;
-    let left = rect.left;
-    if (left + popoverWidth > window.innerWidth - margin) {
-      left = window.innerWidth - popoverWidth - margin;
-    }
-    if (left < margin) left = margin;
-
-    setHighlightCoords({
-      top: rect.bottom + 4,
-      left,
-    });
-  }, []);
+    setHighlightCoords(
+      clampPopoverCoords(highlightBtnRef.current.getBoundingClientRect(), 200, 200)
+    );
+  }, [clampPopoverCoords]);
 
   const updateFontPosition = useCallback(() => {
     if (!fontBtnRef.current) return;
-    const rect = fontBtnRef.current.getBoundingClientRect();
-    const popoverWidth = 260;
-    const margin = 10;
-    let left = rect.left;
-    if (left + popoverWidth > window.innerWidth - margin) {
-      left = window.innerWidth - popoverWidth - margin;
-    }
-    if (left < margin) left = margin;
-
-    setFontCoords({
-      top: rect.bottom + 4,
-      left,
-    });
-  }, []);
+    setFontCoords(
+      clampPopoverCoords(fontBtnRef.current.getBoundingClientRect(), 288, 360)
+    );
+  }, [clampPopoverCoords]);
 
   const updateFontSizePosition = useCallback(() => {
     if (!fontSizeBtnRef.current) return;
-    const rect = fontSizeBtnRef.current.getBoundingClientRect();
-    const popoverWidth = 190;
-    const margin = 10;
-    let left = rect.left;
-    if (left + popoverWidth > window.innerWidth - margin) {
-      left = window.innerWidth - popoverWidth - margin;
-    }
-    if (left < margin) left = margin;
-
-    setFontSizeCoords({
-      top: rect.bottom + 4,
-      left,
-    });
-  }, []);
+    setFontSizeCoords(
+      clampPopoverCoords(fontSizeBtnRef.current.getBoundingClientRect(), 208, 300)
+    );
+  }, [clampPopoverCoords]);
 
   const updateOrderedListPosition = useCallback(() => {
     if (!orderedListBtnRef.current) return;
-    const rect = orderedListBtnRef.current.getBoundingClientRect();
-    const popoverWidth = 268;
-    const margin = 10;
-    let left = rect.left;
-    if (left + popoverWidth > window.innerWidth - margin) {
-      left = window.innerWidth - popoverWidth - margin;
-    }
-    if (left < margin) left = margin;
+    setOrderedListCoords(
+      clampPopoverCoords(orderedListBtnRef.current.getBoundingClientRect(), 268, 340)
+    );
+  }, [clampPopoverCoords]);
 
-    setOrderedListCoords({
-      top: rect.bottom + 4,
-      left,
+  const updateOverflowPosition = useCallback(() => {
+    if (!overflowBtnRef.current) return;
+    const rect = overflowBtnRef.current.getBoundingClientRect();
+    setOverflowCoords({
+      top: rect.bottom + 6,
+      right: Math.max(8, window.innerWidth - rect.right),
     });
   }, []);
 
@@ -266,6 +260,131 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({
     };
   }, [editor]);
 
+  const hasTemplates = Boolean(onOpenTemplates);
+  const hasUploadImage = Boolean(onUploadImage);
+  const hasAttachFromDrive = Boolean(onAttachFromDrive);
+  const hasFormattingMarks = Boolean(onToggleFormattingMarks);
+
+  const toolbarItemsMeta = useMemo(() => {
+    const items: Array<{ id: string; group: string; fallbackWidth: number }> = [
+      { id: 'h1', group: 'headings', fallbackWidth: 28 },
+      { id: 'h2', group: 'headings', fallbackWidth: 28 },
+      { id: 'h3', group: 'headings', fallbackWidth: 28 },
+      { id: 'bold', group: 'format', fallbackWidth: 28 },
+      { id: 'italic', group: 'format', fallbackWidth: 28 },
+      { id: 'underline', group: 'format', fallbackWidth: 28 },
+      { id: 'strike', group: 'format', fallbackWidth: 28 },
+      { id: 'blockquote', group: 'format', fallbackWidth: 28 },
+      { id: 'hr', group: 'format', fallbackWidth: 28 },
+      { id: 'text-color', group: 'style', fallbackWidth: 46 },
+      { id: 'highlight', group: 'style', fallbackWidth: 46 },
+      { id: 'font-family', group: 'style', fallbackWidth: 115 },
+      { id: 'font-size', group: 'style', fallbackWidth: 104 },
+      { id: 'clear-format', group: 'style', fallbackWidth: 28 },
+      { id: 'math', group: 'insert', fallbackWidth: 28 },
+      { id: 'table', group: 'insert', fallbackWidth: 28 },
+    ];
+    if (hasTemplates) items.push({ id: 'templates', group: 'insert', fallbackWidth: 28 });
+    items.push(
+      { id: 'code', group: 'insert', fallbackWidth: 28 },
+      { id: 'ai', group: 'insert', fallbackWidth: 28 }
+    );
+    if (hasUploadImage) items.push({ id: 'image', group: 'media', fallbackWidth: 28 });
+    if (hasAttachFromDrive) items.push({ id: 'drive', group: 'media', fallbackWidth: 28 });
+    items.push(
+      { id: 'task-list', group: 'lists', fallbackWidth: 28 },
+      { id: 'bullet-list', group: 'lists', fallbackWidth: 28 },
+      { id: 'ordered-list', group: 'lists', fallbackWidth: 50 },
+      { id: 'align-left', group: 'align', fallbackWidth: 28 },
+      { id: 'align-center', group: 'align', fallbackWidth: 28 },
+      { id: 'align-right', group: 'align', fallbackWidth: 28 },
+      { id: 'align-justify', group: 'align', fallbackWidth: 28 }
+    );
+    if (hasFormattingMarks) items.push({ id: 'formatting-marks', group: 'align', fallbackWidth: 28 });
+    items.push(
+      { id: 'undo', group: 'history', fallbackWidth: 28 },
+      { id: 'redo', group: 'history', fallbackWidth: 28 }
+    );
+    return items;
+  }, [hasTemplates, hasUploadImage, hasAttachFromDrive, hasFormattingMarks]);
+
+  const recalculateVisibleCount = useCallback(() => {
+    const container = toolbarContainerRef.current;
+    const track = toolbarTrackRef.current;
+    if (!container) return;
+
+    if (track) {
+      const nodes = track.querySelectorAll<HTMLElement>('[data-toolbar-item-id]');
+      nodes.forEach((el) => {
+        const id = el.dataset.toolbarItemId;
+        if (!id) return;
+        const w = Math.ceil(el.getBoundingClientRect().width);
+        if (w > 0) {
+          itemWidthsRef.current.set(id, w);
+        }
+      });
+    }
+
+    const style = window.getComputedStyle(container);
+    const padLeft = parseFloat(style.paddingLeft) || 0;
+    const padRight = parseFloat(style.paddingRight) || 0;
+    const availableWidth = Math.max(0, container.clientWidth - padLeft - padRight);
+    if (availableWidth <= 0) return;
+
+    const GAP = 2; // gap-0.5
+    const SEP_WIDTH = 9; // w-[1px] + mx-1
+    const OVERFLOW_RESERVE = 40; // pl-1 + border-l + button + gap
+
+    let totalWidth = 0;
+    for (let i = 0; i < toolbarItemsMeta.length; i++) {
+      const meta = toolbarItemsMeta[i];
+      const itemW = itemWidthsRef.current.get(meta.id) ?? meta.fallbackWidth;
+      if (i > 0) {
+        totalWidth += GAP;
+        if (toolbarItemsMeta[i - 1].group !== meta.group) {
+          totalWidth += SEP_WIDTH + GAP;
+        }
+      }
+      totalWidth += itemW;
+    }
+
+    let nextCount = toolbarItemsMeta.length;
+    if (totalWidth > availableWidth) {
+      const budget = Math.max(0, availableWidth - OVERFLOW_RESERVE);
+      let used = 0;
+      nextCount = 0;
+      for (let i = 0; i < toolbarItemsMeta.length; i++) {
+        const meta = toolbarItemsMeta[i];
+        const itemW = itemWidthsRef.current.get(meta.id) ?? meta.fallbackWidth;
+        let delta = itemW;
+        if (i > 0) {
+          delta += GAP;
+          if (toolbarItemsMeta[i - 1].group !== meta.group) {
+            delta += SEP_WIDTH + GAP;
+          }
+        }
+        if (used + delta <= budget) {
+          used += delta;
+          nextCount = i + 1;
+        } else {
+          break;
+        }
+      }
+    }
+
+    setVisibleCount((prev) => (prev === nextCount ? prev : nextCount));
+  }, [toolbarItemsMeta]);
+
+  useEffect(() => {
+    const container = toolbarContainerRef.current;
+    if (!container || typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(() => {
+      recalculateVisibleCount();
+    });
+    observer.observe(container);
+    return () => observer.disconnect();
+  }, [recalculateVisibleCount, editor]);
+
   // Cerrar popovers al hacer click fuera o al redimensionar/desplazar la ventana
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -310,6 +429,40 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({
       ) {
         setIsOrderedListMenuOpen(false);
       }
+      const isInsideSubMenu =
+        textColorMenuRef.current?.contains(target) ||
+        highlightMenuRef.current?.contains(target) ||
+        fontMenuRef.current?.contains(target) ||
+        fontSizeMenuRef.current?.contains(target) ||
+        orderedListMenuRef.current?.contains(target);
+      if (
+        !isInsideSubMenu &&
+        overflowMenuRef.current &&
+        !overflowMenuRef.current.contains(target) &&
+        overflowBtnRef.current &&
+        !overflowBtnRef.current.contains(target)
+      ) {
+        setIsOverflowOpen(false);
+      }
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      if (
+        isTextColorMenuOpen ||
+        isHighlightMenuOpen ||
+        isFontMenuOpen ||
+        isFontSizeMenuOpen ||
+        isOrderedListMenuOpen
+      ) {
+        setIsTextColorMenuOpen(false);
+        setIsHighlightMenuOpen(false);
+        setIsFontMenuOpen(false);
+        setIsFontSizeMenuOpen(false);
+        setIsOrderedListMenuOpen(false);
+      } else if (isOverflowOpen) {
+        setIsOverflowOpen(false);
+      }
     };
 
     const handleWindowChange = () => {
@@ -318,14 +471,17 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({
       if (isFontMenuOpen) updateFontPosition();
       if (isFontSizeMenuOpen) updateFontSizePosition();
       if (isOrderedListMenuOpen) updateOrderedListPosition();
+      if (isOverflowOpen) updateOverflowPosition();
     };
 
     document.addEventListener('mousedown', handleClickOutside);
+    window.addEventListener('keydown', handleKeyDown);
     window.addEventListener('resize', handleWindowChange);
     window.addEventListener('scroll', handleWindowChange, true);
 
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
+      window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('resize', handleWindowChange);
       window.removeEventListener('scroll', handleWindowChange, true);
     };
@@ -335,12 +491,29 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({
     isFontMenuOpen,
     isFontSizeMenuOpen,
     isOrderedListMenuOpen,
+    isOverflowOpen,
     updateTextColorPosition,
     updateHighlightPosition,
     updateFontPosition,
     updateFontSizePosition,
     updateOrderedListPosition,
+    updateOverflowPosition,
   ]);
+
+  const watchedFontFamily = editor
+    ? (editor.getAttributes('textStyle').fontFamily as string | undefined) || ''
+    : '';
+  const watchedFontSize = editor
+    ? (editor.getAttributes('textStyle').fontSize as string | undefined) || ''
+    : '';
+
+  useEffect(() => {
+    if (!editor) return;
+    const rafId = requestAnimationFrame(() => {
+      recalculateVisibleCount();
+    });
+    return () => cancelAnimationFrame(rafId);
+  }, [editor, recalculateVisibleCount, watchedFontFamily, watchedFontSize]);
 
   if (!editor) return null;
 
@@ -415,6 +588,8 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({
       updateTextColorPosition();
       setIsHighlightMenuOpen(false);
       setIsFontMenuOpen(false);
+      setIsFontSizeMenuOpen(false);
+      setIsOrderedListMenuOpen(false);
       setIsTextColorMenuOpen(true);
     } else {
       setIsTextColorMenuOpen(false);
@@ -426,6 +601,8 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({
       updateHighlightPosition();
       setIsTextColorMenuOpen(false);
       setIsFontMenuOpen(false);
+      setIsFontSizeMenuOpen(false);
+      setIsOrderedListMenuOpen(false);
       setIsHighlightMenuOpen(true);
     } else {
       setIsHighlightMenuOpen(false);
@@ -438,6 +615,7 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({
       setIsTextColorMenuOpen(false);
       setIsHighlightMenuOpen(false);
       setIsFontSizeMenuOpen(false);
+      setIsOrderedListMenuOpen(false);
       setIsFontMenuOpen(true);
     } else {
       setIsFontMenuOpen(false);
@@ -456,6 +634,7 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({
       setIsTextColorMenuOpen(false);
       setIsHighlightMenuOpen(false);
       setIsFontMenuOpen(false);
+      setIsOrderedListMenuOpen(false);
       setIsFontSizeMenuOpen(true);
     } else {
       setIsFontSizeMenuOpen(false);
@@ -654,72 +833,132 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({
     </button>
   );
 
-  return (
-    <>
-      <div className="h-9 border-b border-veyra-border px-3 flex items-center gap-0.5 bg-veyra-surface/40 overflow-x-auto shrink-0 select-none text-xs scrollbar-thin">
-        {/* 1. Headings */}
-        {toolBtn(
+  interface ToolbarItemDef {
+    id: string;
+    group: string;
+    isActive: boolean;
+    render: (inOverflow?: boolean) => React.ReactNode;
+  }
+
+  const toolbarItems: ToolbarItemDef[] = [
+    // 1. Headings
+    {
+      id: 'h1',
+      group: 'headings',
+      isActive: editor.isActive('heading', { level: 1 }),
+      render: () =>
+        toolBtn(
           editor.isActive('heading', { level: 1 }),
           () => handleToggleHeading(1),
           <Heading1 className="w-3.5 h-3.5" />,
           'Título 1'
-        )}
-        {toolBtn(
+        ),
+    },
+    {
+      id: 'h2',
+      group: 'headings',
+      isActive: editor.isActive('heading', { level: 2 }),
+      render: () =>
+        toolBtn(
           editor.isActive('heading', { level: 2 }),
           () => handleToggleHeading(2),
           <Heading2 className="w-3.5 h-3.5" />,
           'Título 2'
-        )}
-        {toolBtn(
+        ),
+    },
+    {
+      id: 'h3',
+      group: 'headings',
+      isActive: editor.isActive('heading', { level: 3 }),
+      render: () =>
+        toolBtn(
           editor.isActive('heading', { level: 3 }),
           () => handleToggleHeading(3),
           <Heading3 className="w-3.5 h-3.5" />,
           'Título 3'
-        )}
+        ),
+    },
 
-        <div className="w-[1px] h-3.5 bg-veyra-border mx-1 shrink-0" />
-
-        {/* 2. Basic Text Formatting */}
-        {toolBtn(
+    // 2. Basic Text Formatting
+    {
+      id: 'bold',
+      group: 'format',
+      isActive: editor.isActive('bold'),
+      render: () =>
+        toolBtn(
           editor.isActive('bold'),
           () => editor.chain().focus().toggleBold().run(),
           <Bold className="w-3.5 h-3.5" />,
           'Negrita (Ctrl+B)'
-        )}
-        {toolBtn(
+        ),
+    },
+    {
+      id: 'italic',
+      group: 'format',
+      isActive: editor.isActive('italic'),
+      render: () =>
+        toolBtn(
           editor.isActive('italic'),
           () => editor.chain().focus().toggleItalic().run(),
           <Italic className="w-3.5 h-3.5" />,
           'Cursiva (Ctrl+I)'
-        )}
-        {toolBtn(
+        ),
+    },
+    {
+      id: 'underline',
+      group: 'format',
+      isActive: editor.isActive('underline'),
+      render: () =>
+        toolBtn(
           editor.isActive('underline'),
           () => editor.chain().focus().toggleUnderline().run(),
           <UnderlineIcon className="w-3.5 h-3.5" />,
           'Subrayado (Ctrl+U)'
-        )}
-        {toolBtn(
+        ),
+    },
+    {
+      id: 'strike',
+      group: 'format',
+      isActive: editor.isActive('strike'),
+      render: () =>
+        toolBtn(
           editor.isActive('strike'),
           () => editor.chain().focus().toggleStrike().run(),
           <Strikethrough className="w-3.5 h-3.5" />,
           'Tachado'
-        )}
-        {toolBtn(
+        ),
+    },
+    {
+      id: 'blockquote',
+      group: 'format',
+      isActive: editor.isActive('blockquote'),
+      render: () =>
+        toolBtn(
           editor.isActive('blockquote'),
           () => editor.chain().focus().toggleBlockquote().run(),
           <Quote className="w-3.5 h-3.5" />,
           'Cita'
-        )}
-        {toolBtn(
+        ),
+    },
+    {
+      id: 'hr',
+      group: 'format',
+      isActive: false,
+      render: () =>
+        toolBtn(
           false,
           () => editor.chain().focus().setHorizontalRule().run(),
           <Minus className="w-3.5 h-3.5" />,
           'Línea divisoria horizontal'
-        )}
+        ),
+    },
 
-        <div className="w-[1px] h-3.5 bg-veyra-border mx-1 shrink-0" />
-
-        {/* 3. Control Color de Texto (Acción rápida con último color + Chevron a paleta) */}
+    // 3. Text Color, Highlight, Font Family, Font Size, Clear Formatting
+    {
+      id: 'text-color',
+      group: 'style',
+      isActive: Boolean(currentTextColor),
+      render: () => (
         <div className="inline-flex items-center h-7 rounded-md p-0.5 transition-colors border border-transparent hover:border-black/10 dark:hover:border-white/10 hover:bg-black/5 dark:hover:bg-white/5 shrink-0">
           <button
             type="button"
@@ -758,8 +997,13 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({
             />
           </button>
         </div>
-
-        {/* 4. Control Marcatextos / Resaltado (Acción rápida con último resaltado + Chevron a paleta) */}
+      ),
+    },
+    {
+      id: 'highlight',
+      group: 'style',
+      isActive: isHighlightActive,
+      render: () => (
         <div className="inline-flex items-center h-7 rounded-md p-0.5 transition-colors border border-transparent hover:border-black/10 dark:hover:border-white/10 hover:bg-black/5 dark:hover:bg-white/5 shrink-0">
           <button
             type="button"
@@ -798,8 +1042,13 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({
             />
           </button>
         </div>
-
-        {/* 5. Botón Selector de Tipografía */}
+      ),
+    },
+    {
+      id: 'font-family',
+      group: 'style',
+      isActive: Boolean(activeFontOption),
+      render: () => (
         <div className="relative shrink-0">
           <button
             ref={fontBtnRef}
@@ -821,8 +1070,13 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({
             <ChevronDown className="w-2.5 h-2.5 opacity-60 shrink-0" />
           </button>
         </div>
-
-        {/* 6. Control Tamaño de Texto Seleccionado (Aumentar / Disminuir / Selector) */}
+      ),
+    },
+    {
+      id: 'font-size',
+      group: 'style',
+      isActive: Boolean(currentFontSize),
+      render: () => (
         <div className="inline-flex items-center h-7 rounded-md p-0.5 transition-colors border border-transparent hover:border-black/10 dark:hover:border-white/10 hover:bg-black/5 dark:hover:bg-white/5 shrink-0">
           <button
             type="button"
@@ -862,17 +1116,28 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({
             />
           </button>
         </div>
-
-        {/* 7. Borrador de Formato Completo */}
-        {toolBtn(
+      ),
+    },
+    {
+      id: 'clear-format',
+      group: 'style',
+      isActive: false,
+      render: () =>
+        toolBtn(
           false,
           handleClearFormatting,
           <Eraser className="w-3.5 h-3.5" />,
           'Borrar todo formato (Restablecer texto normal)'
-        )}
+        ),
+    },
 
-        {/* 7. Insertar Fórmula Matemática */}
-        {toolBtn(
+    // 4. Insert Blocks
+    {
+      id: 'math',
+      group: 'insert',
+      isActive: false,
+      render: () =>
+        toolBtn(
           false,
           () =>
             editor
@@ -882,10 +1147,14 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({
               .run(),
           <Sigma className="w-3.5 h-3.5" />,
           'Insertar fórmula matemática (LaTeX / KaTeX)'
-        )}
-
-        {/* 8. Insertar Tabla */}
-        {toolBtn(
+        ),
+    },
+    {
+      id: 'table',
+      group: 'insert',
+      isActive: editor.isActive('table'),
+      render: () =>
+        toolBtn(
           editor.isActive('table'),
           () =>
             editor
@@ -895,92 +1164,139 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({
               .run(),
           <Table className="w-3.5 h-3.5" />,
           'Insertar tabla (o escribe /tabla)'
-        )}
+        ),
+    },
+  ];
 
-        {/* 8.5 Catálogo de Plantillas */}
-        {onOpenTemplates &&
-          toolBtn(
-            false,
-            onOpenTemplates,
-            <LayoutTemplate className="w-3.5 h-3.5 text-accent" />,
-            'Plantillas y modelos predefinidos (/plantilla)'
-          )}
+  if (onOpenTemplates) {
+    toolbarItems.push({
+      id: 'templates',
+      group: 'insert',
+      isActive: false,
+      render: (inOverflow) =>
+        toolBtn(
+          false,
+          () => {
+            if (inOverflow) setIsOverflowOpen(false);
+            onOpenTemplates();
+          },
+          <LayoutTemplate className="w-3.5 h-3.5 text-accent" />,
+          'Plantillas y modelos predefinidos (/plantilla)'
+        ),
+    });
+  }
 
-        {/* 9. Bloque de Código */}
-        {toolBtn(
+  toolbarItems.push(
+    {
+      id: 'code',
+      group: 'insert',
+      isActive: editor.isActive('codeBlock'),
+      render: () =>
+        toolBtn(
           editor.isActive('codeBlock'),
           () => editor.chain().focus().toggleCodeBlock().run(),
           <Code2 className="w-3.5 h-3.5" />,
           'Bloque de código (o escribe /codigo)'
-        )}
-
-        {/* 10. Asistente IA */}
-        {toolBtn(
+        ),
+    },
+    {
+      id: 'ai',
+      group: 'insert',
+      isActive: editor.isActive('aiPrompt'),
+      render: (inOverflow) =>
+        toolBtn(
           editor.isActive('aiPrompt'),
-          () => editor.chain().focus().insertContent({ type: 'aiPrompt' }).run(),
+          () => {
+            if (inOverflow) setIsOverflowOpen(false);
+            editor.chain().focus().insertContent({ type: 'aiPrompt' }).run();
+          },
           <Sparkles className="w-3.5 h-3.5" />,
           'Asistente IA (o escribe /ia)'
-        )}
+        ),
+    }
+  );
 
-        <div className="w-[1px] h-3.5 bg-veyra-border mx-1 shrink-0" />
+  if (onUploadImage) {
+    toolbarItems.push({
+      id: 'image',
+      group: 'media',
+      isActive: false,
+      render: (inOverflow) => (
+        <button
+          type="button"
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={() => {
+            if (inOverflow) setIsOverflowOpen(false);
+            fileInputRef.current?.click();
+          }}
+          title="Insertar imagen"
+          className="h-7 px-1.5 rounded-md text-veyra-muted hover:text-veyra-text hover:bg-black/5 dark:hover:bg-white/5 transition-colors flex items-center justify-center cursor-pointer shrink-0"
+        >
+          <ImageIcon className="w-3.5 h-3.5" />
+        </button>
+      ),
+    });
+  }
 
-        {/* 6. Insert Image */}
-        {onUploadImage && (
-          <>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/*"
-              className="hidden"
-              onChange={handleFileChange}
-            />
-            <button
-              type="button"
-              onMouseDown={(e) => e.preventDefault()}
-              onClick={() => fileInputRef.current?.click()}
-              title="Insertar imagen"
-              className="h-7 px-1.5 rounded-md text-veyra-muted hover:text-veyra-text hover:bg-black/5 dark:hover:bg-white/5 transition-colors flex items-center justify-center cursor-pointer shrink-0"
-            >
-              <ImageIcon className="w-3.5 h-3.5" />
-            </button>
-          </>
-        )}
+  if (onAttachFromDrive) {
+    toolbarItems.push({
+      id: 'drive',
+      group: 'media',
+      isActive: false,
+      render: (inOverflow) => (
+        <button
+          type="button"
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={() => {
+            if (inOverflow) setIsOverflowOpen(false);
+            void onAttachFromDrive();
+          }}
+          disabled={isAttachingDrive}
+          title="Adjuntar archivo desde Google Drive"
+          className="h-7 px-1.5 rounded-md text-veyra-muted hover:text-veyra-text hover:bg-black/5 dark:hover:bg-white/5 disabled:opacity-50 transition-colors flex items-center gap-1 cursor-pointer shrink-0"
+        >
+          {isAttachingDrive ? (
+            <Loader2 className="w-3.5 h-3.5 animate-spin text-accent" />
+          ) : (
+            <HardDrive className="w-3.5 h-3.5 text-emerald-500" />
+          )}
+        </button>
+      ),
+    });
+  }
 
-        {/* 6.5 Adjuntar desde Google Drive (Picker Web) */}
-        {onAttachFromDrive && (
-          <button
-            type="button"
-            onMouseDown={(e) => e.preventDefault()}
-            onClick={() => void onAttachFromDrive()}
-            disabled={isAttachingDrive}
-            title="Adjuntar archivo desde Google Drive"
-            className="h-7 px-1.5 rounded-md text-veyra-muted hover:text-veyra-text hover:bg-black/5 dark:hover:bg-white/5 disabled:opacity-50 transition-colors flex items-center gap-1 cursor-pointer shrink-0"
-          >
-            {isAttachingDrive ? (
-              <Loader2 className="w-3.5 h-3.5 animate-spin text-accent" />
-            ) : (
-              <HardDrive className="w-3.5 h-3.5 text-emerald-500" />
-            )}
-          </button>
-        )}
-
-        <div className="w-[1px] h-3.5 bg-veyra-border mx-1 shrink-0" />
-
-        {/* 7. Lists */}
-        {toolBtn(
+  toolbarItems.push(
+    // 5. Lists
+    {
+      id: 'task-list',
+      group: 'lists',
+      isActive: editor.isActive('taskList'),
+      render: () =>
+        toolBtn(
           editor.isActive('taskList'),
           () => editor.chain().focus().toggleTaskList().run(),
           <CheckSquare className="w-3.5 h-3.5" />,
           'Lista de tareas / Checklist'
-        )}
-        {toolBtn(
+        ),
+    },
+    {
+      id: 'bullet-list',
+      group: 'lists',
+      isActive: editor.isActive('bulletList'),
+      render: () =>
+        toolBtn(
           editor.isActive('bulletList'),
           () => editor.chain().focus().toggleBulletList().run(),
           <List className="w-3.5 h-3.5" />,
           'Lista con viñetas'
-        )}
-        {/* Lista numerada con selector de biblioteca de numeración */}
-        <div className="relative inline-flex items-center">
+        ),
+    },
+    {
+      id: 'ordered-list',
+      group: 'lists',
+      isActive: isOrderedListActive,
+      render: () => (
+        <div className="relative inline-flex items-center shrink-0">
           <button
             type="button"
             onMouseDown={(e) => {
@@ -1006,6 +1322,10 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({
               if (!isOrderedListMenuOpen) {
                 updateOrderedListPosition();
                 setCustomStartInput(String(currentListStart));
+                setIsTextColorMenuOpen(false);
+                setIsHighlightMenuOpen(false);
+                setIsFontMenuOpen(false);
+                setIsFontSizeMenuOpen(false);
                 setIsOrderedListMenuOpen(true);
               } else {
                 setIsOrderedListMenuOpen(false);
@@ -1024,68 +1344,219 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({
             <ChevronDown className="w-2.5 h-2.5" />
           </button>
         </div>
+      ),
+    },
 
-        <div className="w-[1px] h-3.5 bg-veyra-border mx-1 shrink-0" />
-
-        {/* 8. Alignment */}
-        {toolBtn(
+    // 6. Alignment
+    {
+      id: 'align-left',
+      group: 'align',
+      isActive: editor.isActive({ textAlign: 'left' }),
+      render: () =>
+        toolBtn(
           editor.isActive({ textAlign: 'left' }),
           () => editor.chain().focus().setTextAlign('left').run(),
           <AlignLeft className="w-3.5 h-3.5" />,
           'Alinear a la izquierda'
-        )}
-        {toolBtn(
+        ),
+    },
+    {
+      id: 'align-center',
+      group: 'align',
+      isActive: editor.isActive({ textAlign: 'center' }),
+      render: () =>
+        toolBtn(
           editor.isActive({ textAlign: 'center' }),
           () => editor.chain().focus().setTextAlign('center').run(),
           <AlignCenter className="w-3.5 h-3.5" />,
           'Centrar'
-        )}
-        {toolBtn(
+        ),
+    },
+    {
+      id: 'align-right',
+      group: 'align',
+      isActive: editor.isActive({ textAlign: 'right' }),
+      render: () =>
+        toolBtn(
           editor.isActive({ textAlign: 'right' }),
           () => editor.chain().focus().setTextAlign('right').run(),
           <AlignRight className="w-3.5 h-3.5" />,
           'Alinear a la derecha'
-        )}
-        {toolBtn(
+        ),
+    },
+    {
+      id: 'align-justify',
+      group: 'align',
+      isActive: editor.isActive({ textAlign: 'justify' }),
+      render: () =>
+        toolBtn(
           editor.isActive({ textAlign: 'justify' }),
           () => editor.chain().focus().setTextAlign('justify').run(),
           <AlignJustify className="w-3.5 h-3.5" />,
           'Justificar'
-        )}
+        ),
+    }
+  );
 
-        {/* Marcas de formato ocultas (Mostrar todo / Pilcrow ¶) */}
-        {onToggleFormattingMarks &&
-          toolBtn(
-            !!showFormattingMarks,
-            onToggleFormattingMarks,
-            <Pilcrow className="w-3.5 h-3.5" />,
-            'Mostrar todo (Ctrl+(): Muestra marcas de párrafo y símbolos de formato ocultos'
-          )}
+  if (onToggleFormattingMarks) {
+    toolbarItems.push({
+      id: 'formatting-marks',
+      group: 'align',
+      isActive: !!showFormattingMarks,
+      render: () =>
+        toolBtn(
+          !!showFormattingMarks,
+          onToggleFormattingMarks,
+          <Pilcrow className="w-3.5 h-3.5" />,
+          'Mostrar todo (Ctrl+(): Muestra marcas de párrafo y símbolos de formato ocultos'
+        ),
+    });
+  }
 
-        <div className="w-[1px] h-3.5 bg-veyra-border mx-1 shrink-0" />
-
-        {/* 9. History */}
+  toolbarItems.push(
+    // 7. History
+    {
+      id: 'undo',
+      group: 'history',
+      isActive: false,
+      render: () => (
         <button
           type="button"
           onMouseDown={(e) => e.preventDefault()}
           onClick={() => editor.chain().focus().undo().run()}
           disabled={!editor.can().undo()}
-          className="h-7 px-1.5 rounded-md text-veyra-muted hover:text-veyra-text hover:bg-black/5 dark:hover:bg-white/5 disabled:opacity-30 disabled:pointer-events-none transition-colors cursor-pointer shrink-0"
+          className="h-7 px-1.5 rounded-md text-veyra-muted hover:text-veyra-text hover:bg-black/5 dark:hover:bg-white/5 disabled:opacity-30 disabled:pointer-events-none transition-colors cursor-pointer shrink-0 flex items-center justify-center"
           title="Deshacer (Ctrl+Z)"
         >
           <Undo className="w-3.5 h-3.5" />
         </button>
+      ),
+    },
+    {
+      id: 'redo',
+      group: 'history',
+      isActive: false,
+      render: () => (
         <button
           type="button"
           onMouseDown={(e) => e.preventDefault()}
           onClick={() => editor.chain().focus().redo().run()}
           disabled={!editor.can().redo()}
-          className="h-7 px-1.5 rounded-md text-veyra-muted hover:text-veyra-text hover:bg-black/5 dark:hover:bg-white/5 disabled:opacity-30 disabled:pointer-events-none transition-colors cursor-pointer shrink-0"
+          className="h-7 px-1.5 rounded-md text-veyra-muted hover:text-veyra-text hover:bg-black/5 dark:hover:bg-white/5 disabled:opacity-30 disabled:pointer-events-none transition-colors cursor-pointer shrink-0 flex items-center justify-center"
           title="Rehacer (Ctrl+Y)"
         >
           <Redo className="w-3.5 h-3.5" />
         </button>
+      ),
+    }
+  );
+
+  const effectiveVisibleCount =
+    visibleCount === null ? toolbarItems.length : Math.min(visibleCount, toolbarItems.length);
+  const visibleItems = toolbarItems.slice(0, effectiveVisibleCount);
+  const overflowItems = toolbarItems.slice(effectiveVisibleCount);
+  const showOverflowMenu = overflowItems.length > 0 && isOverflowOpen;
+  const hasActiveOverflowItem = overflowItems.some((item) => item.isActive);
+
+  return (
+    <>
+      {onUploadImage && (
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onChange={handleFileChange}
+        />
+      )}
+
+      <div
+        ref={toolbarContainerRef}
+        className="h-9 border-b border-veyra-border px-2.5 sm:px-3 flex items-center gap-1 bg-veyra-surface/40 shrink-0 select-none text-xs overflow-hidden"
+      >
+        <div
+          ref={toolbarTrackRef}
+          className="flex-1 min-w-0 flex items-center gap-0.5 overflow-hidden"
+        >
+          {visibleItems.map((item, idx) => (
+            <React.Fragment key={item.id}>
+              {idx > 0 && visibleItems[idx - 1].group !== item.group && (
+                <div className="w-[1px] h-3.5 bg-veyra-border mx-1 shrink-0" />
+              )}
+              <div data-toolbar-item-id={item.id} className="inline-flex items-center shrink-0">
+                {item.render(false)}
+              </div>
+            </React.Fragment>
+          ))}
+        </div>
+
+        {overflowItems.length > 0 && (
+          <div className="flex items-center shrink-0 pl-1 border-l border-veyra-border/70">
+            <button
+              ref={overflowBtnRef}
+              type="button"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => {
+                if (!showOverflowMenu) {
+                  updateOverflowPosition();
+                  setIsTextColorMenuOpen(false);
+                  setIsHighlightMenuOpen(false);
+                  setIsFontMenuOpen(false);
+                  setIsFontSizeMenuOpen(false);
+                  setIsOrderedListMenuOpen(false);
+                  setIsOverflowOpen(true);
+                } else {
+                  setIsOverflowOpen(false);
+                }
+              }}
+              title={`Más herramientas (${overflowItems.length})`}
+              aria-label="Más herramientas"
+              aria-expanded={showOverflowMenu}
+              className={cn(
+                'relative h-7 px-1.5 rounded-md transition-colors flex items-center justify-center cursor-pointer shrink-0',
+                showOverflowMenu
+                  ? 'bg-accent/15 text-accent font-semibold'
+                  : 'text-veyra-muted hover:text-veyra-text hover:bg-black/5 dark:hover:bg-white/5'
+              )}
+            >
+              <MoreHorizontal className="w-3.5 h-3.5" />
+              {hasActiveOverflowItem && !showOverflowMenu && (
+                <span className="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-accent" />
+              )}
+            </button>
+          </div>
+        )}
       </div>
+
+      {/* POPUP FLOTANTE (PORTAL): Bandeja de herramientas ocultas por ancho reducido */}
+      {showOverflowMenu &&
+        typeof document !== 'undefined' &&
+        createPortal(
+          <div
+            ref={overflowMenuRef}
+            style={{
+              position: 'fixed',
+              top: overflowCoords.top,
+              right: overflowCoords.right,
+              maxWidth: 'min(440px, calc(100vw - 16px))',
+              maxHeight: `max(140px, calc(100vh - ${overflowCoords.top}px - 12px))`,
+              zIndex: 9980,
+            }}
+            className="p-1.5 rounded-xl bg-white dark:bg-[#18181B] border border-slate-200 dark:border-zinc-800 shadow-xl overflow-y-auto scrollbar-thin select-none text-xs animate-in fade-in zoom-in-95 duration-100"
+          >
+            <div className="flex flex-wrap items-center gap-1">
+              {overflowItems.map((item, idx) => (
+                <React.Fragment key={item.id}>
+                  {idx > 0 && overflowItems[idx - 1].group !== item.group && (
+                    <div className="w-[1px] h-4 bg-slate-200 dark:bg-zinc-700/80 mx-0.5 shrink-0" />
+                  )}
+                  <div className="inline-flex items-center shrink-0">{item.render(true)}</div>
+                </React.Fragment>
+              ))}
+            </div>
+          </div>,
+          document.body
+        )}
 
       {/* POPUP FLOTANTE (PORTAL): Selector de Color de Texto */}
       <TextColorPopover

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { useEditor, EditorContent } from '@tiptap/react';
 import { findParentNode } from '@tiptap/core';
 import StarterKit from '@tiptap/starter-kit';
@@ -54,7 +55,7 @@ import {
   convertTsvToHtml,
 } from './utils/tableClipboardUtils';
 import { A4PaginationExtension } from './pagination/a4PaginationExtension';
-import { getLiveVirtualBreaks } from './pagination/a4PaginationPlugin';
+import { getLiveVirtualBreaks, isA4PaginationEnabled } from './pagination/a4PaginationPlugin';
 import { calculateParagraphSplit } from './pagination/lineBreakMeasurer';
 import type { A4VirtualBreakWidgetSpec } from './pagination/types';
 import { AICommandExtension } from './extensions/AICommandExtension';
@@ -82,7 +83,7 @@ import { cn } from '../../lib/utils';
 import type { Note, CollabUser, Folder, NoteContentPaginated, NotePage } from '../../types/notes';
 import type { CalendarEvent } from '../../hooks/useEvents';
 import { getEventCategoryTag } from './NotesSidebar';
-import { Loader2, PanelLeft, X, Layers, GraduationCap, Folder as FolderIcon, Calendar, FileDown, FileText, ScrollText, Share2, Eye } from 'lucide-react';
+import { Loader2, PanelLeft, X, Layers, GraduationCap, Folder as FolderIcon, Calendar, FileDown, FileText, ScrollText, Share2, Eye, MoreHorizontal, Check } from 'lucide-react';
 import { useTheme } from '../../theme/ThemeProvider';
 import { PagesSidebar, type PageMeta, type PageBlock } from './PagesSidebar';
 import { ExportPdfModal } from './pdf/ExportPdfModal';
@@ -393,6 +394,84 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
   const [userRole, setUserRole] = useState<ResourceUserRole>(() =>
     note.user_id && currentUserId && note.user_id !== currentUserId ? 'editor' : 'owner'
   );
+
+  // Responsive header tracking based on actual header container width
+  const editorHeaderRef = useRef<HTMLDivElement>(null);
+  const headerMenuBtnRef = useRef<HTMLButtonElement>(null);
+  const headerMenuRef = useRef<HTMLDivElement>(null);
+  const [headerWidth, setHeaderWidth] = useState<number>(1000);
+  const [isHeaderMenuOpen, setIsHeaderMenuOpen] = useState(false);
+  const [headerMenuCoords, setHeaderMenuCoords] = useState<{ top: number; right: number }>({
+    top: 0,
+    right: 8,
+  });
+
+  useEffect(() => {
+    const el = editorHeaderRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver((entries) => {
+      const entry = entries[0];
+      if (!entry) return;
+      const w = Math.round(entry.contentRect.width);
+      setHeaderWidth((prev) => (Math.abs(prev - w) >= 2 ? w : prev));
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
+  const showActionLabels = pageFormat === 'a4' ? headerWidth >= 820 : headerWidth >= 680;
+  const isTightHeader = pageFormat === 'a4' ? headerWidth < 540 : headerWidth < 460;
+  const showParentBreadcrumb = pageFormat === 'a4' ? headerWidth >= 720 : headerWidth >= 520;
+  const showCompactBreadcrumbIconOnly = pageFormat === 'a4' && headerWidth < 480;
+  const showHeaderExportShortcut = headerWidth >= 360;
+  const showHeaderMenu = isTightHeader && isHeaderMenuOpen;
+
+  const updateHeaderMenuPosition = useCallback(() => {
+    if (!headerMenuBtnRef.current) return;
+    const rect = headerMenuBtnRef.current.getBoundingClientRect();
+    setHeaderMenuCoords({
+      top: rect.bottom + 6,
+      right: Math.max(8, window.innerWidth - rect.right),
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!showHeaderMenu) return;
+
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as Node;
+      if (
+        headerMenuRef.current &&
+        !headerMenuRef.current.contains(target) &&
+        headerMenuBtnRef.current &&
+        !headerMenuBtnRef.current.contains(target)
+      ) {
+        setIsHeaderMenuOpen(false);
+      }
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setIsHeaderMenuOpen(false);
+      }
+    };
+
+    const handleWindowChange = () => {
+      updateHeaderMenuPosition();
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('resize', handleWindowChange);
+    window.addEventListener('scroll', handleWindowChange, true);
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('resize', handleWindowChange);
+      window.removeEventListener('scroll', handleWindowChange, true);
+    };
+  }, [showHeaderMenu, updateHeaderMenuPosition]);
 
   useEffect(() => {
     let active = true;
@@ -1519,12 +1598,18 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
       }
     };
 
-    const calculateBreaks = () => {
+    const calculateBreaks = (triggeredByEditorUpdate = false) => {
       if (isCalculating || !docSheetRef.current || !a4StyleRef.current) return;
       isCalculating = true;
       try {
         const sheet = docSheetRef.current;
         const styleEl = a4StyleRef.current;
+        const scrollEl = scrollContainerRef.current;
+        const savedScrollTop = scrollEl ? scrollEl.scrollTop : null;
+
+        // Mantener altura mínima temporalmente ANTES de limpiar estilos para evitar saltos de scroll
+        const prevSheetH = sheet.offsetHeight;
+        sheet.style.minHeight = `${Math.max(A4_HEIGHT_PX, prevSheetH)}px`;
 
         // 1. Limpiar reglas previas PRIMERO para que no queden márgenes antiguos atrapados
         styleEl.textContent = '';
@@ -1557,7 +1642,9 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
             if (liveBreaks.length > 0) {
               editor.commands.setA4VirtualBreaks([]);
             }
-            editor.commands.setA4PaginationEnabled(false);
+            if (isA4PaginationEnabled(editor.state)) {
+              editor.commands.setA4PaginationEnabled(false);
+            }
           }
           const emptySig = 'empty-1';
           if (lastA4SheetsSignatureRef.current !== emptySig) {
@@ -1579,10 +1666,6 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
           }
           return;
         }
-
-        // Mantener altura mínima temporalmente para evitar saltos de scroll durante el cálculo
-        const prevSheetH = sheet.offsetHeight;
-        sheet.style.minHeight = `${Math.max(A4_HEIGHT_PX, prevSheetH)}px`;
 
         styleEl.textContent = basePaddingRule;
 
@@ -1833,7 +1916,9 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
         }
 
         if (enableVirtualPaginationRef.current && editor) {
-          editor.commands.setA4PaginationEnabled(true);
+          if (!isA4PaginationEnabled(editor.state)) {
+            editor.commands.setA4PaginationEnabled(true);
+          }
           const liveBreaks = getLiveVirtualBreaks(editor.state);
           const liveSig = liveBreaks
             .map((b) => `${b.sheetIndex}:${b.pos}:${b.spacerHeight}`)
@@ -1848,6 +1933,32 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
           const liveBreaks = getLiveVirtualBreaks(editor.state);
           if (liveBreaks.length > 0) {
             editor.commands.setA4VirtualBreaks([]);
+          }
+        }
+
+        // Restaurar scrollTop tras el ciclo de medición y asegurar visibilidad del cursor solo si el usuario editó
+        if (scrollEl && savedScrollTop !== null && Math.abs(scrollEl.scrollTop - savedScrollTop) > 0.5) {
+          scrollEl.scrollTop = savedScrollTop;
+        }
+        if (
+          triggeredByEditorUpdate &&
+          scrollEl &&
+          editor &&
+          !editor.isDestroyed &&
+          editor.isFocused &&
+          editor.state.selection.empty
+        ) {
+          try {
+            const coords = editor.view.coordsAtPos(editor.state.selection.head);
+            const cRect = scrollEl.getBoundingClientRect();
+            const pad = 28;
+            if (coords.bottom > cRect.bottom - pad) {
+              scrollEl.scrollTop += Math.ceil(coords.bottom - (cRect.bottom - 56));
+            } else if (coords.top < cRect.top + pad) {
+              scrollEl.scrollTop -= Math.ceil(cRect.top + 56 - coords.top);
+            }
+          } catch {
+            // Ignorar si la posición aún no tiene coordenadas en el DOM
           }
         }
 
@@ -2089,15 +2200,23 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
     };
 
     let rafId: number | null = null;
-    const scheduleCalculate = () => {
+    let pendingFromEditorUpdate = false;
+    const scheduleCalculate = (fromEditorUpdate = false) => {
+      if (fromEditorUpdate) {
+        pendingFromEditorUpdate = true;
+      }
       if (rafId !== null) cancelAnimationFrame(rafId);
       rafId = requestAnimationFrame(() => {
         rafId = null;
-        calculateBreaks();
+        const triggered = pendingFromEditorUpdate;
+        pendingFromEditorUpdate = false;
+        calculateBreaks(triggered);
       });
     };
 
-    calculateBreaks();
+    const handleEditorUpdate = () => scheduleCalculate(true);
+
+    calculateBreaks(false);
 
     const pmEl = sheetEl.querySelector('.ProseMirror') as HTMLElement | null;
     const ro = new ResizeObserver(() => {
@@ -2108,20 +2227,20 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
       ) {
         return;
       }
-      scheduleCalculate();
+      scheduleCalculate(false);
     });
     ro.observe(sheetEl);
     if (pmEl) ro.observe(pmEl);
 
     if (editor) {
-      editor.on('update', scheduleCalculate);
+      editor.on('update', handleEditorUpdate);
     }
 
     return () => {
       if (rafId !== null) cancelAnimationFrame(rafId);
       ro.disconnect();
       if (editor) {
-        editor.off('update', scheduleCalculate);
+        editor.off('update', handleEditorUpdate);
       }
     };
   }, [pageFormat, activePageId, editor, a4HeaderFooterConfig]);
@@ -2253,7 +2372,7 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
   }, [note.event_id, note.folder_id, note.id, events, folders]);
 
   return (
-    <div className="flex-1 flex flex-col h-full bg-veyra-canvas overflow-hidden relative">
+    <div className="flex-1 min-w-0 flex flex-col h-full bg-veyra-canvas overflow-hidden relative">
       {note.deleted === 1 && (
         <div className="bg-red-500/10 border-b border-red-500/20 px-4 py-1.5 flex items-center justify-between text-xs text-red-300 select-none shrink-0">
           <span>Esta nota está en la papelera.</span>
@@ -2270,8 +2389,14 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
       )}
 
       {/* Sleek Minimal Editor Header (Fase 3 & Fase 4) */}
-      <div className="h-10 border-b border-veyra-border px-4 flex items-center justify-between text-xs shrink-0 select-none bg-veyra-card/30">
-        <div className="flex items-center gap-2 min-w-0 flex-1 mr-4">
+      <div
+        ref={editorHeaderRef}
+        className={cn(
+          'h-10 border-b border-veyra-border flex items-center justify-between gap-2 text-xs shrink-0 select-none bg-veyra-card/30',
+          isTightHeader ? 'px-2.5' : 'px-3 sm:px-4'
+        )}
+      >
+        <div className="flex items-center gap-1.5 min-w-0 flex-1">
           {!isSidebarOpen && onToggleSidebar && (
             <button
               type="button"
@@ -2285,76 +2410,111 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
 
           {/* Breadcrumb de Ubicación Unificado (Optimización de cabecera) */}
           {breadcrumb && (
-            <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-white/[0.04] border border-veyra-border/60 text-[11px] text-veyra-muted max-w-[240px] sm:max-w-[360px] shrink-0">
-              {breadcrumb.parentLabel && (
-                <>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (breadcrumb.parentFolderId && onSelectFolder) {
-                        onSelectFolder(breadcrumb.parentFolderId);
-                      }
-                    }}
-                    className={cn(
-                      'flex items-center gap-1 text-veyra-muted hover:text-veyra-text transition-colors truncate',
-                      breadcrumb.parentFolderId && 'cursor-pointer hover:underline'
-                    )}
-                    title={
-                      breadcrumb.parentFolderId
-                        ? `Ver carpeta ${breadcrumb.parentLabel}`
-                        : breadcrumb.parentLabel
-                    }
-                  >
-                    {breadcrumb.parentIconType === 'graduation' ? (
-                      <GraduationCap className="w-3 h-3 text-accent shrink-0" />
-                    ) : (
-                      <FolderIcon
-                        className="w-3 h-3 shrink-0"
-                        style={{ color: breadcrumb.parentColor || 'var(--accent-primary)' }}
-                      />
-                    )}
-                    <span className="truncate max-w-[90px] font-medium">{breadcrumb.parentLabel}</span>
-                  </button>
-
-                  <span className="text-veyra-subtle select-none text-[10px]">/</span>
-                </>
-              )}
-
-              {breadcrumb.type === 'event' ? (
-                <button
-                  type="button"
-                  onClick={() => onSelectEvent?.(breadcrumb.eventId)}
-                  className="flex items-center gap-1 text-veyra-text hover:text-accent transition-colors cursor-pointer group truncate"
-                  title="Abrir detalles de la materia/evento en agenda"
-                >
-                  <Calendar
-                    className="w-3 h-3 shrink-0 transition-transform group-hover:scale-110"
-                    style={{ color: breadcrumb.eventColor }}
-                  />
-                  <span
-                    className="font-semibold truncate max-w-[130px]"
-                    style={{ color: breadcrumb.eventColor }}
-                  >
-                    {breadcrumb.eventTitle}
-                  </span>
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => onSelectFolder?.(breadcrumb.folderId)}
-                  className="flex items-center gap-1 text-veyra-text hover:text-accent transition-colors cursor-pointer truncate"
-                  title="Ver carpeta"
-                >
+            showCompactBreadcrumbIconOnly ? (
+              <button
+                type="button"
+                onClick={() => {
+                  if (breadcrumb.type === 'event') {
+                    onSelectEvent?.(breadcrumb.eventId);
+                  } else {
+                    onSelectFolder?.(breadcrumb.folderId);
+                  }
+                }}
+                title={
+                  breadcrumb.type === 'event'
+                    ? `${breadcrumb.parentLabel ? `${breadcrumb.parentLabel} / ` : ''}${breadcrumb.eventTitle}`
+                    : `${breadcrumb.parentLabel ? `${breadcrumb.parentLabel} / ` : ''}${breadcrumb.folderName}`
+                }
+                className="h-6 w-6 rounded-md bg-white/[0.04] border border-veyra-border/60 flex items-center justify-center shrink-0 hover:bg-white/[0.08] transition-colors cursor-pointer"
+              >
+                {breadcrumb.type === 'event' ? (
+                  <Calendar className="w-3 h-3 shrink-0" style={{ color: breadcrumb.eventColor }} />
+                ) : (
                   <FolderIcon
                     className="w-3 h-3 shrink-0"
                     style={{ color: breadcrumb.folderColor || 'var(--accent-primary)' }}
                   />
-                  <span className="font-semibold truncate max-w-[130px]">
-                    {breadcrumb.folderName}
-                  </span>
-                </button>
-              )}
-            </div>
+                )}
+              </button>
+            ) : (
+              <div
+                className={cn(
+                  'flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-white/[0.04] border border-veyra-border/60 text-[11px] text-veyra-muted min-w-0 shrink overflow-hidden',
+                  pageFormat === 'a4' && !showParentBreadcrumb
+                    ? 'max-w-[180px]'
+                    : 'max-w-[260px] sm:max-w-[360px]'
+                )}
+              >
+                {showParentBreadcrumb && breadcrumb.parentLabel && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (breadcrumb.parentFolderId && onSelectFolder) {
+                          onSelectFolder(breadcrumb.parentFolderId);
+                        }
+                      }}
+                      className={cn(
+                        'flex items-center gap-1 text-veyra-muted hover:text-veyra-text transition-colors min-w-0 truncate',
+                        breadcrumb.parentFolderId && 'cursor-pointer hover:underline'
+                      )}
+                      title={
+                        breadcrumb.parentFolderId
+                          ? `Ver carpeta ${breadcrumb.parentLabel}`
+                          : breadcrumb.parentLabel
+                      }
+                    >
+                      {breadcrumb.parentIconType === 'graduation' ? (
+                        <GraduationCap className="w-3 h-3 text-accent shrink-0" />
+                      ) : (
+                        <FolderIcon
+                          className="w-3 h-3 shrink-0"
+                          style={{ color: breadcrumb.parentColor || 'var(--accent-primary)' }}
+                        />
+                      )}
+                      <span className="truncate max-w-[90px] font-medium">{breadcrumb.parentLabel}</span>
+                    </button>
+
+                    <span className="text-veyra-subtle select-none text-[10px] shrink-0">/</span>
+                  </>
+                )}
+
+                {breadcrumb.type === 'event' ? (
+                  <button
+                    type="button"
+                    onClick={() => onSelectEvent?.(breadcrumb.eventId)}
+                    className="flex items-center gap-1 text-veyra-text hover:text-accent transition-colors cursor-pointer group min-w-0 truncate"
+                    title="Abrir detalles de la materia/evento en agenda"
+                  >
+                    <Calendar
+                      className="w-3 h-3 shrink-0 transition-transform group-hover:scale-110"
+                      style={{ color: breadcrumb.eventColor }}
+                    />
+                    <span
+                      className="font-semibold truncate max-w-[130px]"
+                      style={{ color: breadcrumb.eventColor }}
+                    >
+                      {breadcrumb.eventTitle}
+                    </span>
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => onSelectFolder?.(breadcrumb.folderId)}
+                    className="flex items-center gap-1 text-veyra-text hover:text-accent transition-colors cursor-pointer min-w-0 truncate"
+                    title="Ver carpeta"
+                  >
+                    <FolderIcon
+                      className="w-3 h-3 shrink-0"
+                      style={{ color: breadcrumb.folderColor || 'var(--accent-primary)' }}
+                    />
+                    <span className="font-semibold truncate max-w-[130px]">
+                      {breadcrumb.folderName}
+                    </span>
+                  </button>
+                )}
+              </div>
+            )
           )}
 
           {/* Título editable en la barra superior cuando está activo el formato Hoja A4 */}
@@ -2378,7 +2538,7 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
                     editor.commands.focus('start');
                   }
                 }}
-                containerClassName="flex-1 max-w-xs sm:max-w-md min-w-[140px]"
+                containerClassName="flex-1 min-w-0 max-w-md"
                 inputClassName="w-full bg-transparent hover:bg-black/5 dark:hover:bg-white/5 focus:bg-veyra-surface border border-transparent focus:border-accent/40 rounded-md px-2 py-1 text-xs sm:text-[13px] font-semibold text-veyra-text placeholder:text-veyra-muted/60 focus:outline-none transition-colors truncate"
               />
             </>
@@ -2386,127 +2546,314 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
         </div>
 
         {/* Right: Presence Avatars, Status Dot & Actions */}
-        <div className="flex items-center gap-2">
-          {userRole === 'viewer' && (
-            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-blue-500/15 border border-blue-500/30 text-blue-400 text-[10.5px] font-medium">
-              <Eye className="w-3 h-3" />
-              <span>Solo lectura</span>
-            </span>
-          )}
-          <CollabPresence users={collabUsers} currentUserId={currentUserId} />
-
-          {/* Discreet 6px status dot (Combina estado de sincronización y guardado) */}
-          <div
-            className="flex items-center justify-center p-1"
-            title={
-              saveStatus === 'error'
-                ? 'Error al guardar'
-                : saveStatus === 'saving'
-                  ? 'Guardando cambios...'
-                  : syncStatus === 'connected'
-                    ? 'Guardado · Colaboración en vivo activa'
-                    : syncStatus === 'connecting'
-                      ? 'Conectando con Supabase Realtime...'
-                      : 'Guardado localmente (Desconectado)'
-            }
-          >
-            <span
-              className={cn(
-                'w-1.5 h-1.5 rounded-full transition-colors',
-                saveStatus === 'error'
-                  ? 'bg-red-500'
-                  : saveStatus === 'saving' || syncStatus === 'connecting'
-                    ? 'bg-amber-500 animate-pulse'
-                    : syncStatus === 'connected'
-                      ? 'bg-emerald-500'
-                      : 'bg-zinc-600'
-              )}
-            />
-          </div>
-
-          {/* Toggle Page Format Button per Note (Infinita vs Hoja A4) */}
-          <button
-            type="button"
-            onClick={handleTogglePageFormat}
-            title={
-              pageFormat === 'a4'
-                ? 'Esta nota usa formato Hoja A4. Clic para cambiar esta nota a vista Infinita'
-                : 'Esta nota usa vista Infinita. Clic para cambiar esta nota a formato Hoja A4'
-            }
-            className={cn(
-              'flex items-center gap-1.5 px-2 py-0.5 rounded text-xs transition-colors cursor-pointer border',
-              pageFormat === 'a4'
-                ? 'bg-accent/15 border-accent/40 text-accent font-semibold'
-                : 'bg-white/5 border-veyra-border text-veyra-muted hover:text-veyra-text hover:bg-white/10'
-            )}
-          >
-            {pageFormat === 'a4' ? (
-              <>
-                <FileText className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">Hoja A4</span>
-              </>
-            ) : (
-              <>
-                <ScrollText className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">Infinita</span>
-              </>
-            )}
-          </button>
-
-          {/* Toggle Floating Pages Sidebar Button (Icon Only) */}
-          <button
-            type="button"
-            onClick={() => setIsPagesSidebarOpen(!isPagesSidebarOpen)}
-            title={isPagesSidebarOpen ? 'Ocultar panel de hojas' : 'Mostrar panel de hojas'}
-            aria-label="Panel de hojas"
-            className={cn(
-              'p-1.5 rounded transition-colors cursor-pointer border flex items-center justify-center',
-              isPagesSidebarOpen
-                ? 'bg-accent/15 border-accent/40 text-accent'
-                : 'bg-white/5 border-veyra-border text-veyra-muted hover:text-veyra-text hover:bg-white/10'
-            )}
-          >
-            <Layers className="w-3.5 h-3.5" />
-          </button>
-
-          {/* Share Button */}
-          <button
-            type="button"
-            onClick={() => setIsShareModalOpen(true)}
-            title="Compartir y colaborar en esta nota"
-            className="flex items-center gap-1.5 px-2.5 py-0.5 rounded text-xs transition-colors cursor-pointer border bg-white/5 border-veyra-border text-veyra-muted hover:text-veyra-text hover:bg-white/10"
-          >
-            <Share2 className="w-3.5 h-3.5 text-accent" />
-            <span className="hidden sm:inline font-medium">Compartir</span>
-          </button>
-
-          {/* Export to PDF Button */}
-          <button
-            type="button"
-            onClick={handleOpenExportPdf}
-            title="Exportar a PDF / Imprimir nota (Formato Word)"
-            className="flex items-center gap-1.5 px-2.5 py-0.5 rounded text-xs transition-colors cursor-pointer border bg-white/5 border-veyra-border text-veyra-muted hover:text-veyra-text hover:bg-white/10"
-          >
-            <FileDown className="w-3.5 h-3.5 text-accent" />
-            <span className="hidden sm:inline font-medium">Exportar PDF</span>
-          </button>
-
-          {onCloseNote && (
+        <div className={cn('flex items-center shrink-0', isTightHeader ? 'gap-1' : 'gap-1.5')}>
+          {!isTightHeader ? (
             <>
-              <div className="w-[1px] h-3.5 bg-veyra-border mx-0.5" />
+              {userRole === 'viewer' && (
+                <span
+                  title="Modo solo lectura"
+                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-blue-500/15 border border-blue-500/30 text-blue-400 text-[10.5px] font-medium shrink-0 whitespace-nowrap"
+                >
+                  <Eye className="w-3 h-3 shrink-0" />
+                  {showActionLabels && <span>Solo lectura</span>}
+                </span>
+              )}
+              <CollabPresence users={collabUsers} currentUserId={currentUserId} />
+
+              {/* Discreet 6px status dot (Combina estado de sincronización y guardado) */}
+              <div
+                className="flex items-center justify-center p-1 shrink-0"
+                title={
+                  saveStatus === 'error'
+                    ? 'Error al guardar'
+                    : saveStatus === 'saving'
+                      ? 'Guardando cambios...'
+                      : syncStatus === 'connected'
+                        ? 'Guardado · Colaboración en vivo activa'
+                        : syncStatus === 'connecting'
+                          ? 'Conectando con Supabase Realtime...'
+                          : 'Guardado localmente (Desconectado)'
+                }
+              >
+                <span
+                  className={cn(
+                    'w-1.5 h-1.5 rounded-full transition-colors',
+                    saveStatus === 'error'
+                      ? 'bg-red-500'
+                      : saveStatus === 'saving' || syncStatus === 'connecting'
+                        ? 'bg-amber-500 animate-pulse'
+                        : syncStatus === 'connected'
+                          ? 'bg-emerald-500'
+                          : 'bg-zinc-600'
+                  )}
+                />
+              </div>
+
+              {/* Toggle Page Format Button per Note (Infinita vs Hoja A4) */}
               <button
                 type="button"
-                onClick={handleClose}
-                title="Cerrar nota"
-                aria-label="Cerrar nota"
-                className="p-1 rounded text-veyra-muted hover:text-veyra-text hover:bg-white/5 transition-colors cursor-pointer flex items-center justify-center"
+                onClick={handleTogglePageFormat}
+                title={
+                  pageFormat === 'a4'
+                    ? 'Esta nota usa formato Hoja A4. Clic para cambiar esta nota a vista Infinita'
+                    : 'Esta nota usa vista Infinita. Clic para cambiar esta nota a formato Hoja A4'
+                }
+                className={cn(
+                  'flex items-center gap-1.5 rounded text-xs transition-colors cursor-pointer border shrink-0 whitespace-nowrap',
+                  showActionLabels ? 'px-2 py-0.5' : 'p-1.5',
+                  pageFormat === 'a4'
+                    ? 'bg-accent/15 border-accent/40 text-accent font-semibold'
+                    : 'bg-white/5 border-veyra-border text-veyra-muted hover:text-veyra-text hover:bg-white/10'
+                )}
               >
-                <X className="w-3.5 h-3.5" />
+                {pageFormat === 'a4' ? (
+                  <>
+                    <FileText className="w-3.5 h-3.5 shrink-0" />
+                    {showActionLabels && <span>Hoja A4</span>}
+                  </>
+                ) : (
+                  <>
+                    <ScrollText className="w-3.5 h-3.5 shrink-0" />
+                    {showActionLabels && <span>Infinita</span>}
+                  </>
+                )}
               </button>
+
+              {/* Toggle Floating Pages Sidebar Button (Icon Only) */}
+              <button
+                type="button"
+                onClick={() => setIsPagesSidebarOpen(!isPagesSidebarOpen)}
+                title={isPagesSidebarOpen ? 'Ocultar panel de hojas' : 'Mostrar panel de hojas'}
+                aria-label="Panel de hojas"
+                className={cn(
+                  'p-1.5 rounded transition-colors cursor-pointer border flex items-center justify-center shrink-0',
+                  isPagesSidebarOpen
+                    ? 'bg-accent/15 border-accent/40 text-accent'
+                    : 'bg-white/5 border-veyra-border text-veyra-muted hover:text-veyra-text hover:bg-white/10'
+                )}
+              >
+                <Layers className="w-3.5 h-3.5" />
+              </button>
+
+              {/* Share Button */}
+              <button
+                type="button"
+                onClick={() => setIsShareModalOpen(true)}
+                title="Compartir y colaborar en esta nota"
+                className={cn(
+                  'flex items-center gap-1.5 rounded text-xs transition-colors cursor-pointer border bg-white/5 border-veyra-border text-veyra-muted hover:text-veyra-text hover:bg-white/10 shrink-0 whitespace-nowrap',
+                  showActionLabels ? 'px-2.5 py-0.5' : 'p-1.5'
+                )}
+              >
+                <Share2 className="w-3.5 h-3.5 text-accent shrink-0" />
+                {showActionLabels && <span className="font-medium">Compartir</span>}
+              </button>
+
+              {/* Export to PDF Button */}
+              <button
+                type="button"
+                onClick={handleOpenExportPdf}
+                title="Exportar a PDF / Imprimir nota (Formato Word)"
+                className={cn(
+                  'flex items-center gap-1.5 rounded text-xs transition-colors cursor-pointer border bg-white/5 border-veyra-border text-veyra-muted hover:text-veyra-text hover:bg-white/10 shrink-0 whitespace-nowrap',
+                  showActionLabels ? 'px-2.5 py-0.5' : 'p-1.5'
+                )}
+              >
+                <FileDown className="w-3.5 h-3.5 text-accent shrink-0" />
+                {showActionLabels && <span className="font-medium">Exportar PDF</span>}
+              </button>
+
+              {onCloseNote && (
+                <>
+                  <div className="w-[1px] h-3.5 bg-veyra-border mx-0.5 shrink-0" />
+                  <button
+                    type="button"
+                    onClick={handleClose}
+                    title="Cerrar nota"
+                    aria-label="Cerrar nota"
+                    className="p-1 rounded text-veyra-muted hover:text-veyra-text hover:bg-white/5 transition-colors cursor-pointer flex items-center justify-center shrink-0"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </>
+              )}
+            </>
+          ) : (
+            <>
+              {/* Discreet 6px status dot */}
+              <div
+                className="flex items-center justify-center p-1 shrink-0"
+                title={
+                  saveStatus === 'error'
+                    ? 'Error al guardar'
+                    : saveStatus === 'saving'
+                      ? 'Guardando cambios...'
+                      : syncStatus === 'connected'
+                        ? 'Guardado · Colaboración en vivo activa'
+                        : syncStatus === 'connecting'
+                          ? 'Conectando con Supabase Realtime...'
+                          : 'Guardado localmente (Desconectado)'
+                }
+              >
+                <span
+                  className={cn(
+                    'w-1.5 h-1.5 rounded-full transition-colors',
+                    saveStatus === 'error'
+                      ? 'bg-red-500'
+                      : saveStatus === 'saving' || syncStatus === 'connecting'
+                        ? 'bg-amber-500 animate-pulse'
+                        : syncStatus === 'connected'
+                          ? 'bg-emerald-500'
+                          : 'bg-zinc-600'
+                  )}
+                />
+              </div>
+
+              {showHeaderExportShortcut && (
+                <button
+                  type="button"
+                  onClick={handleOpenExportPdf}
+                  title="Exportar a PDF / Imprimir nota (Formato Word)"
+                  aria-label="Exportar PDF"
+                  className="p-1.5 rounded border bg-white/5 border-veyra-border text-veyra-muted hover:text-veyra-text hover:bg-white/10 transition-colors cursor-pointer flex items-center justify-center shrink-0"
+                >
+                  <FileDown className="w-3.5 h-3.5 text-accent" />
+                </button>
+              )}
+
+              <button
+                ref={headerMenuBtnRef}
+                type="button"
+                onClick={() => {
+                  if (!showHeaderMenu) {
+                    updateHeaderMenuPosition();
+                    setIsHeaderMenuOpen(true);
+                  } else {
+                    setIsHeaderMenuOpen(false);
+                  }
+                }}
+                title="Más opciones de la nota"
+                aria-label="Más opciones"
+                aria-expanded={showHeaderMenu}
+                className={cn(
+                  'p-1.5 rounded border transition-colors cursor-pointer flex items-center justify-center shrink-0',
+                  showHeaderMenu
+                    ? 'bg-accent/15 border-accent/40 text-accent'
+                    : 'bg-white/5 border-veyra-border text-veyra-muted hover:text-veyra-text hover:bg-white/10'
+                )}
+              >
+                <MoreHorizontal className="w-3.5 h-3.5" />
+              </button>
+
+              {onCloseNote && (
+                <>
+                  <div className="w-[1px] h-3.5 bg-veyra-border mx-0.5 shrink-0" />
+                  <button
+                    type="button"
+                    onClick={handleClose}
+                    title="Cerrar nota"
+                    aria-label="Cerrar nota"
+                    className="p-1 rounded text-veyra-muted hover:text-veyra-text hover:bg-white/5 transition-colors cursor-pointer flex items-center justify-center shrink-0"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </>
+              )}
             </>
           )}
         </div>
       </div>
+
+      {/* Header Overflow Portal Menu for Tight Widths */}
+      {showHeaderMenu &&
+        typeof document !== 'undefined' &&
+        createPortal(
+          <div
+            ref={headerMenuRef}
+            style={{
+              position: 'fixed',
+              top: headerMenuCoords.top,
+              right: headerMenuCoords.right,
+              zIndex: 9999,
+            }}
+            className="w-56 max-w-[calc(100vw-16px)] p-1.5 rounded-xl bg-white dark:bg-[#18181B] border border-slate-200 dark:border-zinc-800 shadow-xl select-none text-xs animate-in fade-in zoom-in-95 duration-100"
+          >
+            {userRole === 'viewer' && (
+              <div className="flex items-center gap-2 px-2.5 py-1.5 mb-1 rounded-lg bg-blue-500/10 border border-blue-500/20 text-blue-500 dark:text-blue-400 text-[11px] font-medium">
+                <Eye className="w-3.5 h-3.5 shrink-0" />
+                <span>Solo lectura</span>
+              </div>
+            )}
+
+            {(collabUsers.some((u) => u.userId !== currentUserId) || collabUsers.length > 1) && (
+              <div className="flex items-center justify-between gap-2 px-2.5 py-1.5 mb-1 border-b border-slate-200 dark:border-zinc-800">
+                <span className="text-[11px] text-slate-500 dark:text-zinc-400">
+                  Colaboradores ({collabUsers.length})
+                </span>
+                <CollabPresence users={collabUsers} currentUserId={currentUserId} />
+              </div>
+            )}
+
+            <button
+              type="button"
+              onClick={() => {
+                handleTogglePageFormat();
+                setIsHeaderMenuOpen(false);
+              }}
+              className="w-full flex items-center justify-between gap-2 px-2.5 py-2 rounded-lg text-slate-800 dark:text-zinc-200 hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer text-left"
+            >
+              <span className="flex items-center gap-2">
+                {pageFormat === 'a4' ? (
+                  <FileText className="w-3.5 h-3.5 text-accent shrink-0" />
+                ) : (
+                  <ScrollText className="w-3.5 h-3.5 text-accent shrink-0" />
+                )}
+                <span>{pageFormat === 'a4' ? 'Vista: Hoja A4' : 'Vista: Infinita'}</span>
+              </span>
+              <span className="text-[10px] text-slate-400 dark:text-zinc-500">Cambiar</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setIsPagesSidebarOpen(!isPagesSidebarOpen);
+                setIsHeaderMenuOpen(false);
+              }}
+              className="w-full flex items-center justify-between gap-2 px-2.5 py-2 rounded-lg text-slate-800 dark:text-zinc-200 hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer text-left"
+            >
+              <span className="flex items-center gap-2">
+                <Layers className="w-3.5 h-3.5 text-accent shrink-0" />
+                <span>Panel de hojas</span>
+              </span>
+              {isPagesSidebarOpen && <Check className="w-3.5 h-3.5 text-accent shrink-0" />}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setIsShareModalOpen(true);
+                setIsHeaderMenuOpen(false);
+              }}
+              className="w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-slate-800 dark:text-zinc-200 hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer text-left"
+            >
+              <Share2 className="w-3.5 h-3.5 text-accent shrink-0" />
+              <span>Compartir y colaborar</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setIsHeaderMenuOpen(false);
+                handleOpenExportPdf();
+              }}
+              className="w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-slate-800 dark:text-zinc-200 hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer text-left"
+            >
+              <FileDown className="w-3.5 h-3.5 text-accent shrink-0" />
+              <span>Exportar a PDF</span>
+            </button>
+          </div>,
+          document.body
+        )}
 
       {/* Sleek Minimal Formatting Toolbar OR Word Header/Footer Design Ribbon */}
       {pageFormat === 'a4' && activeHeaderFooterZone !== null ? (
@@ -2571,16 +2918,12 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
         <div
           ref={scrollContainerRef}
           className={cn(
-            'flex-1 overflow-y-auto px-4 sm:px-8 py-6 sm:py-8 transition-colors duration-150',
+            'flex-1 overflow-y-auto [overflow-anchor:none] px-4 sm:px-8 py-6 sm:py-8 transition-colors duration-150',
             isDark && isAmoled ? 'bg-black' : 'bg-[#e4e7ec] dark:bg-[#0B0B0C]'
           )}
           onClick={(e) => {
-            // Clicking anywhere in the outside margins focuses the editor at the end
-            if (e.target === e.currentTarget && editor) {
-              if (activeHeaderFooterZone !== null) {
-                setActiveHeaderFooterZone(null);
-              }
-              editor.commands.focus('end');
+            if (e.target === e.currentTarget && activeHeaderFooterZone !== null) {
+              setActiveHeaderFooterZone(null);
             }
           }}
         >
@@ -2589,7 +2932,7 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
             ref={docSheetRef}
             data-sheet-theme={isPaperLight ? 'light' : undefined}
             className={cn(
-              'mx-auto w-full flex flex-col transition-[min-height,background-color,border-color,box-shadow] duration-150 ease-[cubic-bezier(0.16,1,0.3,1)] relative',
+              'mx-auto w-full flex flex-col transition-[background-color,border-color,box-shadow] duration-150 ease-[cubic-bezier(0.16,1,0.3,1)] relative',
               isPaperLight && 'sheet-light-mode',
               pageFormat === 'a4'
                 ? cn(
@@ -2928,7 +3271,7 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
 
   if (!note) {
     return (
-      <div className="flex-1 flex flex-col h-full bg-veyra-canvas select-none">
+      <div className="flex-1 min-w-0 flex flex-col h-full bg-veyra-canvas select-none">
         {!isSidebarOpen && onToggleSidebar && (
           <div className="h-10 border-b border-veyra-border px-4 flex items-center text-xs shrink-0 bg-veyra-card/30">
             <button
@@ -2968,7 +3311,7 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
 
   if (loadingDoc || !isCurrentDocLoaded) {
     return (
-      <div className="flex-1 flex flex-col h-full bg-veyra-canvas">
+      <div className="flex-1 min-w-0 flex flex-col h-full bg-veyra-canvas">
         {!isSidebarOpen && onToggleSidebar ? (
           <div className="h-10 border-b border-veyra-border px-4 flex items-center justify-between text-xs shrink-0 bg-veyra-card/30">
             <button
@@ -3013,7 +3356,7 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
 
   if (loadError || !loadedData) {
     return (
-      <div className="flex-1 flex flex-col items-center justify-center p-8 text-center text-veyra-muted bg-veyra-canvas">
+      <div className="flex-1 min-w-0 flex flex-col items-center justify-center p-8 text-center text-veyra-muted bg-veyra-canvas">
         <div className="p-3 rounded-md bg-red-500/10 border border-red-500/30 text-red-400 text-xs mb-3">
           {loadError || 'No se pudo inicializar el documento colaborativo.'}
         </div>

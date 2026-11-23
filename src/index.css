@@ -1617,6 +1617,7 @@ figcaption,
    ═══════════════════════════════════════════════════════════════ */
 .a4-page-mode {
   box-sizing: border-box;
+  overflow-anchor: none;
 }
 
 .a4-page-mode .ProseMirror {

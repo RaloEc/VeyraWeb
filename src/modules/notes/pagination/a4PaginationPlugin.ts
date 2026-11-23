@@ -73,6 +73,31 @@ export function getLiveVirtualBreaks(state: EditorState): A4VirtualBreakWidgetSp
 }
 
 /**
+ * Indica si el plugin de paginación A4 virtual está habilitado en el estado actual.
+ */
+export function isA4PaginationEnabled(state: EditorState): boolean {
+  return Boolean(a4PaginationPluginKey.getState(state)?.enabled);
+}
+
+function areVirtualBreaksEqual(
+  a: A4VirtualBreakWidgetSpec[],
+  b: A4VirtualBreakWidgetSpec[]
+): boolean {
+  if (a === b) return true;
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    if (
+      a[i].pos !== b[i].pos ||
+      a[i].spacerHeight !== b[i].spacerHeight ||
+      a[i].sheetIndex !== b[i].sheetIndex
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
+
+/**
  * Plugin ProseMirror para paginación A4 virtual.
  * Gestiona decoraciones puramente efímeras en la capa de vista sin alterar Yjs ni el documento persistente.
  */
@@ -99,6 +124,13 @@ export function createA4PaginationPlugin(options: CreateA4PaginationPluginOption
           const nextBreaks: A4VirtualBreakWidgetSpec[] = Array.isArray(meta.breaks)
             ? meta.breaks
             : prevState.breaks;
+
+          if (
+            nextEnabled === prevState.enabled &&
+            areVirtualBreaksEqual(nextBreaks, prevState.breaks)
+          ) {
+            return prevState;
+          }
 
           const nextDecorations = buildDecorationSet(newState.doc, nextBreaks, nextEnabled);
           return {
