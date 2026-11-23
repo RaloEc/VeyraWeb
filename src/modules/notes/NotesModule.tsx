@@ -496,49 +496,53 @@ export const NotesModule: React.FC<NotesModuleProps> = ({
           onSelectEvent={handleSelectEvent}
         />
       ) : isCalendarActive ? (
-        <CalendarView
-          eventsHook={eventsHook}
-          remindersHook={remindersHook}
-          allNotes={allNotes}
-          onSelectEvent={handleSelectEvent}
-          onSelectReminder={handleSelectReminder}
-          onClose={handleCloseCalendar}
-          onOpenDashboard={handleOpenDashboard}
-          isSidebarOpen={isSidebarOpen}
-          onToggleSidebar={onToggleSidebar}
-        />
+        <div key="calendar-stage" className="flex-1 min-w-0 flex h-full overflow-hidden veyra-stage-enter">
+          <CalendarView
+            eventsHook={eventsHook}
+            remindersHook={remindersHook}
+            allNotes={allNotes}
+            onSelectEvent={handleSelectEvent}
+            onSelectReminder={handleSelectReminder}
+            onClose={handleCloseCalendar}
+            onOpenDashboard={handleOpenDashboard}
+            isSidebarOpen={isSidebarOpen}
+            onToggleSidebar={onToggleSidebar}
+          />
+        </div>
       ) : (
-        <AgendaDashboardView
-          eventsHook={eventsHook}
-          remindersHook={remindersHook}
-          allNotes={allNotes}
-          folders={folders}
-          userName={userName}
-          userEmail={userEmail}
-          onSelectEvent={handleSelectEvent}
-          onSelectReminder={handleSelectReminder}
-          onSelectNote={handleSelectNote}
-          onCreateNote={async (folderId, eventId, title, contentJson) => {
-            const newNote = await createNote(folderId || null, eventId || null, title);
-            if (newNote) {
-              if (contentJson) {
-                const pageId = crypto.randomUUID();
-                const paginated = {
-                  isPaginated: true,
-                  version: 2,
-                  layout: 'vertical',
-                  pages: [{ id: pageId, content: contentJson }],
-                };
-                await saveNote(newNote.id, { content: JSON.stringify(paginated) });
+        <div key="dashboard-stage" className="flex-1 min-w-0 flex h-full overflow-hidden veyra-stage-enter">
+          <AgendaDashboardView
+            eventsHook={eventsHook}
+            remindersHook={remindersHook}
+            allNotes={allNotes}
+            folders={folders}
+            userName={userName}
+            userEmail={userEmail}
+            onSelectEvent={handleSelectEvent}
+            onSelectReminder={handleSelectReminder}
+            onSelectNote={handleSelectNote}
+            onCreateNote={async (folderId, eventId, title, contentJson) => {
+              const newNote = await createNote(folderId || null, eventId || null, title);
+              if (newNote) {
+                if (contentJson) {
+                  const pageId = crypto.randomUUID();
+                  const paginated = {
+                    isPaginated: true,
+                    version: 2,
+                    layout: 'vertical',
+                    pages: [{ id: pageId, content: contentJson }],
+                  };
+                  await saveNote(newNote.id, { content: JSON.stringify(paginated) });
+                }
+                return newNote;
               }
-              return newNote;
-            }
-            return null;
-          }}
-          onOpenFullCalendar={handleOpenCalendar}
-          isSidebarOpen={isSidebarOpen}
-          onToggleSidebar={onToggleSidebar}
-        />
+              return null;
+            }}
+            onOpenFullCalendar={handleOpenCalendar}
+            isSidebarOpen={isSidebarOpen}
+            onToggleSidebar={onToggleSidebar}
+          />
+        </div>
       )}
     </div>
   );

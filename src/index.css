@@ -1797,5 +1797,179 @@ figcaption,
   margin-left: 0;
 }
 
+/* ==========================================================================
+   Transiciones suaves al abrir y cerrar notas (solo GPU: transform + opacity)
+   ========================================================================== */
+
+@keyframes veyra-note-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes veyra-note-fade-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes veyra-note-chrome-in {
+  from {
+    opacity: 0;
+    transform: translate3d(0, -6px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes veyra-note-chrome-out {
+  from {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+  to {
+    opacity: 0;
+    transform: translate3d(0, -6px, 0);
+  }
+}
+
+@keyframes veyra-note-sheet-in {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 20px, 0) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* En A4 no aplicamos scale en la entrada para no alterar las mediciones getBoundingClientRect() */
+@keyframes veyra-note-sheet-a4-in {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 22px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes veyra-note-sheet-out {
+  from {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translate3d(0, 18px, 0) scale(0.978);
+  }
+}
+
+@keyframes veyra-note-pages-in {
+  from {
+    opacity: 0;
+    transform: translate3d(16px, 0, 0);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes veyra-note-pages-out {
+  from {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+  to {
+    opacity: 0;
+    transform: translate3d(16px, 0, 0);
+  }
+}
+
+@keyframes veyra-stage-in {
+  from {
+    opacity: 0;
+    transform: scale(0.99);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.veyra-note-enter {
+  animation: veyra-note-fade-in 220ms cubic-bezier(0.16, 1, 0.3, 1) backwards;
+}
+
+.veyra-note-exit {
+  animation: veyra-note-fade-out 240ms cubic-bezier(0.32, 0.72, 0, 1) forwards;
+}
+
+.veyra-note-chrome-enter {
+  animation: veyra-note-chrome-in 280ms cubic-bezier(0.16, 1, 0.3, 1) backwards;
+}
+
+.veyra-note-chrome-exit {
+  animation: veyra-note-chrome-out 200ms cubic-bezier(0.32, 0.72, 0, 1) forwards;
+}
+
+.veyra-note-sheet-enter {
+  animation: veyra-note-sheet-in 380ms cubic-bezier(0.16, 1, 0.3, 1) 25ms backwards;
+  transform-origin: center top;
+}
+
+.veyra-note-sheet-a4-enter {
+  animation: veyra-note-sheet-a4-in 380ms cubic-bezier(0.16, 1, 0.3, 1) 25ms backwards;
+}
+
+.veyra-note-sheet-exit {
+  animation: veyra-note-sheet-out 240ms cubic-bezier(0.32, 0.72, 0, 1) forwards;
+  transform-origin: center top;
+}
+
+.veyra-note-pages-enter {
+  animation: veyra-note-pages-in 340ms cubic-bezier(0.16, 1, 0.3, 1) 45ms backwards;
+}
+
+.veyra-note-pages-exit {
+  animation: veyra-note-pages-out 200ms cubic-bezier(0.32, 0.72, 0, 1) forwards;
+}
+
+.veyra-note-loading-enter {
+  animation: veyra-note-fade-in 200ms ease-out 90ms both;
+}
+
+.veyra-stage-enter {
+  animation: veyra-stage-in 260ms cubic-bezier(0.16, 1, 0.3, 1) backwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .veyra-note-enter,
+  .veyra-note-exit,
+  .veyra-note-chrome-enter,
+  .veyra-note-chrome-exit,
+  .veyra-note-sheet-enter,
+  .veyra-note-sheet-a4-enter,
+  .veyra-note-sheet-exit,
+  .veyra-note-pages-enter,
+  .veyra-note-pages-exit,
+  .veyra-note-loading-enter,
+  .veyra-stage-enter {
+    animation-duration: 0.01ms !important;
+    animation-delay: 0ms !important;
+  }
+}
+
 
 

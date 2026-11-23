@@ -235,6 +235,9 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
     }
     return 'infinite';
   });
+  const [initialPageFormat] = useState<'infinite' | 'a4'>(pageFormat);
+  const [isClosing, setIsClosing] = useState(false);
+  const isClosingRef = useRef(false);
   const pageFormatRef = useRef<'infinite' | 'a4'>(pageFormat);
   const docSheetRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -967,20 +970,38 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
   }, [serializeNoteContent]);
 
   const handleClose = async () => {
+    if (isClosingRef.current) return;
+    isClosingRef.current = true;
+    setIsClosing(true);
+
     if (saveDebounceTimeoutRef.current) {
       clearTimeout(saveDebounceTimeoutRef.current);
     }
-    try {
-      const { content, previewText } = serializeNoteContent();
-      const currentTitle = titleRef.current || noteRef.current.title || 'Nota sin título';
-      await onSaveNoteRef.current(noteRef.current.id, {
-        title: currentTitle,
-        content,
-        previewText,
-      });
-    } catch (err) {
-      console.error('[NoteEditor] Error saving on close:', err);
-    }
+
+    const prefersReducedMotion =
+      typeof window !== 'undefined' &&
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const animationWait = prefersReducedMotion
+      ? Promise.resolve()
+      : new Promise<void>((resolve) => {
+          window.setTimeout(resolve, 235);
+        });
+
+    const savePromise = (async () => {
+      try {
+        const { content, previewText } = serializeNoteContent();
+        const currentTitle = titleRef.current || noteRef.current.title || 'Nota sin título';
+        await onSaveNoteRef.current(noteRef.current.id, {
+          title: currentTitle,
+          content,
+          previewText,
+        });
+      } catch (err) {
+        console.error('[NoteEditor] Error saving on close:', err);
+      }
+    })();
+
+    await Promise.all([savePromise, animationWait]);
     onCloseNote?.();
   };
 
@@ -2372,7 +2393,12 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
   }, [note.event_id, note.folder_id, note.id, events, folders]);
 
   return (
-    <div className="flex-1 min-w-0 flex flex-col h-full bg-veyra-canvas overflow-hidden relative">
+    <div
+      className={cn(
+        'flex-1 min-w-0 flex flex-col h-full bg-veyra-canvas overflow-hidden relative',
+        isClosing ? 'veyra-note-exit pointer-events-none' : 'veyra-note-enter'
+      )}
+    >
       {note.deleted === 1 && (
         <div className="bg-red-500/10 border-b border-red-500/20 px-4 py-1.5 flex items-center justify-between text-xs text-red-300 select-none shrink-0">
           <span>Esta nota está en la papelera.</span>
@@ -2393,7 +2419,8 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
         ref={editorHeaderRef}
         className={cn(
           'h-10 border-b border-veyra-border flex items-center justify-between gap-2 text-xs shrink-0 select-none bg-veyra-card/30',
-          isTightHeader ? 'px-2.5' : 'px-3 sm:px-4'
+          isTightHeader ? 'px-2.5' : 'px-3 sm:px-4',
+          isClosing ? 'veyra-note-chrome-exit' : 'veyra-note-chrome-enter'
         )}
       >
         <div className="flex items-center gap-1.5 min-w-0 flex-1">
@@ -2856,56 +2883,58 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
         )}
 
       {/* Sleek Minimal Formatting Toolbar OR Word Header/Footer Design Ribbon */}
-      {pageFormat === 'a4' && activeHeaderFooterZone !== null ? (
-        <A4HeaderFooterRibbon
-          config={a4HeaderFooterConfig}
-          onChange={handleUpdateHeaderFooterConfig}
-          activeZone={activeHeaderFooterZone}
-          activeSheetIndex={activeHeaderFooterSheetIdx}
-          totalSheets={a4PageBreaks.length + 1}
-          activeSlot={activeHeaderFooterSlot}
-          onSelectZone={(zone) => {
-            setActiveHeaderFooterZone(zone);
-            scrollToHeaderFooterZone(zone, activeHeaderFooterSheetIdx);
-          }}
-          onNavigateSheet={(nextIdx) => {
-            setActiveHeaderFooterSheetIdx(nextIdx);
-            scrollToHeaderFooterZone(activeHeaderFooterZone, nextIdx);
-          }}
-          onInsertImageFile={async (file) => {
-            const sheetNum = activeHeaderFooterSheetIdx + 1;
-            const key = resolveSlotsKey(
-              a4HeaderFooterConfig,
-              activeHeaderFooterZone,
-              sheetNum
-            );
-            const currentImages = a4HeaderFooterConfig[key].images || [];
-            const newImg = await createHeaderFooterImageFromFile(
-              file,
-              currentImages,
-              noteRef.current.id
-            );
-            handleUpdateHeaderFooterConfig({
-              ...a4HeaderFooterConfig,
-              [key]: {
-                ...a4HeaderFooterConfig[key],
-                images: [...currentImages, newImg],
-              },
-            });
-          }}
-          onClose={() => setActiveHeaderFooterZone(null)}
-        />
-      ) : (
-        <EditorToolbar
-          editor={editor}
-          onUploadImage={handleUploadImage}
-          onAttachFromDrive={userRole !== 'viewer' ? handleAttachFromDrive : undefined}
-          isAttachingDrive={isAttachingDrive}
-          onOpenTemplates={() => setIsTemplatesModalOpen(true)}
-          showFormattingMarks={showFormattingMarks}
-          onToggleFormattingMarks={handleToggleFormattingMarks}
-        />
-      )}
+      <div className={cn('shrink-0', isClosing ? 'veyra-note-chrome-exit' : 'veyra-note-chrome-enter')}>
+        {pageFormat === 'a4' && activeHeaderFooterZone !== null ? (
+          <A4HeaderFooterRibbon
+            config={a4HeaderFooterConfig}
+            onChange={handleUpdateHeaderFooterConfig}
+            activeZone={activeHeaderFooterZone}
+            activeSheetIndex={activeHeaderFooterSheetIdx}
+            totalSheets={a4PageBreaks.length + 1}
+            activeSlot={activeHeaderFooterSlot}
+            onSelectZone={(zone) => {
+              setActiveHeaderFooterZone(zone);
+              scrollToHeaderFooterZone(zone, activeHeaderFooterSheetIdx);
+            }}
+            onNavigateSheet={(nextIdx) => {
+              setActiveHeaderFooterSheetIdx(nextIdx);
+              scrollToHeaderFooterZone(activeHeaderFooterZone, nextIdx);
+            }}
+            onInsertImageFile={async (file) => {
+              const sheetNum = activeHeaderFooterSheetIdx + 1;
+              const key = resolveSlotsKey(
+                a4HeaderFooterConfig,
+                activeHeaderFooterZone,
+                sheetNum
+              );
+              const currentImages = a4HeaderFooterConfig[key].images || [];
+              const newImg = await createHeaderFooterImageFromFile(
+                file,
+                currentImages,
+                noteRef.current.id
+              );
+              handleUpdateHeaderFooterConfig({
+                ...a4HeaderFooterConfig,
+                [key]: {
+                  ...a4HeaderFooterConfig[key],
+                  images: [...currentImages, newImg],
+                },
+              });
+            }}
+            onClose={() => setActiveHeaderFooterZone(null)}
+          />
+        ) : (
+          <EditorToolbar
+            editor={editor}
+            onUploadImage={handleUploadImage}
+            onAttachFromDrive={userRole !== 'viewer' ? handleAttachFromDrive : undefined}
+            isAttachingDrive={isAttachingDrive}
+            onOpenTemplates={() => setIsTemplatesModalOpen(true)}
+            showFormattingMarks={showFormattingMarks}
+            onToggleFormattingMarks={handleToggleFormattingMarks}
+          />
+        )}
+      </div>
 
       {/* Workspace Area: Main Note Canvas + Docked Right Pages Sidebar */}
       <div
@@ -2933,6 +2962,11 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
             data-sheet-theme={isPaperLight ? 'light' : undefined}
             className={cn(
               'mx-auto w-full flex flex-col transition-[background-color,border-color,box-shadow] duration-150 ease-[cubic-bezier(0.16,1,0.3,1)] relative',
+              isClosing
+                ? 'veyra-note-sheet-exit'
+                : initialPageFormat === 'a4'
+                  ? 'veyra-note-sheet-a4-enter'
+                  : 'veyra-note-sheet-enter',
               isPaperLight && 'sheet-light-mode',
               pageFormat === 'a4'
                 ? cn(
@@ -3119,7 +3153,8 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
         <div
           className={cn(
             'h-full border-l border-veyra-border bg-veyra-card flex flex-col shrink-0 overflow-hidden transition-[width,opacity] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)]',
-            isPagesSidebarOpen ? 'w-80 opacity-100' : 'w-0 opacity-0 pointer-events-none'
+            isPagesSidebarOpen ? 'w-80 opacity-100' : 'w-0 opacity-0 pointer-events-none',
+            isClosing ? 'veyra-note-pages-exit' : isPagesSidebarOpen && 'veyra-note-pages-enter'
           )}
         >
           <div style={{ width: '320px' }} className="h-full flex flex-col">
@@ -3190,7 +3225,7 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
         targetName={title || note.title || 'Nota sin título'}
         ownerId={note.user_id}
         currentUserId={currentUserId}
-        onLeftCollaboration={onCloseNote}
+        onLeftCollaboration={handleClose}
       />
     </div>
   );
@@ -3346,7 +3381,7 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
             </button>
           </div>
         ) : null}
-        <div className="flex-1 flex flex-col items-center justify-center p-8 text-center text-veyra-muted">
+        <div className="flex-1 flex flex-col items-center justify-center p-8 text-center text-veyra-muted veyra-note-loading-enter">
           <Loader2 className="w-6 h-6 text-accent animate-spin mb-3" />
           <h3 className="text-sm font-medium text-veyra-text">Cargando nota...</h3>
         </div>
