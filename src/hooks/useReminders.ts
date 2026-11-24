@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
-import type { Reminder, ReminderPriority, ReminderControlLevel, Subtask } from '../types/reminders';
+import { normalizeReminderControlLevel, type Reminder, type ReminderPriority, type ReminderControlLevel, type Subtask } from '../types/reminders';
 import { isDateToday, parseSubtasks } from '../lib/utils';
 import { computeNextReminderOccurrence } from '../services/recurrence/recurrenceEngine';
 import { localDB } from '../lib/db/local-db';
@@ -187,8 +187,10 @@ export function useReminders(userId?: string) {
       const newId = crypto.randomUUID();
       const nowMs = Date.now();
 
-      const priorityNum = payload.priority || (payload.control_level === 'critical' ? 3 : payload.control_level === 'strict' ? 2 : 1);
-      const controlLevel = payload.control_level || (priorityNum === 3 ? 'critical' : priorityNum === 2 ? 'strict' : 'normal');
+      const controlLevel: ReminderControlLevel = payload.control_level
+        ? normalizeReminderControlLevel(payload.control_level)
+        : (payload.priority === 3 ? 'critical' : 'normal');
+      const priorityNum: ReminderPriority = controlLevel === 'critical' ? 3 : 1;
       const subtasksJson = payload.subtasks && payload.subtasks.length > 0 ? JSON.stringify(payload.subtasks) : null;
 
       const newReminder: Reminder = {
@@ -329,8 +331,8 @@ export function useReminders(userId?: string) {
             title: targetReminder.title,
             description: targetReminder.description || undefined,
             due_date_ms: nextDateMs,
-            control_level: (targetReminder.control_level as ReminderControlLevel) || 'normal',
-            priority: (targetReminder.priority as ReminderPriority) || 1,
+            control_level: normalizeReminderControlLevel(targetReminder.control_level),
+            priority: normalizeReminderControlLevel(targetReminder.control_level) === 'critical' ? 3 : 1,
             repeat_rule: targetReminder.repeat_rule,
             attachments: targetReminder.attachments,
             links: targetReminder.links,
@@ -442,15 +444,16 @@ export function useReminders(userId?: string) {
       }
     ) => {
       const nowMs = Date.now();
-      const priorityNum =
-        updates.priority !== undefined
-          ? updates.priority
-          : updates.control_level === 'critical'
-          ? 3
-          : updates.control_level === 'strict'
-          ? 2
-          : updates.control_level === 'normal'
-          ? 1
+      const normalizedControlLevel =
+        updates.control_level !== undefined
+          ? normalizeReminderControlLevel(updates.control_level)
+          : undefined;
+
+      const priorityNum: ReminderPriority | undefined =
+        normalizedControlLevel !== undefined
+          ? (normalizedControlLevel === 'critical' ? 3 : 1)
+          : updates.priority !== undefined
+          ? (updates.priority === 3 ? 3 : 1)
           : undefined;
 
       const subtasksJson = updates.subtasks ? JSON.stringify(updates.subtasks) : undefined;
@@ -465,7 +468,7 @@ export function useReminders(userId?: string) {
               ...(updates.title !== undefined && { title: updates.title.trim() }),
               ...(updates.description !== undefined && { description: updates.description?.trim() || null }),
               ...(updates.due_date_ms !== undefined && { due_date_ms: updates.due_date_ms }),
-              ...(updates.control_level !== undefined && { control_level: updates.control_level }),
+              ...(normalizedControlLevel !== undefined && { control_level: normalizedControlLevel }),
               ...(priorityNum !== undefined && { priority: priorityNum }),
               ...(updates.repeat_rule !== undefined && { repeat_rule: updates.repeat_rule }),
               ...(subtasksJson !== undefined && { subtasks: subtasksJson }),
@@ -486,7 +489,7 @@ export function useReminders(userId?: string) {
       if (updates.title !== undefined) updatePayload.title = updates.title.trim();
       if (updates.description !== undefined) updatePayload.description = updates.description?.trim() || null;
       if (updates.due_date_ms !== undefined) updatePayload.due_date_ms = updates.due_date_ms;
-      if (updates.control_level !== undefined) updatePayload.control_level = updates.control_level;
+      if (normalizedControlLevel !== undefined) updatePayload.control_level = normalizedControlLevel;
       if (priorityNum !== undefined) updatePayload.priority = priorityNum;
       if (updates.repeat_rule !== undefined) updatePayload.repeat_rule = updates.repeat_rule;
       if (subtasksJson !== undefined) updatePayload.subtasks = subtasksJson;

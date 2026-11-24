@@ -83,21 +83,13 @@ export function getControlLevelInfo(
   priority?: number | null
 ): { label: string; bg: string; text: string; border: string } {
   const level = (controlLevel || '').toLowerCase();
-  
-  if (level === 'critical' || priority === 3 || (priority === 2 && level !== 'strict')) {
+
+  if (level === 'critical' || (!level && priority === 3)) {
     return {
       label: 'Crítico',
       bg: 'bg-red-500/10',
       text: 'text-red-400',
       border: 'border-red-500/30',
-    };
-  }
-  if (level === 'strict' || priority === 2 || (priority === 1 && level !== 'normal')) {
-    return {
-      label: 'Estricto',
-      bg: 'bg-amber-500/10',
-      text: 'text-amber-400',
-      border: 'border-amber-500/30',
     };
   }
 

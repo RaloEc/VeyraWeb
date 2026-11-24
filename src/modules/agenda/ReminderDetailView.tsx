@@ -19,7 +19,7 @@ import {
   ExternalLink,
   Share2,
 } from 'lucide-react';
-import type { Reminder, Subtask, ReminderControlLevel } from '../../types/reminders';
+import { normalizeReminderControlLevel, type Reminder, type Subtask, type ReminderControlLevel } from '../../types/reminders';
 import type { CalendarEvent } from '../../hooks/useEvents';
 import type { Note } from '../../types/notes';
 import type { useReminders } from '../../hooks/useReminders';
@@ -71,8 +71,9 @@ export const ReminderDetailView: React.FC<ReminderDetailViewProps> = ({
     setDescription(reminder.description || '');
     setSelectedEventId(reminder.event_id || '');
     setControlLevel(
-      reminder.control_level ||
-        (reminder.priority === 3 ? 'critical' : reminder.priority === 2 ? 'strict' : 'normal')
+      reminder.control_level
+        ? normalizeReminderControlLevel(reminder.control_level)
+        : (reminder.priority === 3 ? 'critical' : 'normal')
     );
     if (reminder.due_date_ms) {
       const d = new Date(reminder.due_date_ms);
@@ -118,7 +119,7 @@ export const ReminderDetailView: React.FC<ReminderDetailViewProps> = ({
     const [y, m, d] = dateVal.split('-').map(Number);
     const [h, min] = timeVal.split(':').map(Number);
     const updatedDue = new Date(y, m - 1, d, h || 0, min || 0).getTime();
-    const priorityNum = controlLevel === 'critical' ? 3 : controlLevel === 'strict' ? 2 : 1;
+    const priorityNum = controlLevel === 'critical' ? 3 : 1;
 
     await remindersHook.updateReminder(reminder.id, {
       title: title.trim() || reminder.title,
@@ -137,12 +138,9 @@ export const ReminderDetailView: React.FC<ReminderDetailViewProps> = ({
 
   // Priority classification
   const isCritical = reminder.control_level === 'critical' || reminder.priority === 3;
-  const isStrict = reminder.control_level === 'strict' || reminder.priority === 2;
 
   const priorityColor = isCritical
     ? '#FB7185'
-    : isStrict
-    ? '#FB923C'
     : palette.primary || '#3B82F6';
 
   // Subtasks
@@ -204,11 +202,7 @@ export const ReminderDetailView: React.FC<ReminderDetailViewProps> = ({
     return `${capitalized} • ${timeStr}`;
   }, [reminder.due_date_ms]);
 
-  const priorityLabel = isCritical
-    ? 'Alta'
-    : isStrict
-    ? 'Media'
-    : 'Normal';
+  const priorityLabel = isCritical ? 'Alta' : 'Normal';
 
   // Add new subtask
   const handleAddSubtask = async (e: React.FormEvent) => {
@@ -450,9 +444,6 @@ export const ReminderDetailView: React.FC<ReminderDetailViewProps> = ({
                   >
                     <option value="normal" className="bg-veyra-elevated text-veyra-text normal-case font-normal text-xs">
                       Prioridad Normal
-                    </option>
-                    <option value="strict" className="bg-veyra-elevated text-amber-400 normal-case font-normal text-xs">
-                      Prioridad Media (Estricto)
                     </option>
                     <option value="critical" className="bg-veyra-elevated text-rose-400 normal-case font-normal text-xs">
                       Prioridad Alta (Crítico)

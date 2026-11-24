@@ -1,13 +1,30 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { PenTool, FileText, Sparkles, Trash2 } from 'lucide-react';
+import { PenTool, FileText, Sparkles, Trash2, Copy, Check } from 'lucide-react';
 import { toast } from 'sonner';
+import { WidgetCard } from '../WidgetCard';
 
 interface QuickScratchpadWidgetProps {
-  onCreateNote: (title: string, contentJson?: string) => Promise<{ id: string } | null | void>;
+  onCreateNote: (title: string, contentHtml?: string) => Promise<{ id: string } | null | void>;
   onSelectNote: (noteId: string) => void;
 }
 
 const STORAGE_KEY = 'veyra_scratchpad_content';
+
+function escapeHtml(raw: string): string {
+  return raw
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function linesToSafeHtml(text: string): string {
+  const lines = text.split('\n');
+  return lines
+    .map((line) => (line.length > 0 ? `<p>${escapeHtml(line)}</p>` : '<p></p>'))
+    .join('');
+}
 
 export const QuickScratchpadWidget: React.FC<QuickScratchpadWidgetProps> = ({
   onCreateNote,
@@ -19,6 +36,7 @@ export const QuickScratchpadWidget: React.FC<QuickScratchpadWidgetProps> = ({
   });
 
   const [isConverting, setIsConverting] = useState(false);
+  const [copied, setCopied] = useState(false);
   const debounceRef = useRef<number | null>(null);
 
   useEffect(() => {
@@ -27,7 +45,7 @@ export const QuickScratchpadWidget: React.FC<QuickScratchpadWidgetProps> = ({
       if (typeof window !== 'undefined') {
         localStorage.setItem(STORAGE_KEY, content);
       }
-    }, 500);
+    }, 450);
 
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
@@ -41,23 +59,29 @@ export const QuickScratchpadWidget: React.FC<QuickScratchpadWidgetProps> = ({
     }
   };
 
+  const handleCopy = async () => {
+    if (!content.trim()) return;
+    try {
+      await navigator.clipboard.writeText(content);
+      setCopied(true);
+      toast.success('Texto copiado al portapapeles');
+      window.setTimeout(() => setCopied(false), 1800);
+    } catch {
+      toast.error('No se pudo copiar al portapapeles');
+    }
+  };
+
   const handleConvertToNote = async () => {
     if (!content.trim() || isConverting) return;
     setIsConverting(true);
 
     try {
-      const lines = content.trim().split('\n');
-      const title = lines[0].slice(0, 80) || 'Nota rápida';
+      const trimmed = content.trim();
+      const firstLine = trimmed.split('\n').find((l) => l.trim().length > 0) || 'Nota rápida';
+      const title = firstLine.trim().slice(0, 80);
+      const html = linesToSafeHtml(trimmed);
 
-      const doc = {
-        type: 'doc',
-        content: lines.map((line) => ({
-          type: 'paragraph',
-          content: line ? [{ type: 'text', text: line }] : [],
-        })),
-      };
-
-      const result = await onCreateNote(title, JSON.stringify(doc));
+      const result = await onCreateNote(title, html);
       if (result && 'id' in result && result.id) {
         toast.success('¡Nota creada exitosamente!');
         setContent('');
@@ -74,64 +98,91 @@ export const QuickScratchpadWidget: React.FC<QuickScratchpadWidgetProps> = ({
     }
   };
 
-  const wordCount = content.trim() ? content.trim().split(/\s+/).length : 0;
+  const trimmedContent = content.trim();
+  const wordCount = trimmedContent ? trimmedContent.split(/\s+/).length : 0;
+  const charCount = content.length;
 
   return (
-    <div className="flex flex-col h-full rounded-xl bg-veyra-card border border-veyra-border p-3.5 sm:p-4 shadow-xs min-h-0 overflow-hidden">
-      {/* Header */}
-      <div className="flex items-center justify-between pb-2.5 border-b border-veyra-border/60 mb-2.5 shrink-0">
-        <div className="flex items-center gap-2 min-w-0">
-          <div className="w-7 h-7 rounded-lg bg-amber-500/10 text-amber-400 flex items-center justify-center shrink-0">
-            <PenTool className="w-4 h-4" />
-          </div>
-          <div className="min-w-0">
-            <h3 className="text-xs sm:text-sm font-semibold text-veyra-text tracking-tight truncate">
-              Bloc Rápido
-            </h3>
-            <p className="text-[10px] sm:text-[11px] text-veyra-muted truncate">
-              {wordCount} {wordCount === 1 ? 'palabra' : 'palabras'}
-            </p>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-1 shrink-0 ml-1">
-          {content.trim() && (
-            <button
-              type="button"
-              onClick={handleClear}
-              title="Vaciar bloc"
-              className="p-1 rounded text-veyra-subtle hover:text-rose-400 transition-colors cursor-pointer"
-            >
-              <Trash2 className="w-3.5 h-3.5" />
-            </button>
+    <WidgetCard
+      title="Bloc Rápido"
+      subtitle="Borrador"
+      icon={<PenTool className="w-4 h-4" />}
+      iconClassName="text-amber-400"
+      headerRight={
+        <button
+          type="button"
+          disabled={isConverting || !trimmedContent}
+          onClick={handleConvertToNote}
+          title="Convertir este apunte en una nota en Veyra"
+          className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-accent/15 text-accent text-xs font-semibold hover:bg-accent/25 transition-colors disabled:opacity-35 disabled:pointer-events-none cursor-pointer shrink-0"
+        >
+          {isConverting ? (
+            <Sparkles className="w-3.5 h-3.5 animate-spin" />
+          ) : (
+            <FileText className="w-3.5 h-3.5 shrink-0" />
           )}
-
-          <button
-            type="button"
-            disabled={isConverting || !content.trim()}
-            onClick={handleConvertToNote}
-            title="Convertir este apunte en una nota en Veyra"
-            className="flex items-center gap-1 px-2 py-1 rounded-md bg-accent/15 border border-accent/30 text-accent text-xs font-semibold hover:bg-accent/25 transition-colors disabled:opacity-40 disabled:pointer-events-none cursor-pointer shrink-0"
-          >
-            {isConverting ? (
-              <Sparkles className="w-3 h-3 animate-spin" />
-            ) : (
-              <FileText className="w-3 h-3 shrink-0" />
-            )}
-            <span className="hidden sm:inline">Crear Nota</span>
-            <span className="sm:hidden">Nota</span>
-          </button>
-        </div>
-      </div>
-
-      <div className="flex-1 min-h-0 flex flex-col">
+          <span>Convertir a nota</span>
+        </button>
+      }
+    >
+      <div className="flex-1 min-h-0 flex flex-col rounded-lg bg-veyra-card/35 focus-within:bg-veyra-card/60 border-l-2 border-veyra-border focus-within:border-accent transition-colors overflow-hidden">
         <textarea
           value={content}
           onChange={(e) => setContent(e.target.value)}
-          placeholder="Escribe ideas rápidas aquí... Se guardan automáticamente y puedes convertirlas a notas con 1 clic."
-          className="flex-1 w-full bg-veyra-elevated/40 border border-veyra-border/60 rounded-lg p-2.5 text-xs text-veyra-text placeholder:text-veyra-subtle/70 focus:outline-hidden focus:border-accent/50 focus:bg-veyra-elevated/60 transition-colors resize-none custom-scrollbar min-h-[60px]"
+          placeholder="Escribe ideas rápidas, pendientes o fragmentos aquí... Se guardan automáticamente."
+          style={{ backgroundColor: 'transparent', color: 'var(--text-main)' }}
+          className="flex-1 w-full appearance-none bg-transparent border-0 p-3 text-[13px] leading-relaxed text-veyra-text placeholder:text-veyra-muted/60 focus:outline-none resize-none custom-scrollbar min-h-[80px]"
         />
+
+        <div className="px-3 py-1.5 border-t border-veyra-border/50 flex items-center justify-between gap-2 text-[11px] text-veyra-muted shrink-0">
+          <div className="flex items-center gap-2 min-w-0 truncate">
+            <span className="inline-flex items-center gap-1.5 truncate">
+              <span
+                className={
+                  trimmedContent
+                    ? 'w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0'
+                    : 'w-1.5 h-1.5 rounded-full bg-veyra-subtle shrink-0'
+                }
+              />
+              <span className="truncate">
+                {trimmedContent ? 'Guardado localmente' : 'Listo para escribir'}
+              </span>
+            </span>
+            <span className="text-veyra-subtle shrink-0">·</span>
+            <span className="font-mono text-[10.5px] shrink-0">
+              {wordCount} {wordCount === 1 ? 'pal.' : 'pals.'} / {charCount} car.
+            </span>
+          </div>
+
+          {trimmedContent && (
+            <div className="flex items-center gap-1 shrink-0">
+              <button
+                type="button"
+                onClick={handleCopy}
+                title="Copiar texto"
+                className="flex items-center gap-1 px-1.5 py-0.5 rounded hover:bg-veyra-elevated/70 text-veyra-muted hover:text-veyra-text transition-colors cursor-pointer"
+              >
+                {copied ? (
+                  <Check className="w-3 h-3 text-emerald-400" />
+                ) : (
+                  <Copy className="w-3 h-3" />
+                )}
+                <span>{copied ? 'Copiado' : 'Copiar'}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleClear}
+                title="Limpiar bloc"
+                className="flex items-center gap-1 px-1.5 py-0.5 rounded hover:bg-rose-500/10 text-veyra-muted hover:text-rose-400 transition-colors cursor-pointer"
+              >
+                <Trash2 className="w-3 h-3" />
+                <span>Limpiar</span>
+              </button>
+            </div>
+          )}
+        </div>
       </div>
-    </div>
+    </WidgetCard>
   );
 };

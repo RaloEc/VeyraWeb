@@ -83,7 +83,7 @@ import { cn } from '../../lib/utils';
 import type { Note, CollabUser, Folder, NoteContentPaginated, NotePage } from '../../types/notes';
 import type { CalendarEvent } from '../../hooks/useEvents';
 import { getEventCategoryTag } from './NotesSidebar';
-import { Loader2, PanelLeft, X, Layers, GraduationCap, Folder as FolderIcon, Calendar, FileDown, FileText, ScrollText, Share2, Eye, MoreHorizontal, Check } from 'lucide-react';
+import { PanelLeft, X, Layers, GraduationCap, Folder as FolderIcon, Calendar, FileDown, FileText, ScrollText, Share2, Eye, MoreHorizontal, Check } from 'lucide-react';
 import { useTheme } from '../../theme/ThemeProvider';
 import { PagesSidebar, type PageMeta, type PageBlock } from './PagesSidebar';
 import { ExportPdfModal } from './pdf/ExportPdfModal';
@@ -163,6 +163,8 @@ interface YjsActiveEditorProps {
   events?: CalendarEvent[];
   onSelectFolder?: (folderId: string | null) => void;
   onSelectEvent?: (eventId: string) => void;
+  entryMode?: 'open' | 'switch';
+  isSwitchingNote?: boolean;
 }
 
 const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
@@ -185,6 +187,8 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
   events,
   onSelectFolder,
   onSelectEvent,
+  entryMode = 'open',
+  isSwitchingNote = false,
 }) => {
   const [activePageId, setActivePageId] = useState<string>(() => {
     if (typeof window !== 'undefined') {
@@ -236,8 +240,23 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
     return 'infinite';
   });
   const [initialPageFormat] = useState<'infinite' | 'a4'>(pageFormat);
-  const [isClosing, setIsClosing] = useState(false);
+  const [animPhase, setAnimPhase] = useState<'entering' | 'entered' | 'closing'>('entering');
+  const [showSwitchWipeEdge, setShowSwitchWipeEdge] = useState(entryMode === 'switch');
   const isClosingRef = useRef(false);
+
+  useEffect(() => {
+    let raf1 = 0;
+    let raf2 = 0;
+    raf1 = requestAnimationFrame(() => {
+      raf2 = requestAnimationFrame(() => {
+        setAnimPhase((prev) => (prev === 'entering' ? 'entered' : prev));
+      });
+    });
+    return () => {
+      cancelAnimationFrame(raf1);
+      cancelAnimationFrame(raf2);
+    };
+  }, []);
   const pageFormatRef = useRef<'infinite' | 'a4'>(pageFormat);
   const docSheetRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -972,20 +991,20 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
   const handleClose = async () => {
     if (isClosingRef.current) return;
     isClosingRef.current = true;
-    setIsClosing(true);
+    setAnimPhase('closing');
 
     if (saveDebounceTimeoutRef.current) {
       clearTimeout(saveDebounceTimeoutRef.current);
     }
 
-    const prefersReducedMotion =
-      typeof window !== 'undefined' &&
-      window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    const animationWait = prefersReducedMotion
-      ? Promise.resolve()
-      : new Promise<void>((resolve) => {
-          window.setTimeout(resolve, 235);
-        });
+    // Permitir que el navegador pinte el primer frame de salida antes del guardado síncrono
+    await new Promise<void>((resolve) => {
+      requestAnimationFrame(() => resolve());
+    });
+
+    const animationWait = new Promise<void>((resolve) => {
+      window.setTimeout(resolve, 310);
+    });
 
     const savePromise = (async () => {
       try {
@@ -2396,7 +2415,13 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
     <div
       className={cn(
         'flex-1 min-w-0 flex flex-col h-full bg-veyra-canvas overflow-hidden relative',
-        isClosing ? 'veyra-note-exit pointer-events-none' : 'veyra-note-enter'
+        animPhase === 'closing'
+          ? 'veyra-note-root-closing'
+          : entryMode === 'open'
+            ? animPhase === 'entered'
+              ? 'veyra-note-root-entered'
+              : 'veyra-note-root-entering'
+            : undefined
       )}
     >
       {note.deleted === 1 && (
@@ -2420,7 +2445,13 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
         className={cn(
           'h-10 border-b border-veyra-border flex items-center justify-between gap-2 text-xs shrink-0 select-none bg-veyra-card/30',
           isTightHeader ? 'px-2.5' : 'px-3 sm:px-4',
-          isClosing ? 'veyra-note-chrome-exit' : 'veyra-note-chrome-enter'
+          animPhase === 'closing'
+            ? 'veyra-note-chrome-closing'
+            : entryMode === 'open'
+              ? animPhase === 'entered'
+                ? 'veyra-note-chrome-entered'
+                : 'veyra-note-chrome-entering'
+              : undefined
         )}
       >
         <div className="flex items-center gap-1.5 min-w-0 flex-1">
@@ -2883,7 +2914,18 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
         )}
 
       {/* Sleek Minimal Formatting Toolbar OR Word Header/Footer Design Ribbon */}
-      <div className={cn('shrink-0', isClosing ? 'veyra-note-chrome-exit' : 'veyra-note-chrome-enter')}>
+      <div
+        className={cn(
+          'shrink-0',
+          animPhase === 'closing'
+            ? 'veyra-note-chrome-closing'
+            : entryMode === 'open'
+              ? animPhase === 'entered'
+                ? 'veyra-note-chrome-entered'
+                : 'veyra-note-chrome-entering'
+              : undefined
+        )}
+      >
         {pageFormat === 'a4' && activeHeaderFooterZone !== null ? (
           <A4HeaderFooterRibbon
             config={a4HeaderFooterConfig}
@@ -2962,11 +3004,15 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
             data-sheet-theme={isPaperLight ? 'light' : undefined}
             className={cn(
               'mx-auto w-full flex flex-col transition-[background-color,border-color,box-shadow] duration-150 ease-[cubic-bezier(0.16,1,0.3,1)] relative',
-              isClosing
-                ? 'veyra-note-sheet-exit'
-                : initialPageFormat === 'a4'
-                  ? 'veyra-note-sheet-a4-enter'
-                  : 'veyra-note-sheet-enter',
+              animPhase === 'closing'
+                ? 'veyra-note-sheet-closing'
+                : entryMode === 'open'
+                  ? animPhase === 'entered'
+                    ? 'veyra-note-sheet-entered'
+                    : initialPageFormat === 'a4'
+                      ? 'veyra-note-sheet-a4-entering'
+                      : 'veyra-note-sheet-entering'
+                  : undefined,
               isPaperLight && 'sheet-light-mode',
               pageFormat === 'a4'
                 ? cn(
@@ -2986,6 +3032,18 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
             )}
           >
             {pageFormat === 'a4' && <style ref={a4StyleRef} />}
+
+            {showSwitchWipeEdge && animPhase === 'entered' && !isSwitchingNote && (
+              <div
+                aria-hidden="true"
+                className="absolute inset-0 overflow-hidden rounded-[inherit] pointer-events-none z-30"
+              >
+                <div
+                  className="veyra-note-wipe-accent-edge"
+                  onAnimationEnd={() => setShowSwitchWipeEdge(false)}
+                />
+              </div>
+            )}
 
             {/* Zonas interactivas de Encabezado y Pie de página (1,25 cm desde el borde, estilo Word) */}
             {pageFormat === 'a4' && (
@@ -3057,6 +3115,13 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
             <div
               className={cn(
                 'w-full flex-1 flex flex-col transition-opacity duration-200',
+                isSwitchingNote
+                  ? 'veyra-note-content-switching'
+                  : entryMode === 'switch'
+                    ? animPhase === 'entered'
+                      ? 'veyra-note-content-wipe'
+                      : 'veyra-note-content-wipe-entering'
+                    : undefined,
                 pageFormat === 'a4' &&
                 activeHeaderFooterZone !== null &&
                 (a4HeaderFooterConfig.showDocumentText
@@ -3154,7 +3219,13 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
           className={cn(
             'h-full border-l border-veyra-border bg-veyra-card flex flex-col shrink-0 overflow-hidden transition-[width,opacity] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)]',
             isPagesSidebarOpen ? 'w-80 opacity-100' : 'w-0 opacity-0 pointer-events-none',
-            isClosing ? 'veyra-note-pages-exit' : isPagesSidebarOpen && 'veyra-note-pages-enter'
+            animPhase === 'closing'
+              ? 'veyra-note-pages-closing'
+              : entryMode === 'open' && isPagesSidebarOpen
+                ? animPhase === 'entered'
+                  ? 'veyra-note-pages-entered'
+                  : 'veyra-note-pages-entering'
+                : undefined
           )}
         >
           <div style={{ width: '320px' }} className="h-full flex flex-col">
@@ -3246,46 +3317,58 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
   onSelectFolder,
   onSelectEvent,
 }) => {
-  const [loadedData, setLoadedData] = useState<YjsLoadedNote | null>(null);
-  const [loadingDoc, setLoadingDoc] = useState(false);
+  const [displayedState, setDisplayedState] = useState<{
+    note: Note;
+    data: YjsLoadedNote;
+    entryMode: 'open' | 'switch';
+  } | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const loadedDataRef = useRef<YjsLoadedNote | null>(null);
+  const latestNoteRef = useRef<Note | null>(note);
 
-  const isCurrentDocLoaded = loadedData && loadedData.noteId === note?.id;
+  useEffect(() => {
+    latestNoteRef.current = note;
+  }, [note]);
+
+  // Destroy each YjsLoadedNote only AFTER its YjsActiveEditor child unmounts and flushes unmount save
+  useEffect(() => {
+    const currentData = displayedState?.data;
+    return () => {
+      currentData?.destroy();
+    };
+  }, [displayedState?.data]);
 
   useEffect(() => {
     if (!note?.id) {
-      if (loadedDataRef.current) {
-        loadedDataRef.current.destroy();
-        loadedDataRef.current = null;
-      }
-      setLoadedData(null);
       return;
     }
 
     let isCancelled = false;
-    setLoadingDoc(true);
-    setLoadError(null);
 
     loadYjsNote(note.id)
       .then((data) => {
-        if (!isCancelled) {
-          if (loadedDataRef.current && loadedDataRef.current !== data) {
-            loadedDataRef.current.destroy();
-          }
-          loadedDataRef.current = data;
-          setLoadedData(data);
-          setLoadingDoc(false);
-        } else {
-          // If cancelled (e.g. StrictMode unmount or user clicked another note immediately)
+        if (isCancelled) {
           data.destroy();
+          return;
         }
+        const resolvedNote =
+          latestNoteRef.current && latestNoteRef.current.id === data.noteId
+            ? latestNoteRef.current
+            : null;
+        if (!resolvedNote) {
+          data.destroy();
+          return;
+        }
+        setLoadError(null);
+        setDisplayedState((prev) => ({
+          note: resolvedNote,
+          data,
+          entryMode: prev ? 'switch' : 'open',
+        }));
       })
       .catch((err) => {
         console.error('[NoteEditor] Error descargando nota Yjs:', err);
         if (!isCancelled) {
           setLoadError('Error descargando el contenido de la nota.');
-          setLoadingDoc(false);
         }
       });
 
@@ -3293,16 +3376,6 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
       isCancelled = true;
     };
   }, [note?.id]);
-
-  // Clean up loaded note on final component unmount
-  useEffect(() => {
-    return () => {
-      if (loadedDataRef.current) {
-        loadedDataRef.current.destroy();
-        loadedDataRef.current = null;
-      }
-    };
-  }, []);
 
   if (!note) {
     return (
@@ -3344,52 +3417,7 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
     );
   }
 
-  if (loadingDoc || !isCurrentDocLoaded) {
-    return (
-      <div className="flex-1 min-w-0 flex flex-col h-full bg-veyra-canvas">
-        {!isSidebarOpen && onToggleSidebar ? (
-          <div className="h-10 border-b border-veyra-border px-4 flex items-center justify-between text-xs shrink-0 bg-veyra-card/30">
-            <button
-              type="button"
-              onClick={onToggleSidebar}
-              title="Mostrar barra lateral (Ctrl+\)"
-              className="p-1.5 rounded-md text-veyra-muted hover:text-accent hover:bg-white/5 transition-colors cursor-pointer flex items-center justify-center gap-1.5"
-            >
-              <PanelLeft className="w-4 h-4 text-accent" />
-              <span className="text-xs text-veyra-muted font-medium">Mostrar notas</span>
-            </button>
-            {onCloseNote && (
-              <button
-                type="button"
-                onClick={onCloseNote}
-                title="Cerrar nota"
-                className="p-1 rounded text-veyra-muted hover:text-veyra-text hover:bg-white/5 transition-colors cursor-pointer"
-              >
-                <X className="w-3.5 h-3.5" />
-              </button>
-            )}
-          </div>
-        ) : onCloseNote ? (
-          <div className="h-10 border-b border-veyra-border px-4 flex items-center justify-end text-xs shrink-0 bg-veyra-card/30">
-            <button
-              type="button"
-              onClick={onCloseNote}
-              title="Cerrar nota"
-              className="p-1 rounded text-veyra-muted hover:text-veyra-text hover:bg-white/5 transition-colors cursor-pointer"
-            >
-              <X className="w-3.5 h-3.5" />
-            </button>
-          </div>
-        ) : null}
-        <div className="flex-1 flex flex-col items-center justify-center p-8 text-center text-veyra-muted veyra-note-loading-enter">
-          <Loader2 className="w-6 h-6 text-accent animate-spin mb-3" />
-          <h3 className="text-sm font-medium text-veyra-text">Cargando nota...</h3>
-        </div>
-      </div>
-    );
-  }
-
-  if (loadError || !loadedData) {
+  if (loadError) {
     return (
       <div className="flex-1 min-w-0 flex flex-col items-center justify-center p-8 text-center text-veyra-muted bg-veyra-canvas">
         <div className="p-3 rounded-md bg-red-500/10 border border-red-500/30 text-red-400 text-xs mb-3">
@@ -3398,14 +3426,27 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
         <button
           onClick={() => {
             if (note?.id) {
-              setLoadingDoc(true);
+              setLoadError(null);
               loadYjsNote(note.id)
                 .then((data) => {
-                  if (loadedDataRef.current) loadedDataRef.current.destroy();
-                  loadedDataRef.current = data;
-                  setLoadedData(data);
+                  const resolvedNote =
+                    latestNoteRef.current && latestNoteRef.current.id === data.noteId
+                      ? latestNoteRef.current
+                      : null;
+                  if (!resolvedNote) {
+                    data.destroy();
+                    return;
+                  }
+                  setDisplayedState((prev) => ({
+                    note: resolvedNote,
+                    data,
+                    entryMode: prev ? 'switch' : 'open',
+                  }));
                 })
-                .finally(() => setLoadingDoc(false));
+                .catch((err) => {
+                  console.error('[NoteEditor] Error reintentando descarga Yjs:', err);
+                  setLoadError('Error descargando el contenido de la nota.');
+                });
             }
           }}
           className="px-3 py-1.5 rounded-md bg-veyra-card border border-veyra-border hover:border-accent text-xs text-veyra-text transition-colors cursor-pointer"
@@ -3416,16 +3457,23 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
     );
   }
 
+  if (!displayedState) {
+    return <div className="flex-1 min-w-0 flex flex-col h-full bg-veyra-canvas" />;
+  }
+
+  const isSwitchingNote = displayedState.data.noteId !== note.id;
+  const activeNote = isSwitchingNote ? displayedState.note : note;
+
   return (
     <YjsActiveEditor
-      key={`${note.id}`}
-      note={{ ...note, sync_mode: loadedData.syncMode }}
-      ydoc={loadedData.ydoc}
-      awareness={loadedData.awareness}
-      initialActivePageId={loadedData.activePageId}
-      initialPages={loadedData.pageOrder}
-      initialMetaTitle={loadedData.metaTitle}
-      initialServerClock={loadedData.highestUpdateId}
+      key={displayedState.data.noteId}
+      note={{ ...activeNote, sync_mode: displayedState.data.syncMode }}
+      ydoc={displayedState.data.ydoc}
+      awareness={displayedState.data.awareness}
+      initialActivePageId={displayedState.data.activePageId}
+      initialPages={displayedState.data.pageOrder}
+      initialMetaTitle={displayedState.data.metaTitle}
+      initialServerClock={displayedState.data.highestUpdateId}
       currentUserId={currentUserId}
       userEmail={userEmail}
       userName={userName}
@@ -3438,6 +3486,8 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
       events={events}
       onSelectFolder={onSelectFolder}
       onSelectEvent={onSelectEvent}
+      entryMode={displayedState.entryMode}
+      isSwitchingNote={isSwitchingNote}
     />
   );
 };

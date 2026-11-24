@@ -1,8 +1,11 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
 import type { Database } from '../types/database';
-import { isDateToday } from '../lib/utils';
-import { expandOccurrences } from '../services/recurrence/recurrenceEngine';
+import {
+  expandOccurrences,
+  parseRecurrenceRule,
+  formatYmd,
+} from '../services/recurrence/recurrenceEngine';
 import { localDB } from '../lib/db/local-db';
 import { syncEngine } from '../lib/sync/syncEngine';
 import { extractHashtags, syncItemTags } from '../lib/tagUtils';
@@ -356,18 +359,26 @@ export function useEvents(userId?: string) {
     const now = new Date();
     const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
     const todayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+    const todayStartMs = todayStart.getTime();
+    const todayEndMs = todayEnd.getTime();
+    const todayYmd = formatYmd(now.getFullYear(), now.getMonth() + 1, now.getDate());
 
     const list: CalendarEvent[] = [];
 
     for (const e of events) {
-      const isRecurring = Boolean(
-        (e.repeat_rule && e.repeat_rule !== 'none' && e.repeat_rule !== 'null') ||
-        (e.recurrence_rule && e.recurrence_rule !== 'none' && e.recurrence_rule !== 'null')
-      );
+      const rule = parseRecurrenceRule(e.recurrence_rule || e.repeat_rule);
 
-      if (!isRecurring) {
-        if (isDateToday(Number(e.start_time_ms))) {
-          list.push(e);
+      if (rule.type === 'none') {
+        if (e.is_all_day && e.all_day_date) {
+          if (e.all_day_date === todayYmd) {
+            list.push(e);
+          }
+        } else {
+          const sMs = Number(e.start_time_ms);
+          const eMs = Number(e.end_time_ms || e.start_time_ms);
+          if (eMs >= todayStartMs && sMs <= todayEndMs) {
+            list.push(e);
+          }
         }
       } else {
         const occurrences = expandOccurrences(
@@ -401,19 +412,80 @@ export function useEvents(userId?: string) {
 
   const upcomingEvents = useMemo(() => {
     const now = new Date();
-    const todayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+    const tomorrowStart = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 0, 0);
+    const todayEndMs = tomorrowStart.getTime() - 1;
+    const todayYmd = formatYmd(now.getFullYear(), now.getMonth() + 1, now.getDate());
 
-    return events
-      .filter((e) => Number(e.start_time_ms) > todayEnd.getTime())
-      .sort((a, b) => Number(a.start_time_ms) - Number(b.start_time_ms));
+    const list: CalendarEvent[] = [];
+
+    for (const e of events) {
+      const rule = parseRecurrenceRule(e.recurrence_rule || e.repeat_rule);
+
+      if (rule.type === 'none') {
+        if (e.is_all_day && e.all_day_date) {
+          if (e.all_day_date > todayYmd) {
+            list.push(e);
+          }
+        } else if (Number(e.start_time_ms) > todayEndMs) {
+          list.push(e);
+        }
+      } else {
+        const horizonYears = rule.type === 'yearly' ? Math.max(2, (rule.interval || 1) + 1) : 1;
+        const horizonEnd = new Date(
+          now.getFullYear() + horizonYears,
+          now.getMonth(),
+          now.getDate() + 7,
+          23,
+          59,
+          59,
+          999
+        );
+        const occurrences = expandOccurrences(
+          {
+            id: e.id,
+            start_time_ms: Number(e.start_time_ms),
+            end_time_ms: Number(e.end_time_ms),
+            repeat_rule: e.repeat_rule,
+            recurrence_rule: e.recurrence_rule,
+            timezone: e.timezone,
+            is_all_day: e.is_all_day,
+            all_day_date: e.all_day_date,
+          },
+          tomorrowStart,
+          horizonEnd
+        );
+
+        const nextOcc = occurrences.find((occ) => occ.startTimeMs > todayEndMs);
+        if (nextOcc) {
+          list.push({
+            ...e,
+            start_time_ms: nextOcc.startTimeMs,
+            end_time_ms: nextOcc.endTimeMs,
+          });
+        } else if (Number(e.start_time_ms) > todayEndMs) {
+          list.push(e);
+        }
+      }
+    }
+
+    return list.sort((a, b) => Number(a.start_time_ms) - Number(b.start_time_ms));
   }, [events]);
 
   const pastEvents = useMemo(() => {
     const now = new Date();
     const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+    const todayStartMs = todayStart.getTime();
+    const todayYmd = formatYmd(now.getFullYear(), now.getMonth() + 1, now.getDate());
 
     return events
-      .filter((e) => Number(e.end_time_ms || e.start_time_ms) < todayStart.getTime())
+      .filter((e) => {
+        const rule = parseRecurrenceRule(e.recurrence_rule || e.repeat_rule);
+        if (rule.type !== 'none') return false;
+        if (e.is_all_day && e.all_day_date) {
+          return e.all_day_date < todayYmd;
+        }
+        return Number(e.end_time_ms || e.start_time_ms) < todayStartMs;
+      })
       .sort((a, b) => Number(b.start_time_ms) - Number(a.start_time_ms));
   }, [events]);
 

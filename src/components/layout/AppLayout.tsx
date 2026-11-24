@@ -6,6 +6,8 @@ import { useNotes } from '../../hooks/useNotes';
 import { useEvents } from '../../hooks/useEvents';
 import { useReminderScheduler } from '../../hooks/useReminderScheduler';
 import { InAppReminderAlertModal } from '../common/InAppReminderAlertModal';
+import { InAppAlertToastContainer } from '../common/InAppAlertToastContainer';
+import { PushService } from '../../lib/pushService';
 import type { User } from '@supabase/supabase-js';
 import type { Database } from '../../types/database';
 
@@ -99,7 +101,15 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ user, profile, onSignOut }
   const eventsState = useEvents(user.id);
 
   // In-App Reminder Scheduler & Alert Coordination
-  const { activeAlert, handleComplete, handleSnooze, handleDismiss } = useReminderScheduler({
+  const {
+    activeCriticalAlert,
+    criticalAlertCount,
+    toastAlerts,
+    use24h,
+    handleComplete,
+    handleSnooze,
+    handleDismissToast,
+  } = useReminderScheduler({
     reminders: remindersState.reminders,
     events: eventsState.events,
     onCompleteReminder: async (id) => {
@@ -160,6 +170,21 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ user, profile, onSignOut }
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
+  // Keep Web Push subscription synced on launch and handle SW pushsubscriptionchange
+  useEffect(() => {
+    if (!user?.id) return;
+    PushService.syncIfSubscribed(user.id).catch(() => {});
+
+    if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return;
+    const handleSwMessage = (event: MessageEvent) => {
+      if (event.data?.type === 'PUSH_SUBSCRIPTION_CHANGED') {
+        PushService.syncIfSubscribed(user.id).catch(() => {});
+      }
+    };
+    navigator.serviceWorker.addEventListener('message', handleSwMessage);
+    return () => navigator.serviceWorker.removeEventListener('message', handleSwMessage);
+  }, [user?.id]);
+
   return (
     <div className="h-screen bg-veyra-canvas text-veyra-text flex flex-col overflow-hidden">
       {/* Main Workspace (Full width: Note editor and Folders sidebar have full stage) */}
@@ -187,12 +212,21 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ user, profile, onSignOut }
         )}
       </main>
 
-      {/* In-App Interactive Alert Modal */}
-      <InAppReminderAlertModal
-        item={activeAlert}
+      {/* Non-invasive Side Toasts (Events & Normal Reminders) */}
+      <InAppAlertToastContainer
+        items={toastAlerts}
+        use24h={use24h}
         onComplete={handleComplete}
         onSnooze={handleSnooze}
-        onDismiss={handleDismiss}
+        onDismiss={handleDismissToast}
+      />
+
+      {/* Persistent Blocking Modal (Critical Reminders Only) */}
+      <InAppReminderAlertModal
+        item={activeCriticalAlert}
+        queueCount={criticalAlertCount}
+        use24h={use24h}
+        onComplete={handleComplete}
       />
     </div>
   );

@@ -3,14 +3,10 @@ import {
   Calendar,
   CheckCircle2,
   Clock,
-  Plus,
-  Search,
   RefreshCw,
-  X,
   ChevronDown,
   ChevronUp,
   Layers,
-  CalendarDays,
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import type { Reminder, ReminderPriority, ReminderControlLevel } from '../../types/reminders';
@@ -23,8 +19,59 @@ import { EventCard } from '../reminders/EventCard';
 import { AgendaQuickPreview } from '../agenda/AgendaQuickPreview';
 import { ReminderModal } from '../reminders/ReminderModal';
 import { EventModal } from '../agenda/EventModal';
+import { parseRecurrenceRule } from '../../services/recurrence/recurrenceEngine';
 
 export type AgendaFilter = 'all' | 'reminders' | 'events';
+
+type UnifiedAgendaItem =
+  | { type: 'reminder'; data: Reminder; timeMs: number }
+  | { type: 'event'; data: CalendarEvent; timeMs: number };
+
+function getUpcomingItemDayKey(item: UnifiedAgendaItem): string {
+  if (
+    item.type === 'event' &&
+    item.data.is_all_day &&
+    item.data.all_day_date &&
+    /^\d{4}-\d{2}-\d{2}$/.test(item.data.all_day_date)
+  ) {
+    return item.data.all_day_date;
+  }
+  const d = new Date(item.timeMs);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+function formatUpcomingDayLabel(dayKey: string): string {
+  const [yStr, mStr, dStr] = dayKey.split('-');
+  const y = Number(yStr);
+  const m = Number(mStr);
+  const d = Number(dStr);
+  if (!Number.isFinite(y) || !Number.isFinite(m) || !Number.isFinite(d)) {
+    return dayKey;
+  }
+
+  const target = new Date(y, m - 1, d);
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const dayDiff = Math.round((target.getTime() - today.getTime()) / (24 * 60 * 60 * 1000));
+
+  const includeYear = y !== now.getFullYear();
+  const shortDate = target
+    .toLocaleDateString('es-ES', {
+      weekday: 'short',
+      day: 'numeric',
+      month: 'short',
+      ...(includeYear ? { year: 'numeric' } : {}),
+    })
+    .replace(/\./g, '');
+
+  if (dayDiff === 1) {
+    return `Mañana · ${shortDate}`;
+  }
+  return shortDate;
+}
 
 export interface AgendaSidebarViewProps {
   remindersHook?: ReturnType<typeof useReminders>;
@@ -51,11 +98,10 @@ export const AgendaSidebarView: React.FC<AgendaSidebarViewProps> = ({
   onSelectEvent,
   selectedReminderId,
   onSelectReminder,
-  onOpenCalendar,
-  isCalendarOpen,
+  onOpenCalendar: _onOpenCalendar,
+  isCalendarOpen: _isCalendarOpen,
   userId: _userId,
 }) => {
-  const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<AgendaFilter>('all');
   const [showCompleted, setShowCompleted] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
@@ -76,7 +122,6 @@ export const AgendaSidebarView: React.FC<AgendaSidebarViewProps> = ({
   const [editingReminder, setEditingReminder] = useState<Reminder | null>(null);
   const [isEventModalOpen, setIsEventModalOpen] = useState(false);
   const [editingEvent, setEditingEvent] = useState<CalendarEvent | null>(null);
-  const [isTypeSelectorOpen, setIsTypeSelectorOpen] = useState(false);
 
   // Real Database Reminders & Events
   const reminders = remindersHook?.reminders || [];
@@ -272,73 +317,6 @@ export const AgendaSidebarView: React.FC<AgendaSidebarViewProps> = ({
 
 
 
-  // Search filter
-  const q = search.trim().toLowerCase();
-
-  // Filtered Today items from Supabase
-  const displayedTodayReminders = useMemo(() => {
-    if (!q) return todayReminders;
-    return todayReminders.filter(
-      (r) =>
-        r.title.toLowerCase().includes(q) ||
-        (r.description && r.description.toLowerCase().includes(q))
-    );
-  }, [todayReminders, q]);
-
-  const displayedUpcomingReminders = useMemo(() => {
-    if (!q) return upcomingReminders;
-    return upcomingReminders.filter(
-      (r) =>
-        r.title.toLowerCase().includes(q) ||
-        (r.description && r.description.toLowerCase().includes(q))
-    );
-  }, [upcomingReminders, q]);
-
-  const displayedCompletedReminders = useMemo(() => {
-    if (!q) return completedReminders;
-    return completedReminders.filter(
-      (r) =>
-        r.title.toLowerCase().includes(q) ||
-        (r.description && r.description.toLowerCase().includes(q))
-    );
-  }, [completedReminders, q]);
-
-  const displayedTodayEvents = useMemo(() => {
-    if (!q) return todayEvents;
-    return todayEvents.filter(
-      (e) =>
-        e.title.toLowerCase().includes(q) ||
-        (e.location && e.location.toLowerCase().includes(q))
-    );
-  }, [todayEvents, q]);
-
-  const displayedUpcomingEvents = useMemo(() => {
-    if (!q) return upcomingEvents;
-    return upcomingEvents.filter(
-      (e) =>
-        e.title.toLowerCase().includes(q) ||
-        (e.location && e.location.toLowerCase().includes(q))
-    );
-  }, [upcomingEvents, q]);
-
-  const displayedPastEvents = useMemo(() => {
-    if (!q) return pastEvents;
-    return pastEvents.filter(
-      (e) =>
-        e.title.toLowerCase().includes(q) ||
-        (e.location && e.location.toLowerCase().includes(q))
-    );
-  }, [pastEvents, q]);
-
-  const displayedAllEvents = useMemo(() => {
-    if (!q) return events;
-    return events.filter(
-      (e) =>
-        e.title.toLowerCase().includes(q) ||
-        (e.location && e.location.toLowerCase().includes(q))
-    );
-  }, [events, q]);
-
   // Unified Today Items (Reminders + Events sorted chronologically)
   const displayedTodayUnified = useMemo(() => {
     const list: Array<
@@ -346,7 +324,7 @@ export const AgendaSidebarView: React.FC<AgendaSidebarViewProps> = ({
       | { type: 'event'; data: CalendarEvent; timeMs: number }
     > = [];
 
-    displayedTodayReminders.forEach((r) => {
+    todayReminders.forEach((r) => {
       list.push({
         type: 'reminder',
         data: r,
@@ -354,7 +332,7 @@ export const AgendaSidebarView: React.FC<AgendaSidebarViewProps> = ({
       });
     });
 
-    displayedTodayEvents.forEach((e) => {
+    todayEvents.forEach((e) => {
       list.push({
         type: 'event',
         data: e,
@@ -363,16 +341,13 @@ export const AgendaSidebarView: React.FC<AgendaSidebarViewProps> = ({
     });
 
     return list.sort((a, b) => a.timeMs - b.timeMs);
-  }, [displayedTodayReminders, displayedTodayEvents]);
+  }, [todayReminders, todayEvents]);
 
   // Unified Upcoming Items (Reminders + Events sorted chronologically)
   const displayedUpcomingUnified = useMemo(() => {
-    const list: Array<
-      | { type: 'reminder'; data: Reminder; timeMs: number }
-      | { type: 'event'; data: CalendarEvent; timeMs: number }
-    > = [];
+    const list: UnifiedAgendaItem[] = [];
 
-    displayedUpcomingReminders.forEach((r) => {
+    upcomingReminders.forEach((r) => {
       list.push({
         type: 'reminder',
         data: r,
@@ -380,7 +355,7 @@ export const AgendaSidebarView: React.FC<AgendaSidebarViewProps> = ({
       });
     });
 
-    displayedUpcomingEvents.forEach((e) => {
+    upcomingEvents.forEach((e) => {
       list.push({
         type: 'event',
         data: e,
@@ -389,7 +364,30 @@ export const AgendaSidebarView: React.FC<AgendaSidebarViewProps> = ({
     });
 
     return list.sort((a, b) => a.timeMs - b.timeMs);
-  }, [displayedUpcomingReminders, displayedUpcomingEvents]);
+  }, [upcomingReminders, upcomingEvents]);
+
+  // Group Upcoming Items by day for per-day separators in "Todo" tab
+  const upcomingUnifiedByDay = useMemo(() => {
+    const groupsMap = new Map<string, UnifiedAgendaItem[]>();
+
+    for (const item of displayedUpcomingUnified) {
+      const key = getUpcomingItemDayKey(item);
+      const bucket = groupsMap.get(key);
+      if (bucket) {
+        bucket.push(item);
+      } else {
+        groupsMap.set(key, [item]);
+      }
+    }
+
+    return Array.from(groupsMap.entries())
+      .sort(([keyA], [keyB]) => keyA.localeCompare(keyB))
+      .map(([dayKey, items]) => ({
+        dayKey,
+        label: formatUpcomingDayLabel(dayKey),
+        items,
+      }));
+  }, [displayedUpcomingUnified]);
 
   // Handlers for single-click (preview if viewing note) vs double-click (always full view)
   const handleReminderClick = (reminder: Reminder, e?: React.MouseEvent) => {
@@ -406,13 +404,9 @@ export const AgendaSidebarView: React.FC<AgendaSidebarViewProps> = ({
     onSelectReminder?.(reminder.id);
   };
 
-  const handleEventClick = (event: CalendarEvent, e?: React.MouseEvent) => {
-    if (isViewingNote && e) {
-      const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-      setPreviewItem({ type: 'event', id: event.id, targetRect: rect, data: event });
-    } else {
-      onSelectEvent?.(event.id);
-    }
+  const handleEventClick = (event: CalendarEvent) => {
+    setPreviewItem(null);
+    onSelectEvent?.(event.id);
   };
 
   const handleEventDoubleClick = (event: CalendarEvent) => {
@@ -474,16 +468,14 @@ export const AgendaSidebarView: React.FC<AgendaSidebarViewProps> = ({
       <EventCard
         key={`${event.id}-${event.start_time_ms}`}
         event={event}
-        onEdit={(ev, e) => handleEventClick(ev, e)}
+        onEdit={(ev) => handleEventClick(ev)}
         onDoubleClick={(ev) => handleEventDoubleClick(ev)}
         onDelete={(id) => eventsHook?.deleteEvent(id)}
         onSnooze={(id) => {
           const current = events.find((e) => e.id === id);
           if (!current) return;
-          const isRec = Boolean(
-            (current.repeat_rule && current.repeat_rule !== 'none' && current.repeat_rule !== 'null') ||
-            (current.recurrence_rule && current.recurrence_rule !== 'none' && current.recurrence_rule !== 'null')
-          );
+          const isRec =
+            parseRecurrenceRule(current.recurrence_rule || current.repeat_rule).type !== 'none';
           if (isRec) return;
           const oneDayMs = 24 * 60 * 60 * 1000;
           eventsHook?.updateEvent(id, {
@@ -500,78 +492,7 @@ export const AgendaSidebarView: React.FC<AgendaSidebarViewProps> = ({
 
   return (
     <div className="flex-1 flex flex-col h-full overflow-hidden text-xs">
-      {/* 1. Buscador y botón + Nuevo */}
-      <div className="p-2.5 border-b border-veyra-border shrink-0 flex items-center gap-1.5 bg-veyra-card/50">
-        <div className="relative flex-1">
-          <Search className="w-3.5 h-3.5 text-veyra-subtle absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-          <input
-            type="text"
-            placeholder={
-              filter === 'all'
-                ? 'Buscar en agenda...'
-                : filter === 'reminders'
-                ? 'Buscar recordatorios...'
-                : 'Buscar eventos...'
-            }
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="w-full bg-veyra-elevated text-veyra-text placeholder:text-veyra-subtle rounded-lg pl-8 pr-7 py-1.5 text-xs border border-veyra-border focus:border-accent/60 outline-none transition-colors"
-          />
-          {search.trim().length > 0 && (
-            <button
-              type="button"
-              onClick={() => setSearch('')}
-              className="absolute right-2 top-1/2 -translate-y-1/2 text-veyra-subtle hover:text-veyra-text p-0.5 rounded cursor-pointer"
-            >
-              <X className="w-3.5 h-3.5" />
-            </button>
-          )}
-        </div>
-
-        {/* Compact + Nuevo Button */}
-        <button
-          type="button"
-          onClick={() => {
-            if (filter === 'events') {
-              setEditingEvent(null);
-              setIsEventModalOpen(true);
-            } else if (filter === 'reminders') {
-              setEditingReminder(null);
-              setIsReminderModalOpen(true);
-            } else {
-              setIsTypeSelectorOpen(true);
-            }
-          }}
-          title={
-            filter === 'events'
-              ? 'Nuevo evento'
-              : filter === 'reminders'
-              ? 'Nuevo recordatorio'
-              : 'Nuevo recordatorio o evento'
-          }
-          className="h-[30px] w-[30px] rounded-lg bg-accent text-white flex items-center justify-center hover:opacity-90 transition-opacity shadow-sm shrink-0 cursor-pointer"
-        >
-          <Plus className="w-4 h-4 stroke-[2.5]" />
-        </button>
-
-        {onOpenCalendar && (
-          <button
-            type="button"
-            onClick={onOpenCalendar}
-            title="Abrir vista Calendario (Mes / Semana / Día)"
-            className={cn(
-              'h-[30px] w-[30px] rounded-lg border flex items-center justify-center transition-colors shrink-0 cursor-pointer',
-              isCalendarOpen
-                ? 'bg-accent/20 border-accent/40 text-accent'
-                : 'bg-veyra-elevated border-veyra-border text-veyra-muted hover:text-veyra-text'
-            )}
-          >
-            <CalendarDays className="w-3.5 h-3.5" />
-          </button>
-        )}
-      </div>
-
-      {/* 2. Filtros rápidos: Selector compacto [Todo | Recordatorios | Eventos] */}
+      {/* 1. Filtros rápidos: Selector compacto [Todo | Tareas | Eventos] */}
       <div className="p-2 border-b border-veyra-border shrink-0 bg-veyra-canvas/40">
         <div className="grid grid-cols-3 gap-1 p-0.5 rounded-lg bg-veyra-elevated/40 border border-veyra-border text-[11px]">
           <button
@@ -618,12 +539,12 @@ export const AgendaSidebarView: React.FC<AgendaSidebarViewProps> = ({
         </div>
       </div>
 
-      {/* 3. Contenido: Todo, Recordatorios o Eventos */}
+      {/* 2. Contenido: Todo, Recordatorios o Eventos */}
       <div className="flex-1 overflow-y-auto p-3 space-y-4">
         {filter === 'all' ? (
           /* VISTA UNIFICADA (TODO) */
           <>
-            {counts.all === 0 && displayedCompletedReminders.length === 0 ? (
+            {counts.all === 0 && completedReminders.length === 0 ? (
               <div className="p-5 rounded-lg bg-veyra-elevated/20 border border-veyra-border text-center text-veyra-subtle text-xs flex flex-col items-center gap-2">
                 <Layers className="w-6 h-6 text-accent/40" />
                 <span>No hay eventos ni tareas registrados en la agenda.</span>
@@ -664,44 +585,48 @@ export const AgendaSidebarView: React.FC<AgendaSidebarViewProps> = ({
                   )}
                 </div>
 
-                {/* 2. Bloque Próximos Días (Eventos + Recordatorios futuros) */}
-                {displayedUpcomingUnified.length > 0 && (
-                  <div>
-                    <div className="flex items-center justify-between mb-2 pt-1">
-                      <span className="text-[10px] font-bold tracking-wider uppercase text-veyra-muted flex items-center gap-1.5">
-                        <Calendar className="w-3 h-3 text-accent" />
-                        PRÓXIMOS DÍAS · {displayedUpcomingUnified.length}
+                {/* 2. Bloques Próximos separados por día */}
+                {upcomingUnifiedByDay.map((group) => (
+                  <div key={group.dayKey}>
+                    <div className="flex items-center gap-2 mb-2 pt-1.5">
+                      <span className="text-[10px] font-bold tracking-wider uppercase text-veyra-muted flex items-center gap-1.5 shrink-0">
+                        <Calendar className="w-3 h-3 text-accent shrink-0" />
+                        <span>{group.label}</span>
+                      </span>
+                      <div className="flex-1 h-px bg-veyra-border/60" />
+                      <span className="text-[10px] font-mono text-veyra-subtle shrink-0">
+                        {group.items.length}
                       </span>
                     </div>
                     <div className="space-y-2">
-                      {displayedUpcomingUnified.map((item) =>
+                      {group.items.map((item) =>
                         item.type === 'reminder'
                           ? renderReminderItem(item.data)
                           : renderEventItem(item.data)
                       )}
                     </div>
                   </div>
-                )}
+                ))}
 
                 {/* 3. Bloque Eventos Registrados si no hay eventos hoy ni en próximos */}
-                {displayedTodayEvents.length === 0 &&
-                  displayedUpcomingEvents.length === 0 &&
-                  displayedAllEvents.length > 0 && (
+                {todayEvents.length === 0 &&
+                  upcomingEvents.length === 0 &&
+                  events.length > 0 && (
                     <div>
                       <div className="flex items-center justify-between mb-2">
                         <span className="text-[10px] font-bold tracking-wider uppercase text-accent flex items-center gap-1.5">
                           <Calendar className="w-3 h-3 text-accent" />
-                          EVENTOS REGISTRADOS · {displayedAllEvents.length}
+                          EVENTOS REGISTRADOS · {events.length}
                         </span>
                       </div>
                       <div className="space-y-2">
-                        {displayedAllEvents.map(renderEventItem)}
+                        {events.map(renderEventItem)}
                       </div>
                     </div>
                   )}
 
                 {/* 4. Bloque Completados (Colapsable) */}
-                {displayedCompletedReminders.length > 0 && (
+                {completedReminders.length > 0 && (
                   <div className="pt-2 border-t border-veyra-border/40">
                     <button
                       type="button"
@@ -710,7 +635,7 @@ export const AgendaSidebarView: React.FC<AgendaSidebarViewProps> = ({
                     >
                       <span className="flex items-center gap-1.5">
                         <CheckCircle2 className="w-3 h-3 text-emerald-400" />
-                        Completados ({displayedCompletedReminders.length})
+                        Completados ({completedReminders.length})
                       </span>
                       {showCompleted ? (
                         <ChevronUp className="w-3.5 h-3.5" />
@@ -721,7 +646,7 @@ export const AgendaSidebarView: React.FC<AgendaSidebarViewProps> = ({
 
                     {showCompleted && (
                       <div className="space-y-2 mt-2">
-                        {displayedCompletedReminders.map(renderReminderItem)}
+                        {completedReminders.map(renderReminderItem)}
                       </div>
                     )}
                   </div>
@@ -737,38 +662,38 @@ export const AgendaSidebarView: React.FC<AgendaSidebarViewProps> = ({
               <div className="flex items-center justify-between mb-2">
                 <span className="text-[10px] font-bold tracking-wider uppercase text-veyra-muted flex items-center gap-1.5">
                   <Clock className="w-3 h-3 text-accent" />
-                  HOY · {displayedTodayReminders.length} PENDIENTES
+                  HOY · {todayReminders.length} PENDIENTES
                 </span>
               </div>
 
-              {displayedTodayReminders.length === 0 ? (
+              {todayReminders.length === 0 ? (
                 <div className="p-4 rounded-lg bg-veyra-elevated/20 border border-veyra-border text-center text-veyra-subtle text-xs">
                   ¡No hay recordatorios pendientes para hoy!
                 </div>
               ) : (
                 <div className="space-y-2">
-                  {displayedTodayReminders.map(renderReminderItem)}
+                  {todayReminders.map(renderReminderItem)}
                 </div>
               )}
             </div>
 
             {/* Bloque Próximos Días */}
-            {displayedUpcomingReminders.length > 0 && (
+            {upcomingReminders.length > 0 && (
               <div>
                 <div className="flex items-center justify-between mb-2 pt-1">
                   <span className="text-[10px] font-bold tracking-wider uppercase text-veyra-muted flex items-center gap-1.5">
                     <Calendar className="w-3 h-3 text-accent" />
-                    PRÓXIMOS DÍAS · {displayedUpcomingReminders.length}
+                    PRÓXIMOS DÍAS · {upcomingReminders.length}
                   </span>
                 </div>
                 <div className="space-y-2">
-                  {displayedUpcomingReminders.map(renderReminderItem)}
+                  {upcomingReminders.map(renderReminderItem)}
                 </div>
               </div>
             )}
 
             {/* Bloque Completados (Colapsable) */}
-            {displayedCompletedReminders.length > 0 && (
+            {completedReminders.length > 0 && (
               <div className="pt-2 border-t border-veyra-border/40">
                 <button
                   type="button"
@@ -777,7 +702,7 @@ export const AgendaSidebarView: React.FC<AgendaSidebarViewProps> = ({
                 >
                   <span className="flex items-center gap-1.5">
                     <CheckCircle2 className="w-3 h-3 text-emerald-400" />
-                    Completados ({displayedCompletedReminders.length})
+                    Completados ({completedReminders.length})
                   </span>
                   {showCompleted ? (
                     <ChevronUp className="w-3.5 h-3.5" />
@@ -788,7 +713,7 @@ export const AgendaSidebarView: React.FC<AgendaSidebarViewProps> = ({
 
                 {showCompleted && (
                   <div className="space-y-2 mt-2">
-                    {displayedCompletedReminders.map(renderReminderItem)}
+                    {completedReminders.map(renderReminderItem)}
                   </div>
                 )}
               </div>
@@ -815,58 +740,58 @@ export const AgendaSidebarView: React.FC<AgendaSidebarViewProps> = ({
             ) : (
               <div className="space-y-4">
                 {/* 1. Bloque Hoy (si hay eventos programados hoy) */}
-                {displayedTodayEvents.length > 0 && (
+                {todayEvents.length > 0 && (
                   <div>
                     <div className="flex items-center justify-between mb-2">
                       <span className="text-[10px] font-bold tracking-wider uppercase text-accent flex items-center gap-1.5">
                         <Clock className="w-3 h-3 text-accent" />
-                        HOY · {displayedTodayEvents.length} EVENTOS
+                        HOY · {todayEvents.length} EVENTOS
                       </span>
                     </div>
                     <div className="space-y-2">
-                      {displayedTodayEvents.map(renderEventItem)}
+                      {todayEvents.map(renderEventItem)}
                     </div>
                   </div>
                 )}
 
                 {/* 2. Bloque Próximos Eventos (si hay eventos futuros) */}
-                {displayedUpcomingEvents.length > 0 && (
+                {upcomingEvents.length > 0 && (
                   <div>
                     <div className="flex items-center justify-between mb-2 pt-1">
                       <span className="text-[10px] font-bold tracking-wider uppercase text-accent flex items-center gap-1.5">
                         <Calendar className="w-3 h-3 text-accent" />
-                        PRÓXIMOS EVENTOS · {displayedUpcomingEvents.length}
+                        PRÓXIMOS EVENTOS · {upcomingEvents.length}
                       </span>
                     </div>
                     <div className="space-y-2">
-                      {displayedUpcomingEvents.map(renderEventItem)}
+                      {upcomingEvents.map(renderEventItem)}
                     </div>
                   </div>
                 )}
 
                 {/* 3. Bloque Todos / Eventos Registrados si no hay hoy ni próximos */}
-                {displayedTodayEvents.length === 0 && displayedUpcomingEvents.length === 0 ? (
+                {todayEvents.length === 0 && upcomingEvents.length === 0 ? (
                   <div>
                     <div className="flex items-center justify-between mb-2">
                       <span className="text-[10px] font-bold tracking-wider uppercase text-accent flex items-center gap-1.5">
                         <Calendar className="w-3 h-3 text-accent" />
-                        EVENTOS REGISTRADOS · {displayedAllEvents.length}
+                        EVENTOS REGISTRADOS · {events.length}
                       </span>
                     </div>
                     <div className="space-y-2">
-                      {displayedAllEvents.map(renderEventItem)}
+                      {events.map(renderEventItem)}
                     </div>
                   </div>
-                ) : displayedPastEvents.length > 0 ? (
+                ) : pastEvents.length > 0 ? (
                   <div>
                     <div className="flex items-center justify-between mb-2 pt-1">
                       <span className="text-[10px] font-bold tracking-wider uppercase text-veyra-muted flex items-center gap-1.5">
                         <Calendar className="w-3 h-3 text-veyra-subtle" />
-                        EVENTOS ANTERIORES · {displayedPastEvents.length}
+                        EVENTOS ANTERIORES · {pastEvents.length}
                       </span>
                     </div>
                     <div className="space-y-2">
-                      {displayedPastEvents.map(renderEventItem)}
+                      {pastEvents.map(renderEventItem)}
                     </div>
                   </div>
                 ) : null}
@@ -907,72 +832,6 @@ export const AgendaSidebarView: React.FC<AgendaSidebarViewProps> = ({
           <span>{syncSuccess ? 'Al día' : 'Sincronizar'}</span>
         </button>
       </div>
-
-      {/* Modal Selector de Tipo si filter === 'all' */}
-      {isTypeSelectorOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-xs p-4 animate-in fade-in duration-150">
-          <div className="w-full max-w-xs bg-veyra-card border border-veyra-border rounded-xl p-4 shadow-elevated">
-            <div className="flex items-center justify-between pb-2 border-b border-veyra-border mb-3">
-              <h3 className="font-bold text-xs text-veyra-text tracking-tight">
-                ¿Qué deseas registrar?
-              </h3>
-              <button
-                type="button"
-                onClick={() => setIsTypeSelectorOpen(false)}
-                className="p-1 rounded text-veyra-subtle hover:text-veyra-text cursor-pointer"
-              >
-                <X className="w-3.5 h-3.5" />
-              </button>
-            </div>
-
-            <div className="space-y-2">
-              <button
-                type="button"
-                onClick={() => {
-                  setIsTypeSelectorOpen(false);
-                  setEditingReminder(null);
-                  setIsReminderModalOpen(true);
-                }}
-                className="w-full p-2.5 rounded-lg border border-veyra-border bg-veyra-elevated/50 hover:bg-accent/10 hover:border-accent/40 text-left transition-all cursor-pointer group flex items-start gap-2.5"
-              >
-                <div className="w-7 h-7 rounded-md bg-accent/15 flex items-center justify-center text-accent shrink-0 group-hover:scale-105 transition-transform">
-                  <Clock className="w-3.5 h-3.5" />
-                </div>
-                <div>
-                  <div className="text-xs font-semibold text-veyra-text group-hover:text-accent transition-colors">
-                    Recordatorio / Tarea
-                  </div>
-                  <div className="text-[10px] text-veyra-subtle mt-0.5 leading-tight">
-                    Alarmas, niveles de control, repetición y subtareas
-                  </div>
-                </div>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  setIsTypeSelectorOpen(false);
-                  setEditingEvent(null);
-                  setIsEventModalOpen(true);
-                }}
-                className="w-full p-2.5 rounded-lg border border-veyra-border bg-veyra-elevated/50 hover:bg-emerald-500/10 hover:border-emerald-500/40 text-left transition-all cursor-pointer group flex items-start gap-2.5"
-              >
-                <div className="w-7 h-7 rounded-md bg-emerald-500/15 flex items-center justify-center text-emerald-400 shrink-0 group-hover:scale-105 transition-transform">
-                  <Calendar className="w-3.5 h-3.5" />
-                </div>
-                <div>
-                  <div className="text-xs font-semibold text-veyra-text group-hover:text-emerald-400 transition-colors">
-                    Evento / Reunión
-                  </div>
-                  <div className="text-[10px] text-veyra-subtle mt-0.5 leading-tight">
-                    Horario, Meet/Zoom, avisos previos y notas
-                  </div>
-                </div>
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Modal de Recordatorios Completo (Congruente con Android) */}
       <ReminderModal
@@ -1023,10 +882,8 @@ export const AgendaSidebarView: React.FC<AgendaSidebarViewProps> = ({
           onSnoozeEvent={(id) => {
             const current = events.find((e) => e.id === id);
             if (current) {
-              const isRec = Boolean(
-                (current.repeat_rule && current.repeat_rule !== 'none' && current.repeat_rule !== 'null') ||
-                (current.recurrence_rule && current.recurrence_rule !== 'none' && current.recurrence_rule !== 'null')
-              );
+              const isRec =
+                parseRecurrenceRule(current.recurrence_rule || current.repeat_rule).type !== 'none';
               if (isRec) return;
               const oneDayMs = 24 * 60 * 60 * 1000;
               eventsHook?.updateEvent(id, {

@@ -153,7 +153,6 @@ export const ReminderCard: React.FC<ReminderCardProps> = ({
 
   // Priority classification
   const isCritical = reminder.control_level === 'critical' || reminder.priority === 3;
-  const isStrict = reminder.control_level === 'strict' || reminder.priority === 2;
 
   const timeStatus = getTimeStatus(reminder.due_date_ms, isCompleted, reminder.snooze_until_ms);
   const hasChips = Boolean(
@@ -200,8 +199,6 @@ export const ReminderCard: React.FC<ReminderCardProps> = ({
                   ? 'bg-accent border-accent text-white shadow-xs'
                   : isCritical
                   ? 'border-rose-400/90 hover:border-rose-500 bg-rose-500/10'
-                  : isStrict
-                  ? 'border-amber-400/90 hover:border-amber-500 bg-amber-500/10'
                   : 'border-slate-300 dark:border-white/30 hover:border-accent bg-transparent'
               )}
               title={isCompleted ? 'Marcar como pendiente' : 'Marcar como completado'}
@@ -225,11 +222,6 @@ export const ReminderCard: React.FC<ReminderCardProps> = ({
             {isCritical && !isCompleted && (
               <span className="px-1 py-0.2 rounded text-[8px] font-extrabold uppercase tracking-wider bg-rose-500/15 text-rose-400 border border-rose-500/25 shrink-0">
                 Alta
-              </span>
-            )}
-            {isStrict && !isCompleted && (
-              <span className="px-1 py-0.2 rounded text-[8px] font-extrabold uppercase tracking-wider bg-amber-500/15 text-amber-400 border border-amber-500/25 shrink-0">
-                Media
               </span>
             )}
 

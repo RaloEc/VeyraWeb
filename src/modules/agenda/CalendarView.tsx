@@ -212,8 +212,6 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
       const color =
         rem.control_level === 'critical' || rem.priority === 3
           ? '#EF4444'
-          : rem.control_level === 'strict' || rem.priority === 2
-          ? '#F59E0B'
           : '#10B981';
 
       pushItem({

@@ -1156,7 +1156,22 @@ export function buildPdfDocumentHtml(
               var currentList = el.cloneNode(false);
               currentBody.appendChild(currentList);
 
-              Array.from(el.children).forEach(function(li) {
+              var childrenArr = Array.from(el.children);
+              var isOrdered = el.tagName === 'OL';
+              var isReversed = isOrdered && el.hasAttribute('reversed');
+              var step = isReversed ? -1 : 1;
+              var rawStart = isOrdered && el.hasAttribute('start') ? parseInt(el.getAttribute('start'), 10) : NaN;
+              var liCount = childrenArr.filter(function(c) { return c.tagName === 'LI'; }).length;
+              var nextNumber = !isNaN(rawStart) ? rawStart : (isReversed ? liCount : 1);
+
+              childrenArr.forEach(function(li) {
+                var itemNumber = null;
+                if (isOrdered && li.tagName === 'LI') {
+                  var rawVal = li.hasAttribute('value') ? parseInt(li.getAttribute('value'), 10) : NaN;
+                  itemNumber = !isNaN(rawVal) ? rawVal : nextNumber;
+                  nextNumber = itemNumber + step;
+                }
+
                 var liClone = li.cloneNode(true);
                 currentList.appendChild(liClone);
 
@@ -1168,6 +1183,10 @@ export function buildPdfDocumentHtml(
                     }
                     createNewSheet();
                     currentList = el.cloneNode(false);
+                    if (isOrdered) {
+                      var continuedStart = itemNumber !== null ? itemNumber : nextNumber;
+                      currentList.setAttribute('start', String(continuedStart));
+                    }
                     currentBody.appendChild(currentList);
                     currentList.appendChild(liClone);
                   }

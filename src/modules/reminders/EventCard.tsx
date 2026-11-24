@@ -14,6 +14,7 @@ import type { CalendarEvent } from '../../hooks/useEvents';
 import { cn } from '../../lib/utils';
 import { useTheme } from '../../theme/ThemeProvider';
 import { ConfirmTooltip } from '../../components/common/ConfirmTooltip';
+import { parseRecurrenceRule } from '../../services/recurrence/recurrenceEngine';
 
 export interface EventCardProps {
   event: CalendarEvent;
@@ -39,6 +40,16 @@ function normalizeHex(hex?: string | null, fallback = '#3B82F6'): string {
   return fallback;
 }
 
+function extractLocationUrl(location?: string | null): string | null {
+  if (!location) return null;
+  const trimmed = location.trim();
+  if (!trimmed) return null;
+  if (/^https?:\/\//i.test(trimmed)) return trimmed;
+  if (/^www\./i.test(trimmed)) return `https://${trimmed}`;
+  const match = trimmed.match(/(https?:\/\/[^\s]+)/i);
+  return match ? match[1] : null;
+}
+
 function formatDuration(startMs: number, endMs: number): string {
   if (!startMs || !endMs || endMs <= startMs) return '';
   const diffMinutes = Math.round((endMs - startMs) / 60000);
@@ -48,7 +59,7 @@ function formatDuration(startMs: number, endMs: number): string {
   return remMinutes > 0 ? `${hours}h ${remMinutes}m` : `${hours}h`;
 }
 
-function formatTimeRange(startMs: number, endMs: number): string {
+function formatTimeRange(startMs: number, endMs: number, isAllDay?: boolean | null): string {
   const s = Number(startMs);
   const e = Number(endMs);
   if (!s) return '';
@@ -59,13 +70,17 @@ function formatTimeRange(startMs: number, endMs: number): string {
     start.getMonth() === now.getMonth() &&
     start.getFullYear() === now.getFullYear();
 
-  const startStr = start.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
-
   let prefix = '';
   if (!isToday) {
     const months = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
     prefix = `${start.getDate()} ${months[start.getMonth()]} • `;
   }
+
+  if (isAllDay) {
+    return `${prefix}Todo el día`;
+  }
+
+  const startStr = start.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
 
   if (!e || e <= s) return `${prefix}${startStr}`;
   const end = new Date(e);
@@ -91,13 +106,12 @@ export const EventCard: React.FC<EventCardProps> = ({
   const now = Date.now();
   const isHappeningNow = now >= event.start_time_ms && now <= event.end_time_ms;
 
-  const isRecurring = Boolean(
-    (event.repeat_rule && event.repeat_rule !== 'none' && event.repeat_rule !== 'null') ||
-    (event.recurrence_rule && event.recurrence_rule !== 'none' && event.recurrence_rule !== 'null')
-  );
+  const isRecurring =
+    parseRecurrenceRule(event.recurrence_rule || event.repeat_rule).type !== 'none';
 
-  const durationStr = formatDuration(event.start_time_ms, event.end_time_ms);
-  const timeRangeStr = formatTimeRange(event.start_time_ms, event.end_time_ms);
+  const durationStr = event.is_all_day ? '' : formatDuration(event.start_time_ms, event.end_time_ms);
+  const timeRangeStr = formatTimeRange(event.start_time_ms, event.end_time_ms, event.is_all_day);
+  const locationUrl = extractLocationUrl(event.location);
 
   const containerBg = isHappeningNow ? `${eventColor}1c` : `${eventColor}0c`;
   const containerBorder = isHappeningNow ? `${eventColor}60` : `${eventColor}30`;
@@ -113,7 +127,7 @@ export const EventCard: React.FC<EventCardProps> = ({
     }
   })();
 
-  const hasChips = Boolean(event.location || event.repeat_rule || event.note_id || linkedNoteTitle || attachmentsCount > 0);
+  const hasChips = Boolean(event.location || isRecurring || event.note_id || linkedNoteTitle || attachmentsCount > 0);
 
   return (
     <div
@@ -182,11 +196,7 @@ export const EventCard: React.FC<EventCardProps> = ({
                   type="button"
                   onClick={(e) => {
                     e.stopPropagation();
-                    if (event.location?.startsWith('http')) {
-                      window.open(event.location, '_blank');
-                    } else {
-                      window.open('https://meet.google.com/new', '_blank');
-                    }
+                    window.open(locationUrl || 'https://meet.google.com/new', '_blank', 'noopener,noreferrer');
                   }}
                   title="Unirse a reunión"
                   className="p-0.5 rounded text-slate-400 hover:text-white transition-colors"
@@ -252,17 +262,36 @@ export const EventCard: React.FC<EventCardProps> = ({
         {/* Row 3: Chips that wrap onto next line when space is constrained */}
         {hasChips && (
           <div className="flex items-center gap-1.5 flex-wrap pt-0.5">
-            {event.location && (
-              <span
-                title={`Ubicación: ${event.location}`}
-                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9.5px] font-sans text-slate-600 dark:text-zinc-300 bg-black/5 dark:bg-white/[0.06] border border-black/5 dark:border-white/[0.08] max-w-full truncate"
-              >
-                <MapPin style={{ color: eventColor }} className="w-2.5 h-2.5 shrink-0" />
-                <span className="truncate">{event.location}</span>
-              </span>
-            )}
+            {event.location &&
+              (locationUrl ? (
+                <span
+                  role="link"
+                  tabIndex={-1}
+                  onClick={(e) => {
+                    if (e.ctrlKey || e.metaKey) {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      window.open(locationUrl, '_blank', 'noopener,noreferrer');
+                    }
+                  }}
+                  title={`Ctrl + clic para abrir enlace\n${locationUrl}`}
+                  className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9.5px] font-sans text-slate-600 dark:text-zinc-300 bg-black/5 dark:bg-white/[0.06] border border-black/5 dark:border-white/[0.08] hover:underline hover:border-accent/50 hover:text-accent transition-colors max-w-full truncate"
+                >
+                  <MapPin style={{ color: eventColor }} className="w-2.5 h-2.5 shrink-0" />
+                  <span className="truncate">{event.location}</span>
+                  <ExternalLink className="w-2.5 h-2.5 shrink-0 opacity-65" />
+                </span>
+              ) : (
+                <span
+                  title={`Ubicación: ${event.location}`}
+                  className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9.5px] font-sans text-slate-600 dark:text-zinc-300 bg-black/5 dark:bg-white/[0.06] border border-black/5 dark:border-white/[0.08] max-w-full truncate"
+                >
+                  <MapPin style={{ color: eventColor }} className="w-2.5 h-2.5 shrink-0" />
+                  <span className="truncate">{event.location}</span>
+                </span>
+              ))}
 
-            {event.repeat_rule && (
+            {isRecurring && (
               <span
                 title="Evento recurrente"
                 className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9.5px] font-sans text-slate-600 dark:text-zinc-300 bg-black/5 dark:bg-white/[0.06] border border-black/5 dark:border-white/[0.08] shrink-0"

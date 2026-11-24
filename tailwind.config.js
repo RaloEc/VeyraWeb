@@ -1,3 +1,16 @@
+const cssVarColor = (varName, fallback) => {
+  const base = fallback ? `var(${varName}, ${fallback})` : `var(${varName})`;
+  return ({ opacityValue }) => {
+    if (opacityValue !== undefined && !Number.isNaN(Number(opacityValue))) {
+      const pct = Math.round(Number(opacityValue) * 10000) / 100;
+      if (pct < 100) {
+        return `color-mix(in srgb, ${base} ${pct}%, transparent)`;
+      }
+    }
+    return base;
+  };
+};
+
 /** @type {import('tailwindcss').Config} */
 export default {
   content: [
@@ -9,25 +22,25 @@ export default {
     extend: {
       colors: {
         accent: {
-          DEFAULT: 'var(--accent-primary)',
-          muted: 'var(--accent-muted)',
+          DEFAULT: cssVarColor('--accent-primary'),
+          muted: cssVarColor('--accent-muted'),
           bg: 'var(--accent-bg)',
         },
-        canvas: 'var(--bg-main)',
-        surface: 'var(--bg-surface)',
+        canvas: cssVarColor('--bg-main'),
+        surface: cssVarColor('--bg-surface'),
         veyra: {
-          canvas: 'var(--bg-main)',
-          card: 'var(--bg-surface)',
-          elevated: 'var(--bg-elevated)',
-          hover: 'var(--bg-hover, #191919)',
-          border: 'var(--border-main, #2b2b2b)',
-          borderSubtle: 'var(--border-subtle, #232323)',
-          text: 'var(--text-main, #fcfcfc)',
-          muted: 'var(--text-muted, #a6a6a6)',
-          subtle: 'var(--text-subtle, #666666)',
+          canvas: cssVarColor('--bg-main'),
+          card: cssVarColor('--bg-surface'),
+          elevated: cssVarColor('--bg-elevated'),
+          hover: cssVarColor('--bg-hover', '#191919'),
+          border: cssVarColor('--border-main', '#2b2b2b'),
+          borderSubtle: cssVarColor('--border-subtle', '#232323'),
+          text: cssVarColor('--text-main', '#fcfcfc'),
+          muted: cssVarColor('--text-muted', '#a6a6a6'),
+          subtle: cssVarColor('--text-subtle', '#666666'),
           teal: {
-            DEFAULT: 'var(--accent-primary)',
-            hover: 'var(--accent-muted)',
+            DEFAULT: cssVarColor('--accent-primary'),
+            hover: cssVarColor('--accent-muted'),
             glow: 'var(--accent-bg)',
             subtle: 'var(--accent-bg)',
           },
@@ -52,6 +65,7 @@ export default {
         DEFAULT: '150ms',
       },
       boxShadow: {
+        'xs': '0 1px 2px 0 rgba(0, 0, 0, 0.05)',
         'elevated': '0 4px 16px rgba(0, 0, 0, 0.12)',
         'sm': '0 1px 2px rgba(0, 0, 0, 0.05)',
       }

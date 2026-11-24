@@ -25,6 +25,7 @@ import {
   Link2,
   ShieldCheck,
   Unlink,
+  X,
 } from 'lucide-react';
 import type { UserIdentity } from '@supabase/supabase-js';
 import { Modal } from './Modal';
@@ -32,7 +33,7 @@ import { GoogleIcon } from './GoogleIcon';
 import { IntegrationsSettingsPanel } from './IntegrationsSettingsPanel';
 import { AUTH_INTENT_STORAGE_KEY, getAuthCallbackUrl } from '../../lib/googleDriveIntegration';
 import { usePWAInstall } from '../../hooks/usePWAInstall';
-import { PushService } from '../../lib/pushService';
+import { PushService, detectBraveBrowser } from '../../lib/pushService';
 import { DeviceService, type ConnectedDevice } from '../../lib/deviceService';
 import { supabase } from '../../lib/supabase';
 import { localDB } from '../../lib/db/local-db';
@@ -46,6 +47,15 @@ import {
   type EditorFontFamily,
 } from '../../context/UserSettingsContext';
 import { alertSoundPlayer } from '../../lib/audio/alertSounds';
+
+type BrowserNotificationPermission = NotificationPermission | 'unsupported';
+
+function readBrowserNotificationPermission(): BrowserNotificationPermission {
+  if (typeof window === 'undefined' || !('Notification' in window)) {
+    return 'unsupported';
+  }
+  return Notification.permission;
+}
 
 export interface UserSettingsModalProps {
   isOpen: boolean;
@@ -74,7 +84,7 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
   onSignOut,
 }) => {
   const { isDark } = useTheme();
-  const { isInstallable, isInstalled, promptInstall } = usePWAInstall();
+  const { isInstallable, isInstalled, isIOS, promptInstall } = usePWAInstall();
   const { settings, isSaving, updateSetting, resetToDefaults } = useUserSettings();
 
   const [activeTab, setActiveTab] = useState<TabType>('account');
@@ -84,7 +94,14 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
   // Push notification state
   const [pushSubscribed, setPushSubscribed] = useState<boolean>(false);
   const [pushLoading, setPushLoading] = useState<boolean>(false);
+  const [testPushLoading, setTestPushLoading] = useState<boolean>(false);
+  const [pushError, setPushError] = useState<string | null>(null);
+  const [isBraveBrowser, setIsBraveBrowser] = useState<boolean>(false);
   const isPushSupported = PushService.isSupported();
+  const [notificationPermission, setNotificationPermission] = useState<BrowserNotificationPermission>(() =>
+    readBrowserNotificationPermission()
+  );
+  const isSecureContext = typeof window !== 'undefined' ? window.isSecureContext : true;
 
   // Dispositivos conectados
   const [devices, setDevices] = useState<ConnectedDevice[]>([]);
@@ -189,10 +206,53 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
   };
 
   useEffect(() => {
-    if (!isOpen || !isPushSupported) return;
-    PushService.getExistingSubscription().then((sub) => {
-      setPushSubscribed(!!sub);
+    if (!isOpen) return;
+
+    let active = true;
+    let permStatus: PermissionStatus | null = null;
+    const syncPermission = () => {
+      if (active) {
+        setNotificationPermission(readBrowserNotificationPermission());
+      }
+    };
+
+    window.addEventListener('focus', syncPermission);
+
+    detectBraveBrowser().then((isBrave) => {
+      if (active) setIsBraveBrowser(isBrave);
     });
+
+    if (typeof navigator !== 'undefined' && 'permissions' in navigator) {
+      try {
+        navigator.permissions
+          .query({ name: 'notifications' as PermissionName })
+          .then((status) => {
+            if (!active) return;
+            permStatus = status;
+            setNotificationPermission(readBrowserNotificationPermission());
+            status.onchange = syncPermission;
+          })
+          .catch(() => {});
+      } catch {
+        // Ignore browsers that reject permissions.query for notifications
+      }
+    }
+
+    if (isPushSupported) {
+      PushService.getExistingSubscription().then((sub) => {
+        if (!active) return;
+        setPushSubscribed(!!sub);
+        setNotificationPermission(readBrowserNotificationPermission());
+      });
+    }
+
+    return () => {
+      active = false;
+      window.removeEventListener('focus', syncPermission);
+      if (permStatus) {
+        permStatus.onchange = null;
+      }
+    };
   }, [isOpen, isPushSupported]);
 
   useEffect(() => {
@@ -216,11 +276,79 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
     }
   };
 
+  const handleEnableNotifications = async () => {
+    setPushError(null);
+    const currentPerm = readBrowserNotificationPermission();
+    setNotificationPermission(currentPerm);
+
+    if (currentPerm === 'unsupported') {
+      const msg = 'Este navegador no soporta notificaciones web.';
+      setPushError(msg);
+      toast.error(msg);
+      return;
+    }
+
+    if (currentPerm === 'denied') {
+      const msg =
+        'Las notificaciones están bloqueadas en el navegador. Habilítalas desde el candado de la barra de direcciones.';
+      setPushError(msg);
+      toast.error(msg);
+      return;
+    }
+
+    setPushLoading(true);
+    try {
+      if (isPushSupported && userId) {
+        const res = await PushService.subscribe(userId);
+        setNotificationPermission(readBrowserNotificationPermission());
+        if (res.success) {
+          setPushSubscribed(true);
+          setPushError(null);
+          toast.success('¡Notificaciones activadas! Recibirás avisos aun con la pestaña cerrada.');
+        } else {
+          const errMsg = res.error || 'No se pudieron activar las notificaciones';
+          setPushError(errMsg);
+          toast.error(errMsg);
+        }
+      } else if (typeof window !== 'undefined' && 'Notification' in window) {
+        const perm = await Notification.requestPermission();
+        setNotificationPermission(perm);
+        if (perm === 'granted') {
+          setPushError(null);
+          toast.success('Permiso de notificaciones concedido.');
+        } else {
+          const msg = 'No se otorgó permiso de notificaciones.';
+          setPushError(msg);
+          toast.error(msg);
+        }
+      }
+    } catch {
+      const msg = 'Ocurrió un error al solicitar permiso de notificaciones';
+      setPushError(msg);
+      toast.error(msg);
+    } finally {
+      setNotificationPermission(readBrowserNotificationPermission());
+      setPushLoading(false);
+    }
+  };
+
+  const handleRefreshPermission = () => {
+    const nextPerm = readBrowserNotificationPermission();
+    setNotificationPermission(nextPerm);
+    if (nextPerm === 'granted') {
+      setPushError(null);
+      toast.success('¡Permiso concedido! Ya puedes activar o probar las notificaciones.');
+    } else if (nextPerm === 'denied') {
+      toast.error('Siguen bloqueadas en este navegador. Revísalo en la configuración del sitio.');
+    }
+  };
+
   const handleTogglePush = async () => {
     if (!userId) {
       toast.error('Inicia sesión para activar las notificaciones');
       return;
     }
+    setPushError(null);
     setPushLoading(true);
     try {
       if (pushSubscribed) {
@@ -229,21 +357,49 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
           setPushSubscribed(false);
           toast.success('Notificaciones web desactivadas');
         } else {
-          toast.error(res.error || 'Error al desactivar notificaciones');
+          const errMsg = res.error || 'Error al desactivar notificaciones';
+          setPushError(errMsg);
+          toast.error(errMsg);
         }
       } else {
         const res = await PushService.subscribe(userId);
         if (res.success) {
           setPushSubscribed(true);
+          setPushError(null);
           toast.success('¡Notificaciones web activadas! Recibirás avisos aun con la pestaña cerrada.');
         } else {
-          toast.error(res.error || 'Error al activar notificaciones');
+          const errMsg = res.error || 'Error al activar notificaciones';
+          setPushError(errMsg);
+          toast.error(errMsg);
         }
       }
     } catch {
-      toast.error('Ocurrió un error inesperado');
+      const msg = 'Ocurrió un error inesperado';
+      setPushError(msg);
+      toast.error(msg);
     } finally {
+      setNotificationPermission(readBrowserNotificationPermission());
       setPushLoading(false);
+    }
+  };
+
+  const handleSendTestPush = async () => {
+    setTestPushLoading(true);
+    try {
+      const res = await PushService.sendTestNotification();
+      if (res.success) {
+        toast.success(
+          res.sent > 1
+            ? `Notificación de prueba enviada a ${res.sent} dispositivos`
+            : 'Notificación de prueba enviada. Debería aparecer en tu navegador en segundos.'
+        );
+      } else {
+        toast.error(res.error || 'No se pudo enviar la notificación de prueba');
+      }
+    } catch {
+      toast.error('Error al solicitar notificación de prueba');
+    } finally {
+      setTestPushLoading(false);
     }
   };
 
@@ -258,7 +414,6 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
 
   const controlLevelOptions: { id: ControlLevel; label: string; desc: string; color: string }[] = [
     { id: 'normal', label: 'Normal', desc: 'Alerta sutil y no invasiva', color: '#10B981' },
-    { id: 'strict', label: 'Estricto', desc: 'Aviso prioritario y sonoro para no olvidar', color: '#F59E0B' },
     { id: 'critical', label: 'Crítico', desc: 'Alarma persistente hasta confirmación manual', color: '#EF4444' },
   ];
 
@@ -360,6 +515,18 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
                 >
                   <Icon className={cn('w-4 h-4 shrink-0', isActive ? 'text-accent' : 'text-veyra-subtle')} />
                   <span>{tab.label}</span>
+                  {tab.id === 'notifications' &&
+                    (notificationPermission === 'default' || notificationPermission === 'denied') && (
+                      <span
+                        className={cn(
+                          'w-1.5 h-1.5 rounded-full ml-auto shrink-0',
+                          notificationPermission === 'denied' ? 'bg-amber-400' : 'bg-accent'
+                        )}
+                      />
+                    )}
+                  {tab.id === 'devices' && isInstallable && (
+                    <span className="w-1.5 h-1.5 rounded-full ml-auto shrink-0 bg-accent" />
+                  )}
                 </button>
               );
             })}
@@ -450,7 +617,7 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
                 <label className="block text-[11px] font-semibold text-veyra-muted uppercase tracking-wider mb-2">
                   Nivel de control predeterminado en recordatorios
                 </label>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                   {controlLevelOptions.map((lvl) => (
                     <button
                       key={lvl.id}
@@ -871,13 +1038,6 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
                     </button>
                     <button
                       type="button"
-                      onClick={() => alertSoundPlayer.play('strict')}
-                      className="px-2 py-1 rounded bg-amber-500/10 text-amber-400 hover:bg-amber-500/20 text-[10px] font-medium"
-                    >
-                      Estricto
-                    </button>
-                    <button
-                      type="button"
                       onClick={() => alertSoundPlayer.play('critical')}
                       className="px-2 py-1 rounded bg-red-500/10 text-red-400 hover:bg-red-500/20 text-[10px] font-medium"
                     >
@@ -1005,53 +1165,188 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
           {/* ══════════════════════════════════════════════════════════════ */}
           {activeTab === 'notifications' && (
             <div className="space-y-4">
-              <div>
-                <h4 className="text-sm font-semibold text-veyra-text">Canales de Notificación</h4>
-                <p className="text-[11px] text-veyra-muted mt-0.5">
-                  Gestiona cómo y cuándo recibes alertas en este navegador y en tus dispositivos.
-                </p>
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <div>
+                  <h4 className="text-sm font-semibold text-veyra-text">Canales de Notificación</h4>
+                  <p className="text-[11px] text-veyra-muted mt-0.5">
+                    Gestiona cómo y cuándo recibes alertas en este navegador y en tus dispositivos.
+                  </p>
+                </div>
+
+                <span
+                  className={cn(
+                    'px-2 py-0.5 rounded-full text-[10px] font-semibold border shrink-0',
+                    notificationPermission === 'granted'
+                      ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30'
+                      : notificationPermission === 'default'
+                      ? 'bg-accent/15 text-accent border-accent/30'
+                      : notificationPermission === 'denied'
+                      ? 'bg-amber-500/15 text-amber-300 border-amber-500/30'
+                      : 'bg-veyra-elevated text-veyra-muted border-veyra-border'
+                  )}
+                >
+                  {notificationPermission === 'granted'
+                    ? 'Permitidas'
+                    : notificationPermission === 'default'
+                    ? 'Sin permiso'
+                    : notificationPermission === 'denied'
+                    ? 'Bloqueadas'
+                    : 'No soportado'}
+                </span>
               </div>
 
-              {/* Web Push Notifications */}
-              {isPushSupported ? (
-                <div className="flex items-center justify-between p-3.5 rounded-lg bg-veyra-card/60 border border-veyra-border">
-                  <div className="flex items-center gap-3 pr-2">
-                    <div
-                      className={cn(
-                        'w-8 h-8 rounded-lg flex items-center justify-center shrink-0',
-                        pushSubscribed ? 'bg-emerald-500/20 text-emerald-400' : 'bg-veyra-elevated text-veyra-muted'
-                      )}
-                    >
-                      {pushSubscribed ? <Bell className="w-4 h-4" /> : <BellOff className="w-4 h-4" />}
+              {/* Estado del permiso del navegador */}
+              {notificationPermission === 'default' && (
+                <div className="flex flex-wrap items-center justify-between gap-3 p-3.5 rounded-xl bg-accent/10 border border-accent/30">
+                  <div className="flex items-start gap-3">
+                    <div className="w-8 h-8 rounded-lg bg-accent/20 text-accent flex items-center justify-center shrink-0 mt-0.5">
+                      <Bell className="w-4 h-4" />
                     </div>
                     <div>
-                      <p className="font-semibold text-xs text-veyra-text">Notificaciones Push Web</p>
-                      <p className="text-[10px] text-veyra-muted">
-                        {pushSubscribed
-                          ? 'Activas: recibirás avisos del sistema aun con el navegador cerrado'
-                          : 'Actívalas para no perder ninguna alarma mientras estás fuera'}
+                      <p className="font-semibold text-xs text-veyra-text">
+                        Permiso de notificaciones pendiente
+                      </p>
+                      <p className="text-[11px] text-veyra-muted mt-0.5">
+                        Todavía no has dado permiso al navegador. Actívalo para recibir avisos de recordatorios y eventos.
                       </p>
                     </div>
                   </div>
-
                   <button
                     type="button"
-                    onClick={handleTogglePush}
+                    onClick={handleEnableNotifications}
                     disabled={pushLoading}
-                    className={cn(
-                      'px-3.5 py-1.5 rounded-lg text-xs font-semibold shrink-0 transition-colors cursor-pointer flex items-center gap-1.5',
-                      pushSubscribed
-                        ? 'bg-veyra-border/60 hover:bg-veyra-border text-veyra-muted hover:text-veyra-text'
-                        : 'bg-accent text-white hover:bg-accent/90'
-                    )}
+                    className="px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-accent text-white hover:bg-accent/90 transition-colors cursor-pointer flex items-center gap-1.5 shrink-0 disabled:opacity-50"
                   >
-                    {pushLoading && <Loader2 className="w-3 h-3 animate-spin" />}
-                    <span>{pushSubscribed ? 'Desactivar' : 'Activar'}</span>
+                    {pushLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Bell className="w-3.5 h-3.5" />}
+                    <span>Permitir y activar</span>
                   </button>
                 </div>
-              ) : (
+              )}
+
+              {notificationPermission === 'denied' && (
+                <div className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/25 space-y-2.5">
+                  <div className="flex items-start gap-2.5 text-amber-300 text-[11px] leading-relaxed">
+                    <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+                    <div>
+                      <p className="font-semibold text-xs text-amber-200">Notificaciones bloqueadas en este navegador</p>
+                      <p className="mt-0.5">
+                        El navegador tiene bloqueadas las notificaciones para este sitio. Haz clic en el ícono de configuración o candado junto a la barra de direcciones, permite las notificaciones y pulsa <strong>Comprobar permiso</strong>.
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex justify-end">
+                    <button
+                      type="button"
+                      onClick={handleRefreshPermission}
+                      className="px-3 py-1.5 rounded-lg text-[11px] font-medium bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/30 text-amber-200 transition-colors cursor-pointer flex items-center gap-1.5"
+                    >
+                      <RefreshCw className="w-3 h-3" />
+                      <span>Comprobar permiso</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Web Push Notifications */}
+              {notificationPermission === 'granted' &&
+                (isPushSupported ? (
+                  <div className="space-y-2.5">
+                    <div className="flex flex-wrap items-center justify-between gap-3 p-3.5 rounded-lg bg-veyra-card/60 border border-veyra-border">
+                      <div className="flex items-center gap-3 pr-2">
+                        <div
+                          className={cn(
+                            'w-8 h-8 rounded-lg flex items-center justify-center shrink-0',
+                            pushSubscribed ? 'bg-emerald-500/20 text-emerald-400' : 'bg-veyra-elevated text-veyra-muted'
+                          )}
+                        >
+                          {pushSubscribed ? <Bell className="w-4 h-4" /> : <BellOff className="w-4 h-4" />}
+                        </div>
+                        <div>
+                          <p className="font-semibold text-xs text-veyra-text">Notificaciones Push Web</p>
+                          <p className="text-[10px] text-veyra-muted">
+                            {pushSubscribed
+                              ? 'Activas: recibirás avisos del sistema aun con el navegador cerrado'
+                              : 'Actívalas para no perder ninguna alarma mientras estás fuera'}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2 shrink-0">
+                        {pushSubscribed && (
+                          <button
+                            type="button"
+                            onClick={handleSendTestPush}
+                            disabled={testPushLoading || pushLoading}
+                            className="px-3 py-1.5 rounded-lg text-xs font-medium bg-veyra-elevated hover:bg-veyra-elevated/80 border border-veyra-border text-veyra-text transition-colors cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
+                          >
+                            {testPushLoading ? (
+                              <Loader2 className="w-3 h-3 animate-spin" />
+                            ) : (
+                              <Bell className="w-3 h-3 text-accent" />
+                            )}
+                            <span>Enviar prueba</span>
+                          </button>
+                        )}
+
+                        <button
+                          type="button"
+                          onClick={handleTogglePush}
+                          disabled={pushLoading}
+                          className={cn(
+                            'px-3.5 py-1.5 rounded-lg text-xs font-semibold shrink-0 transition-colors cursor-pointer flex items-center gap-1.5',
+                            pushSubscribed
+                              ? 'bg-veyra-border/60 hover:bg-veyra-border text-veyra-muted hover:text-veyra-text'
+                              : 'bg-accent text-white hover:bg-accent/90'
+                          )}
+                        >
+                          {pushLoading && <Loader2 className="w-3 h-3 animate-spin" />}
+                          <span>{pushSubscribed ? 'Desactivar' : 'Activar'}</span>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="p-3.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-300 text-xs">
+                    Permiso concedido para mostrar avisos mientras Veyra está abierta. Este navegador no soporta notificaciones Push en segundo plano.
+                  </div>
+                ))}
+
+              {notificationPermission === 'unsupported' && (
                 <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-300 text-xs">
-                  Tu navegador no soporta el estándar Web Push Notifications o las tiene bloqueadas.
+                  Tu navegador no soporta el estándar de notificaciones Web o las tiene deshabilitadas a nivel del sistema.
+                </div>
+              )}
+
+              {isBraveBrowser && !pushSubscribed && (
+                <div className="flex items-start gap-2.5 p-3.5 rounded-xl bg-veyra-card/70 border border-amber-500/25 text-[11px] leading-relaxed text-veyra-muted">
+                  <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                  <div>
+                    <p className="font-semibold text-xs text-veyra-text">Usar Brave</p>
+                    <p className="mt-0.5">
+                      Brave bloquea por defecto los servicios de mensajería Push de Google. Para habilitarlo: ve a{' '}
+                      <code className="px-1.5 py-0.5 rounded bg-veyra-elevated text-amber-300 font-mono text-[10px]">
+                        brave://settings/privacy
+                      </code>
+                      , activa <strong className="text-veyra-text">&quot;Usar los servicios de Google para mensajería push&quot;</strong> y recarga la app.
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {pushError && (
+                <div className="flex items-start justify-between gap-2.5 p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/25 text-amber-200 text-[11px] leading-relaxed">
+                  <div className="flex items-start gap-2.5">
+                    <AlertTriangle className="w-4 h-4 text-amber-300 shrink-0 mt-0.5" />
+                    <p>{pushError}</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setPushError(null)}
+                    className="p-1 rounded text-amber-300/80 hover:text-amber-100 hover:bg-amber-500/15 transition-colors cursor-pointer shrink-0"
+                    aria-label="Cerrar aviso de error"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
                 </div>
               )}
 
@@ -1101,6 +1396,139 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
           {/* ══════════════════════════════════════════════════════════════ */}
           {activeTab === 'devices' && (
             <div className="space-y-4">
+              {/* Tarjeta siempre visible de Instalación PWA */}
+              {isInstalled ? (
+                <div className="flex items-center justify-between gap-3 p-3.5 rounded-xl bg-emerald-500/10 border border-emerald-500/25">
+                  <div className="flex items-center gap-3">
+                    <div className="w-9 h-9 rounded-lg bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0">
+                      <Laptop className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <p className="font-semibold text-xs text-veyra-text">Aplicación Web (PWA)</p>
+                        <span className="px-1.5 py-0.5 rounded text-[9px] font-semibold bg-emerald-500/20 text-emerald-400">
+                          Instalada
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-emerald-300/90 mt-0.5">
+                        Veyra se está ejecutando como aplicación instalada en este dispositivo.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              ) : isInstallable ? (
+                <div className="p-3.5 rounded-xl bg-accent/10 border border-accent/30">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div className="flex items-center gap-3">
+                      <div className="w-9 h-9 rounded-lg bg-accent/20 text-accent flex items-center justify-center shrink-0">
+                        <Download className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <p className="font-semibold text-xs text-veyra-text">Instalar Veyra en la web (PWA)</p>
+                          <span className="px-1.5 py-0.5 rounded text-[9px] font-semibold bg-accent/20 text-accent">
+                            Lista para instalar
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-veyra-muted mt-0.5">
+                          Acceso directo como app independiente sin barra de navegador y mejor soporte offline.
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={promptInstall}
+                      className="px-3.5 py-1.5 rounded-lg bg-accent text-white font-semibold hover:bg-accent/90 transition-colors flex items-center gap-1.5 cursor-pointer text-xs shrink-0"
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                      <span>Instalar PWA</span>
+                    </button>
+                  </div>
+                </div>
+              ) : isIOS ? (
+                <div className="flex items-start gap-3 p-3.5 rounded-xl bg-veyra-card/70 border border-veyra-border">
+                  <div className="w-9 h-9 rounded-lg bg-accent/15 text-accent flex items-center justify-center shrink-0">
+                    <Smartphone className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <p className="font-semibold text-xs text-veyra-text">Instalar Veyra en iPhone / iPad</p>
+                      <span className="px-1.5 py-0.5 rounded text-[9px] font-medium bg-veyra-elevated text-veyra-muted border border-veyra-border">
+                        Safari iOS
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-veyra-muted mt-0.5 leading-relaxed">
+                      En Safari, pulsa <strong className="text-veyra-text">Compartir</strong> y selecciona{' '}
+                      <strong className="text-veyra-text">Añadir a pantalla de inicio</strong>.
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex items-start gap-3 p-3.5 rounded-xl bg-veyra-card/70 border border-veyra-border">
+                  <div className="w-9 h-9 rounded-lg bg-veyra-elevated text-accent flex items-center justify-center shrink-0">
+                    <Laptop className="w-4 h-4" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="font-semibold text-xs text-veyra-text">Aplicación Web Instalable (PWA)</p>
+                      <span className="px-1.5 py-0.5 rounded text-[9px] font-medium bg-veyra-elevated text-veyra-muted border border-veyra-border">
+                        {isSecureContext ? 'Instalación desde navegador' : 'Requiere HTTPS'}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-veyra-muted mt-0.5 leading-relaxed">
+                      {isSecureContext
+                        ? 'Puedes instalar Veyra desde el ícono de instalar en la barra de direcciones o desde el menú del navegador (Instalar Veyra / Guardar y compartir → Instalar página como aplicación).'
+                        : 'La instalación PWA directa requiere abrir la web mediante HTTPS o localhost.'}
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* Acceso rápido a permiso de notificaciones si aún falta */}
+              {(notificationPermission === 'default' || notificationPermission === 'denied') && (
+                <div
+                  className={cn(
+                    'flex flex-wrap items-center justify-between gap-2.5 p-3 rounded-xl border text-xs',
+                    notificationPermission === 'denied'
+                      ? 'bg-amber-500/10 border-amber-500/25'
+                      : 'bg-veyra-card/60 border-veyra-border'
+                  )}
+                >
+                  <div className="flex items-center gap-2.5">
+                    <Bell
+                      className={cn(
+                        'w-4 h-4 shrink-0',
+                        notificationPermission === 'denied' ? 'text-amber-300' : 'text-accent'
+                      )}
+                    />
+                    <span className="text-[11px] text-veyra-text">
+                      {notificationPermission === 'denied'
+                        ? 'Las notificaciones están bloqueadas en este navegador.'
+                        : 'Las notificaciones del navegador aún no tienen permiso.'}
+                    </span>
+                  </div>
+                  {notificationPermission === 'default' ? (
+                    <button
+                      type="button"
+                      onClick={handleEnableNotifications}
+                      disabled={pushLoading}
+                      className="px-3 py-1.5 rounded-lg bg-accent text-white font-semibold hover:bg-accent/90 transition-colors cursor-pointer text-[11px] flex items-center gap-1.5 disabled:opacity-50"
+                    >
+                      {pushLoading && <Loader2 className="w-3 h-3 animate-spin" />}
+                      <span>Activar notificaciones</span>
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab('notifications')}
+                      className="px-3 py-1.5 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/30 text-amber-200 font-medium transition-colors cursor-pointer text-[11px]"
+                    >
+                      Ver ajustes
+                    </button>
+                  )}
+                </div>
+              )}
+
               <div className="flex items-center justify-between">
                 <div>
                   <h4 className="text-sm font-semibold text-veyra-text">Dispositivos y Sesiones Conectadas</h4>
@@ -1213,38 +1641,6 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
                   })
                 )}
               </div>
-
-              {/* Botón de Instalación PWA Desktop si aplica */}
-              {isInstallable && (
-                <div className="p-3.5 rounded-lg bg-accent/10 border border-accent/30 text-accent">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2.5">
-                      <div className="w-8 h-8 rounded-lg bg-accent/20 flex items-center justify-center shrink-0">
-                        <Laptop className="w-4 h-4 text-accent" />
-                      </div>
-                      <div>
-                        <p className="font-semibold text-xs text-veyra-text">Instalar app de escritorio</p>
-                        <p className="text-[10px] text-veyra-muted">Acceso directo como ventana nativa independiente</p>
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={promptInstall}
-                      className="px-3 py-1.5 rounded-lg bg-accent text-white font-medium hover:bg-accent/90 transition-colors flex items-center gap-1.5 cursor-pointer text-xs"
-                    >
-                      <Download className="w-3.5 h-3.5" />
-                      <span>Instalar</span>
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {isInstalled && (
-                <div className="flex items-center gap-2.5 p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs">
-                  <Laptop className="w-4 h-4 shrink-0" />
-                  <span>Ejecutándose en modo aplicación de escritorio instalada</span>
-                </div>
-              )}
             </div>
           )}
         </div>

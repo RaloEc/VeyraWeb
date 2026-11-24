@@ -1,11 +1,15 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Loader2 } from 'lucide-react';
+import { toast } from 'sonner';
 import { NotesSidebar } from './NotesSidebar';
 import { NoteEditor } from './NoteEditor';
 import { EventDetailView } from '../agenda/EventDetailView';
 import { ReminderDetailView } from '../agenda/ReminderDetailView';
 import { CalendarView } from '../agenda/CalendarView';
 import { AgendaDashboardView } from '../agenda/dashboard/AgendaDashboardView';
+import { GlobalSearchModal } from '../agenda/dashboard/GlobalSearchModal';
+import { useTemplates } from './templates/useTemplates';
+import type { NoteTemplate } from './templates/templatesData';
 import { useNotes } from '../../hooks/useNotes';
 import { useReminders } from '../../hooks/useReminders';
 import { useEvents } from '../../hooks/useEvents';
@@ -42,6 +46,8 @@ export const NotesModule: React.FC<NotesModuleProps> = ({
 }) => {
   const localHook = useNotes(notesHook ? undefined : userId);
   const eventsHook = useEvents(userId);
+  const { allTemplates } = useTemplates(userId);
+  const [isGlobalSearchOpen, setIsGlobalSearchOpen] = useState(false);
   const {
     folders,
     notes,
@@ -368,6 +374,40 @@ export const NotesModule: React.FC<NotesModuleProps> = ({
 
   const isCalendarActive = isCalendarOpen && agendaViewMode === 'calendar';
 
+  // Global search shortcut (Ctrl+K / Cmd+K)
+  useEffect(() => {
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setIsGlobalSearchOpen((prev) => !prev);
+      }
+    };
+    window.addEventListener('keydown', handleGlobalKeyDown);
+    return () => window.removeEventListener('keydown', handleGlobalKeyDown);
+  }, []);
+
+  const handleSelectFolderFromDashboard = useCallback(
+    (folderId: string) => {
+      setSelectedFolderId(folderId);
+      setSidebarSection('notes');
+      if (!isSidebarOpen && onToggleSidebar) {
+        onToggleSidebar();
+      }
+    },
+    [setSelectedFolderId, isSidebarOpen, onToggleSidebar]
+  );
+
+  const handleCreateNoteFromTemplate = useCallback(
+    async (template: NoteTemplate) => {
+      const html = template.getContent({ userName });
+      const newNote = await createNote(selectedFolderId || null, null, template.title, html);
+      if (!newNote) return;
+      toast.success(`Nota creada con "${template.title}"`);
+      handleSelectNote(newNote.id);
+    },
+    [createNote, selectedFolderId, userName, handleSelectNote]
+  );
+
   return (
     <div className="flex-1 flex h-full overflow-hidden">
       {/* Super Smooth Animated & Resizable Left Sidebar */}
@@ -441,44 +481,54 @@ export const NotesModule: React.FC<NotesModuleProps> = ({
           <h3 className="text-sm font-medium text-veyra-text">Cargando evento...</h3>
         </div>
       ) : selectedEvent ? (
-        <EventDetailView
-          event={selectedEvent}
-          allNotes={allNotes}
-          folders={folders}
-          remindersHook={remindersHook}
-          eventsHook={eventsHook}
-          onSelectNote={handleSelectNote}
-          onCreateNoteForEvent={async (folderId, title) => {
-            const newNote = await createNote(folderId || null, selectedEvent.id, title);
-            if (newNote) {
-              handleSelectNote(newNote.id);
-            }
-          }}
-          onDeleteNote={handleDeleteNote}
-          onSelectReminder={handleSelectReminder}
-          onClose={() => handleSelectEvent(null)}
-          isSidebarOpen={isSidebarOpen}
-          onToggleSidebar={onToggleSidebar}
-          currentUserId={userId}
-        />
+        <div
+          key={`event-stage-${selectedEvent.id}`}
+          className="flex-1 min-w-0 flex h-full overflow-hidden veyra-stage-enter"
+        >
+          <EventDetailView
+            event={selectedEvent}
+            allNotes={allNotes}
+            folders={folders}
+            remindersHook={remindersHook}
+            eventsHook={eventsHook}
+            onSelectNote={handleSelectNote}
+            onCreateNoteForEvent={async (folderId, title) => {
+              const newNote = await createNote(folderId || null, selectedEvent.id, title);
+              if (newNote) {
+                handleSelectNote(newNote.id);
+              }
+            }}
+            onDeleteNote={handleDeleteNote}
+            onSelectReminder={handleSelectReminder}
+            onClose={() => handleSelectEvent(null)}
+            isSidebarOpen={isSidebarOpen}
+            onToggleSidebar={onToggleSidebar}
+            currentUserId={userId}
+          />
+        </div>
       ) : selectedReminderId && remindersHook?.loading ? (
         <div className="flex-1 flex flex-col items-center justify-center p-8 text-center text-veyra-muted bg-veyra-canvas">
           <Loader2 className="w-6 h-6 text-accent animate-spin mb-3" />
           <h3 className="text-sm font-medium text-veyra-text">Cargando recordatorio...</h3>
         </div>
       ) : selectedReminder ? (
-        <ReminderDetailView
-          reminder={selectedReminder}
-          allNotes={allNotes}
-          eventsHook={eventsHook}
-          remindersHook={remindersHook}
-          onSelectNote={handleSelectNote}
-          onSelectEvent={handleSelectEvent}
-          onClose={() => handleSelectReminder(null)}
-          isSidebarOpen={isSidebarOpen}
-          onToggleSidebar={onToggleSidebar}
-          currentUserId={userId}
-        />
+        <div
+          key={`reminder-stage-${selectedReminder.id}`}
+          className="flex-1 min-w-0 flex h-full overflow-hidden veyra-stage-enter"
+        >
+          <ReminderDetailView
+            reminder={selectedReminder}
+            allNotes={allNotes}
+            eventsHook={eventsHook}
+            remindersHook={remindersHook}
+            onSelectNote={handleSelectNote}
+            onSelectEvent={handleSelectEvent}
+            onClose={() => handleSelectReminder(null)}
+            isSidebarOpen={isSidebarOpen}
+            onToggleSidebar={onToggleSidebar}
+            currentUserId={userId}
+          />
+        </div>
       ) : selectedNote ? (
         <NoteEditor
           note={selectedNote}
@@ -518,25 +568,17 @@ export const NotesModule: React.FC<NotesModuleProps> = ({
             folders={folders}
             userName={userName}
             userEmail={userEmail}
+            currentUserId={userId}
+            templates={allTemplates}
             onSelectEvent={handleSelectEvent}
             onSelectReminder={handleSelectReminder}
             onSelectNote={handleSelectNote}
-            onCreateNote={async (folderId, eventId, title, contentJson) => {
-              const newNote = await createNote(folderId || null, eventId || null, title);
-              if (newNote) {
-                if (contentJson) {
-                  const pageId = crypto.randomUUID();
-                  const paginated = {
-                    isPaginated: true,
-                    version: 2,
-                    layout: 'vertical',
-                    pages: [{ id: pageId, content: contentJson }],
-                  };
-                  await saveNote(newNote.id, { content: JSON.stringify(paginated) });
-                }
-                return newNote;
-              }
-              return null;
+            onSelectFolder={handleSelectFolderFromDashboard}
+            onCreateFromTemplate={handleCreateNoteFromTemplate}
+            onOpenGlobalSearch={() => setIsGlobalSearchOpen(true)}
+            onCreateNote={async (folderId, eventId, title, contentHtml) => {
+              const newNote = await createNote(folderId || null, eventId || null, title, contentHtml);
+              return newNote || null;
             }}
             onOpenFullCalendar={handleOpenCalendar}
             isSidebarOpen={isSidebarOpen}
@@ -544,6 +586,26 @@ export const NotesModule: React.FC<NotesModuleProps> = ({
           />
         </div>
       )}
+
+      <GlobalSearchModal
+        isOpen={isGlobalSearchOpen}
+        onClose={() => setIsGlobalSearchOpen(false)}
+        notes={allNotes}
+        folders={folders}
+        events={eventsHook.events}
+        reminders={remindersHook?.reminders || []}
+        templates={allTemplates}
+        onSelectNote={handleSelectNote}
+        onSelectFolder={handleSelectFolderFromDashboard}
+        onSelectEvent={handleSelectEvent}
+        onSelectReminder={handleSelectReminder}
+        onCreateFromTemplate={handleCreateNoteFromTemplate}
+        onCreateBlankNote={async () => {
+          const newNote = await createNote(null, null, 'Nueva nota');
+          if (newNote) handleSelectNote(newNote.id);
+        }}
+        onOpenCalendar={handleOpenCalendar}
+      />
     </div>
   );
 };

@@ -78,12 +78,13 @@ export const RemindersModule: React.FC<RemindersModuleProps> = ({
     const now = new Date();
     now.setHours(now.getHours() + 1);
 
-    const defaultLevel = (defaultControlLevel === 'gentle' ? 'normal' : defaultControlLevel) || 'normal';
+    const defaultLevel: ReminderControlLevel =
+      defaultControlLevel?.toLowerCase() === 'critical' ? 'critical' : 'normal';
     await createReminder({
       title: quickTitle.trim(),
       due_date_ms: now.getTime(),
       control_level: defaultLevel,
-      priority: defaultLevel === 'critical' ? 3 : defaultLevel === 'strict' ? 2 : 1,
+      priority: defaultLevel === 'critical' ? 3 : 1,
     });
     setQuickTitle('');
   };

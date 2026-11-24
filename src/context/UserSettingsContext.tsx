@@ -7,14 +7,13 @@ import { PushService } from '../lib/pushService';
 import { toast } from 'sonner';
 
 export type UserProfileType = 'student' | 'work' | 'personal' | 'custom';
-export type ControlLevel = 'normal' | 'strict' | 'critical';
+export type ControlLevel = 'normal' | 'critical';
 export type NotePageFormat = 'infinite' | 'a4';
 export type ExplorerSortMode = 'alphabetical' | 'manual';
 export type EditorFontFamily = 'inter' | 'serif' | 'mono' | 'handwriting';
 
 export interface SoundSettings {
   normal: string;
-  strict: string;
   critical: string;
 }
 
@@ -63,7 +62,6 @@ export const DEFAULT_USER_SETTINGS: GlobalUserSettings = {
   defaultLeadMinutes: 0,
   soundSettings: {
     normal: 'ping_brillante.wav',
-    strict: 'clicks_tech.wav',
     critical: 'alarma_incendio.mp3',
   },
   soundAlertsEnabled: true,
@@ -88,8 +86,7 @@ const UserSettingsContext = createContext<UserSettingsContextType | null>(null);
 const STORAGE_KEY = 'veyra_user_settings_cache_v1';
 
 const normalizeControlLevel = (raw?: string | null): ControlLevel => {
-  if (raw === 'strict' || raw === 'critical' || raw === 'normal') return raw;
-  return 'normal';
+  return raw?.toLowerCase() === 'critical' ? 'critical' : 'normal';
 };
 
 export const UserSettingsProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {

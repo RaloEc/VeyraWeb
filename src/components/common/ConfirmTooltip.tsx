@@ -205,7 +205,7 @@ export const ConfirmTooltip: React.FC<ConfirmTooltipProps> = ({
               zIndex: 99999,
             }}
             className={cn(
-              'w-[230px] rounded-lg p-2.5 select-none font-sans shadow-elevated border animate-in fade-in-0 zoom-in-95 duration-150',
+              'w-[230px] rounded-lg p-2.5 select-none font-sans shadow-elevated border animate-veyra-scale-in',
               'bg-veyra-card text-veyra-text border-veyra-border shadow-xl shadow-black/20'
             )}
           >

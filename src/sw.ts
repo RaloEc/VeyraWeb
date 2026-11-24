@@ -10,23 +10,40 @@ declare let self: ServiceWorkerGlobalScope;
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || 'https://rrwoompvuggcczggfgiq.supabase.co';
 const SUPABASE_ANON_KEY =
   import.meta.env.VITE_SUPABASE_ANON_KEY || 'sb_publishable_5y3OReimX6RP2Tcpl8Ailw_V52PADlk';
+const VAPID_PUBLIC_KEY =
+  import.meta.env.VITE_VAPID_PUBLIC_KEY ||
+  'BN6CaKHTF5yD1p3DhLk7Wg9bcChY4OrYA7t8SSfsZ8Ca5BGU6qVRmzcb7kGU9QNkHLMyJ2exCnGMOMOpEIvKqQg';
+
+function urlBase64ToUint8Array(base64String: string): Uint8Array {
+  const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+  const rawData = atob(base64);
+  const outputArray = new Uint8Array(rawData.length);
+  for (let i = 0; i < rawData.length; ++i) {
+    outputArray[i] = rawData.charCodeAt(i);
+  }
+  return outputArray;
+}
 
 // 1. Clean up outdated caches from previous versions
 cleanupOutdatedCaches();
 
-// 2. Precache all build assets injected by VitePWA
-precacheAndRoute(self.__WB_MANIFEST);
+// 2. Precache all build assets injected by VitePWA (guarded for dev mode when manifest is empty)
+const wbManifest = self.__WB_MANIFEST;
+if (Array.isArray(wbManifest) && wbManifest.length > 0) {
+  precacheAndRoute(wbManifest);
 
-// 3. SPA Client-Side Routing: redirect navigations to index.html
-try {
-  const handler = createHandlerBoundToURL('/index.html');
-  const navigationRoute = new NavigationRoute(handler, {
-    // Exclude API requests, files with extensions, etc.
-    denylist: [/^\/_/, /^\/api\//, /^\/rest\/v1\//, /^\/auth\/v1\//, /^\/functions\/v1\//],
-  });
-  registerRoute(navigationRoute);
-} catch (err) {
-  console.warn('[SW] Navigation route registration error:', err);
+  // 3. SPA Client-Side Routing: redirect navigations to index.html
+  try {
+    const handler = createHandlerBoundToURL('/index.html');
+    const navigationRoute = new NavigationRoute(handler, {
+      // Exclude API requests, files with extensions, etc.
+      denylist: [/^\/_/, /^\/api\//, /^\/rest\/v1\//, /^\/auth\/v1\//, /^\/functions\/v1\//],
+    });
+    registerRoute(navigationRoute);
+  } catch (err) {
+    console.warn('[SW] Navigation route registration error:', err);
+  }
 }
 
 // 4. Cache Google Fonts
@@ -87,6 +104,11 @@ self.addEventListener('message', (event) => {
   }
 });
 
+// Ensure newly activated SW claims open clients cleanly
+self.addEventListener('activate', (event) => {
+  event.waitUntil(self.clients.claim());
+});
+
 // 8. Foundational Push event listener (prepared for Fase 4 & 6)
 self.addEventListener('push', (event) => {
   if (!event.data) return;
@@ -114,7 +136,6 @@ self.addEventListener('push', (event) => {
 
     const title = payload.title || 'Veyra';
     const isCritical = payload.level === 'critical';
-    const isStrict = payload.level === 'strict';
 
     const options: NotificationOptions & {
       renotify?: boolean;
@@ -122,10 +143,10 @@ self.addEventListener('push', (event) => {
       actions?: Array<{ action: string; title: string }>;
     } = {
       body: payload.body || 'Tienes un recordatorio pendiente.',
-      icon: '/pwa-192x192.svg',
-      badge: '/favicon.svg',
+      icon: '/pwa-192x192.png',
+      badge: '/pwa-badge-96x96.png',
       tag: payload.tag || (payload.reminderId ? `reminder-${payload.reminderId}` : 'veyra-notification'),
-      requireInteraction: isCritical || isStrict,
+      requireInteraction: isCritical,
       renotify: true,
       silent: Boolean(payload.silent),
       data: {
@@ -150,7 +171,8 @@ self.addEventListener('push', (event) => {
     event.waitUntil(
       self.registration.showNotification('Veyra', {
         body: event.data.text() || 'Tienes una nueva notificación.',
-        icon: '/pwa-192x192.svg',
+        icon: '/pwa-192x192.png',
+        badge: '/pwa-badge-96x96.png',
       })
     );
   }
@@ -189,20 +211,50 @@ self.addEventListener('notificationclick', (event) => {
     }
   }
 
-  // Body click: focus open window or open new
-  const targetUrl = data.url || '/';
+  // Body click: focus existing origin window (navigating if needed) or open a new tab
+  const targetUrl = typeof data.url === 'string' && data.url ? data.url : '/';
+  const resolvedTarget = new URL(targetUrl, self.location.origin).href;
+
   event.waitUntil(
-    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(async (clientList) => {
       for (const client of clientList) {
-        if ('focus' in client) {
-          if (client.url.includes(targetUrl)) {
-            return client.focus();
+        if ('focus' in client && client.url.startsWith(self.location.origin)) {
+          await client.focus();
+          if (client.url !== resolvedTarget && 'navigate' in client) {
+            try {
+              await client.navigate(resolvedTarget);
+            } catch {
+              // ignore navigation restrictions if any
+            }
           }
+          return client;
         }
       }
       if (self.clients.openWindow) {
-        return self.clients.openWindow(targetUrl);
+        return self.clients.openWindow(resolvedTarget);
       }
     })
+  );
+});
+
+// 10. Push Subscription Rotation / Expiration handler
+self.addEventListener('pushsubscriptionchange', (event) => {
+  const pushEvent = event as ExtendableEvent & { oldSubscription?: PushSubscription };
+  pushEvent.waitUntil(
+    (async () => {
+      try {
+        const applicationServerKey = urlBase64ToUint8Array(VAPID_PUBLIC_KEY);
+        await self.registration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: applicationServerKey.buffer as ArrayBuffer,
+        });
+        const clients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+        for (const client of clients) {
+          client.postMessage({ type: 'PUSH_SUBSCRIPTION_CHANGED' });
+        }
+      } catch (err) {
+        console.warn('[SW] Failed to recover push subscription on pushsubscriptionchange:', err);
+      }
+    })()
   );
 });

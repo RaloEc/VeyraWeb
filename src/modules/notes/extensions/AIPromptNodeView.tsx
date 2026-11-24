@@ -6,6 +6,13 @@ import {
   type AINoteContext,
   type AIYouTubeVideoContext,
 } from '../../../lib/ai/ai-notes-service';
+import {
+  MAX_FULL_DOCUMENT_HTML_CHARS,
+  isExplicitMediaDeletionPrompt,
+  protectMediaNodesInHtml,
+  restoreMediaNodesInHtml,
+  stripPromptNodesFromHtml,
+} from '../../../lib/ai/ai-document-html-utils';
 import { toast } from 'sonner';
 
 export const AIPromptNodeView: React.FC<NodeViewProps> = (props) => {
@@ -30,8 +37,8 @@ export const AIPromptNodeView: React.FC<NodeViewProps> = (props) => {
     }
 
     setStepText('Analizando orden...');
-    const t1 = setTimeout(() => setStepText('Estructurando contenido...'), 900);
-    const t2 = setTimeout(() => setStepText('Insertando en la nota...'), 2000);
+    const t1 = setTimeout(() => setStepText('Aplicando formato y estructura...'), 900);
+    const t2 = setTimeout(() => setStepText('Actualizando la nota...'), 2000);
 
     return () => {
       clearTimeout(t1);
@@ -72,6 +79,12 @@ export const AIPromptNodeView: React.FC<NodeViewProps> = (props) => {
       setIsLoading(true);
 
       const pos = props.getPos();
+      const cleanBeforeHtml = stripPromptNodesFromHtml(props.editor.getHTML());
+      const { protectedHtml, tokens } = protectMediaNodesInHtml(cleanBeforeHtml);
+      const hasEditableDocumentHtml =
+        protectedHtml.trim().length > 0 && protectedHtml.length <= MAX_FULL_DOCUMENT_HTML_CHARS;
+      const documentTooLongForFullEdit = protectedHtml.length > MAX_FULL_DOCUMENT_HTML_CHARS;
+
       let context: AINoteContext | undefined = undefined;
 
       if (typeof pos === 'number') {
@@ -93,9 +106,9 @@ export const AIPromptNodeView: React.FC<NodeViewProps> = (props) => {
           }
         });
 
-        // 3. Buscar si hay videos de YouTube en la nota previos al cursor
+        // 3. Buscar si hay videos de YouTube en la nota
         const ytVideoIds: string[] = [];
-        doc.nodesBetween(0, pos, (node) => {
+        doc.nodesBetween(0, doc.content.size, (node) => {
           if (node.type.name === 'youtube' && node.attrs.videoId) {
             const vid = String(node.attrs.videoId);
             if (!ytVideoIds.includes(vid)) {
@@ -147,6 +160,8 @@ export const AIPromptNodeView: React.FC<NodeViewProps> = (props) => {
 
         context = {
           textBefore,
+          documentHtml: hasEditableDocumentHtml ? protectedHtml : undefined,
+          documentTooLongForFullEdit,
           image: nearbyImages[nearbyImages.length - 1],
           images: nearbyImages,
           youtubeVideos: nearbyYouTubeVideos,
@@ -157,13 +172,41 @@ export const AIPromptNodeView: React.FC<NodeViewProps> = (props) => {
         const result = await generateNoteContentWithAI(cleanPrompt, context);
 
         if (result.success) {
-          if (typeof pos === 'number') {
-            props.editor
-              .chain()
-              .focus()
-              .deleteRange({ from: pos, to: pos + 1 })
-              .insertContent(result.data.html)
-              .run();
+          if (props.editor.isDestroyed) return;
+
+          if (result.data.mode === 'replace_document') {
+            const finalHtml = restoreMediaNodesInHtml(result.data.html, tokens, {
+              preserveDroppedMedia: !isExplicitMediaDeletionPrompt(cleanPrompt),
+            });
+
+            props.editor.chain().focus().setContent(finalHtml).run();
+
+            toast.success(result.data.summary || 'Documento actualizado con IA', {
+              duration: 8000,
+              action: {
+                label: 'Deshacer',
+                onClick: () => {
+                  if (!props.editor.isDestroyed) {
+                    props.editor.chain().focus().setContent(cleanBeforeHtml).run();
+                    toast.info('Cambios de IA deshechos');
+                  }
+                },
+              },
+            });
+          } else {
+            const finalHtml = restoreMediaNodesInHtml(result.data.html, tokens, {
+              preserveDroppedMedia: false,
+            });
+            const latestPos = props.getPos();
+            const targetPos = typeof latestPos === 'number' ? latestPos : pos;
+            if (typeof targetPos === 'number') {
+              props.editor
+                .chain()
+                .focus()
+                .deleteRange({ from: targetPos, to: targetPos + 1 })
+                .insertContent(finalHtml)
+                .run();
+            }
           }
         } else {
           setIsLoading(false);
@@ -191,9 +234,9 @@ export const AIPromptNodeView: React.FC<NodeViewProps> = (props) => {
           inputRef.current?.focus();
         }}
         onMouseDown={(e) => e.stopPropagation()}
-        className="w-full flex items-center gap-2.5 px-3 py-1.5 rounded-md border border-slate-200 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-900 text-slate-800 dark:text-zinc-200 transition-colors cursor-text"
+        className="veyra-inline-prompt w-full flex items-center gap-2.5 px-3 py-1.5 rounded-md border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-900 text-slate-900 dark:text-zinc-100 focus-within:border-accent/70 transition-colors cursor-text"
       >
-        <span className="text-xs font-mono text-neutral-400 dark:text-neutral-500 select-none shrink-0">
+        <span className="text-xs font-mono font-medium text-slate-500 dark:text-zinc-400 select-none shrink-0">
           /ia
         </span>
 
@@ -206,18 +249,18 @@ export const AIPromptNodeView: React.FC<NodeViewProps> = (props) => {
           onMouseDown={(e) => e.stopPropagation()}
           onClick={(e) => e.stopPropagation()}
           disabled={isLoading}
-          placeholder="Escribe tu orden y presiona Enter..."
-          className="flex-1 bg-transparent border-none outline-none text-[13px] text-neutral-800 dark:text-neutral-200 placeholder:text-neutral-400 dark:placeholder:text-neutral-600 disabled:opacity-60 cursor-text"
+          placeholder="Pide generar contenido o editar/formatear el documento y presiona Enter..."
+          className="veyra-inline-prompt-input flex-1 bg-transparent border-none outline-none text-[13px] text-slate-900 dark:text-zinc-50 placeholder:text-slate-400 dark:placeholder:text-zinc-400 caret-accent disabled:opacity-60 cursor-text"
         />
 
         {isLoading ? (
-          <div className="flex items-center gap-1.5 text-neutral-400 dark:text-neutral-500 shrink-0 select-none">
+          <div className="flex items-center gap-1.5 text-slate-500 dark:text-zinc-300 shrink-0 select-none">
             <Loader2 className="w-3 h-3 animate-spin" />
             <span className="text-xs">{stepText}</span>
           </div>
         ) : (
-          <div className="flex items-center gap-1 text-[10px] text-neutral-400 dark:text-neutral-500 shrink-0 select-none">
-            <span className="px-1.5 py-0.5 rounded border border-neutral-200 dark:border-neutral-800 font-mono text-[9px]">
+          <div className="flex items-center gap-1 text-[10px] text-slate-500 dark:text-zinc-300 shrink-0 select-none">
+            <span className="px-1.5 py-0.5 rounded border border-slate-300 dark:border-zinc-700 bg-white/80 dark:bg-zinc-800 font-mono text-[9px]">
               Enter ↵
             </span>
           </div>

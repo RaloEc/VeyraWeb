@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import {
-  Search,
   Plus,
   FolderPlus,
   Folder as FolderIcon,
@@ -28,20 +28,31 @@ import {
   FolderInput,
   FileDown,
   Share2,
+  Pin,
+  CheckSquare,
 } from 'lucide-react';
+import { toast } from 'sonner';
 import { MorphIcon } from 'morphicons/react';
 import { ChevronDown, ChevronRight, PanelLeftClose } from 'lucide';
 import type { Folder, Note } from '../../types/notes';
 import type { CalendarEvent } from '../../hooks/useEvents';
-import { Modal } from '../../components/common/Modal';
-import { Input } from '../../components/common/Input';
-import { Button } from '../../components/common/Button';
+import { ConfirmTooltip } from '../../components/common/ConfirmTooltip';
 import { cn } from '../../lib/utils';
+import { getEventCategoryTag } from '../../lib/eventNotebooks';
+import {
+  type DashboardQuickAccessItem,
+  QUICK_ACCESS_CHANGED_EVENT,
+  loadDashboardQuickAccess,
+  isItemInDashboardQuickAccess,
+  toggleDashboardQuickAccessItem,
+} from '../../lib/dashboardQuickAccess';
 import { AgendaSidebarView } from './AgendaSidebarView';
 import { UserSettingsModal } from '../../components/common/UserSettingsModal';
 import { ShareModal } from '../../components/common/ShareModal';
 import type { useReminders } from '../../hooks/useReminders';
 import type { useEvents } from '../../hooks/useEvents';
+
+const ROOT_INLINE_FOLDER = '__root__';
 
 export interface NotesSidebarProps {
   folders: Folder[];
@@ -117,43 +128,7 @@ function formatNoteDate(timestampMs?: number | null): string {
   return `${d.getDate()} ${months[d.getMonth()]}`;
 }
 
-export function getEventCategoryTag(event: CalendarEvent): string {
-  const rawTags = event.tags;
-  let tags: string[] = [];
-  if (Array.isArray(rawTags)) {
-    tags = rawTags.map(String).map((t) => t.replace(/^#/, '').trim().toLowerCase());
-  } else if (typeof rawTags === 'string') {
-    try {
-      const parsed = JSON.parse(rawTags);
-      if (Array.isArray(parsed)) {
-        tags = parsed.map(String).map((t) => t.replace(/^#/, '').trim().toLowerCase());
-      }
-    } catch {
-      tags = rawTags.split(/[,;\s]+/).map((t) => t.replace(/^#/, '').trim().toLowerCase()).filter(Boolean);
-    }
-  }
-
-  // Also inspect hashtags in title if tags array is empty
-  if (tags.length === 0 && event.title) {
-    const fromTitle = extractHashtags(event.title);
-    tags = fromTitle.map((t) => t.replace(/^#/, '').trim().toLowerCase());
-  }
-
-  // Priority to academic / university tags
-  if (tags.some((t) => t === 'universidad' || t === 'universidades' || t === 'uni' || t === 'facultad' || t === 'campus' || t === 'carrera' || t === 'semestre')) {
-    return 'Universidad';
-  }
-  if (tags.some((t) => t === 'clase' || t === 'clases' || t === 'materia' || t === 'materias' || t === 'asignatura' || t === 'asignaturas' || t === 'curso' || t === 'cursos' || t === 'aula' || t === 'catedra' || t === 'estudio')) {
-    return 'Clases';
-  }
-  if (tags.some((t) => t === 'trabajo' || t === 'travajo' || t === 'work' || t === 'laboral' || t === 'laborales' || t === 'oficina' || t === 'empleo' || t === 'job' || t === 'reunion' || t === 'meeting')) {
-    return 'Trabajo';
-  }
-  if (tags.length > 0) {
-    return tags[0].charAt(0).toUpperCase() + tags[0].slice(1);
-  }
-  return 'Eventos';
-}
+export { getEventCategoryTag };
 
 export function getCategoryIcon(categoryName: string): React.ComponentType<{ className?: string }> {
   const lower = categoryName.toLowerCase();
@@ -215,6 +190,11 @@ export const NotesSidebar: React.FC<NotesSidebarProps> = ({
   const sidebarSection = controlledSidebarSection ?? internalSidebarSection;
 
   const handleSelectSection = (section: 'notes' | 'agenda') => {
+    if (section !== 'notes') {
+      setIsSelectionMode(false);
+      setSelectedNoteIds([]);
+      setSelectedFolderIds([]);
+    }
     setInternalSidebarSection(section);
     onSectionChange?.(section);
   };
@@ -225,7 +205,6 @@ export const NotesSidebar: React.FC<NotesSidebarProps> = ({
     name: string;
     ownerId?: string | null;
   } | null>(null);
-  const [search, setSearch] = useState('');
   const [activeView, setActiveView] = useState<ViewType>('all');
   const [selectedTag, setSelectedTag] = useState<string | null>(null);
   const [expandedFolders, setExpandedFolders] = useState<Record<string, boolean>>({
@@ -243,13 +222,7 @@ export const NotesSidebar: React.FC<NotesSidebarProps> = ({
   // State for expanded individual events
   const [expandedEvents, setExpandedEvents] = useState<Record<string, boolean>>({});
 
-  // Modal for new folder
-  const [isFolderModalOpen, setIsFolderModalOpen] = useState(false);
-  const [newFolderName, setNewFolderName] = useState('');
-  const [selectedFolderColor, setSelectedFolderColor] = useState('#60A5FA');
-  const [creatingFolder, setCreatingFolder] = useState(false);
-
-  // Inline subfolder creation state (no modal)
+  // Inline folder & subfolder creation state (no modal)
   const [inlineSubfolderParentId, setInlineSubfolderParentId] = useState<string | null>(null);
   const [inlineSubfolderName, setInlineSubfolderName] = useState('');
   const [inlineSubfolderColor, setInlineSubfolderColor] = useState('#60A5FA');
@@ -268,20 +241,6 @@ export const NotesSidebar: React.FC<NotesSidebarProps> = ({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [isColorPickerOpen]);
 
-  const searchInputRef = useRef<HTMLInputElement>(null);
-
-  // Shortcut Ctrl+K / Cmd+K to focus search input
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
-        e.preventDefault();
-        searchInputRef.current?.focus();
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, []);
-
   const toggleFolderExpanded = (e: React.MouseEvent | null, folderId: string) => {
     e?.stopPropagation();
     setExpandedFolders((prev) => ({
@@ -290,39 +249,22 @@ export const NotesSidebar: React.FC<NotesSidebarProps> = ({
     }));
   };
 
-  const handleCreateFolderSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newFolderName.trim()) return;
-    try {
-      setCreatingFolder(true);
-      await onCreateFolder(
-        newFolderName.trim(),
-        selectedFolderColor,
-        null
-      );
-      setNewFolderName('');
-      setIsFolderModalOpen(false);
-    } catch (err) {
-      console.error('[NotesSidebar] Error creating folder:', err);
-    } finally {
-      setCreatingFolder(false);
-    }
-  };
-
   const handleConfirmInlineSubfolder = async () => {
     const name = inlineSubfolderName.trim();
     if (!name || !inlineSubfolderParentId) {
       handleCancelInlineSubfolder();
       return;
     }
+    const targetParentId =
+      inlineSubfolderParentId === ROOT_INLINE_FOLDER ? null : inlineSubfolderParentId;
     try {
       setIsSavingInlineSubfolder(true);
-      await onCreateFolder(name, inlineSubfolderColor, inlineSubfolderParentId);
+      await onCreateFolder(name, inlineSubfolderColor, targetParentId);
       setInlineSubfolderParentId(null);
       setInlineSubfolderName('');
       setIsColorPickerOpen(false);
     } catch (err) {
-      console.error('[NotesSidebar] Error creating inline subfolder:', err);
+      console.error('[NotesSidebar] Error creating inline folder:', err);
     } finally {
       setIsSavingInlineSubfolder(false);
     }
@@ -357,15 +299,57 @@ export const NotesSidebar: React.FC<NotesSidebarProps> = ({
   const [renamingFolderId, setRenamingFolderId] = useState<string | null>(null);
   const [renamingFolderName, setRenamingFolderName] = useState('');
   const [contextColorPickerOpen, setContextColorPickerOpen] = useState(false);
+  const [confirmDeleteFolderInMenu, setConfirmDeleteFolderInMenu] = useState(false);
   const contextMenuRef = useRef<HTMLDivElement>(null);
+
+  // Multi-selection & Batch Actions state
+  const [isSelectionMode, setIsSelectionMode] = useState(false);
+  const [selectedNoteIds, setSelectedNoteIds] = useState<string[]>([]);
+  const [selectedFolderIds, setSelectedFolderIds] = useState<string[]>([]);
+  const [isBatchBusy, setIsBatchBusy] = useState(false);
+
+  const selectedNoteSet = useMemo(() => new Set(selectedNoteIds), [selectedNoteIds]);
+  const selectedFolderSet = useMemo(() => new Set(selectedFolderIds), [selectedFolderIds]);
+  const totalSelectedCount = selectedNoteIds.length + selectedFolderIds.length;
+
+  const exitSelectionMode = () => {
+    setIsSelectionMode(false);
+    setSelectedNoteIds([]);
+    setSelectedFolderIds([]);
+  };
+
+  const toggleNoteSelection = (noteId: string) => {
+    setIsSelectionMode(true);
+    setSelectedNoteIds((prev) =>
+      prev.includes(noteId) ? prev.filter((id) => id !== noteId) : [...prev, noteId]
+    );
+  };
+
+  const toggleFolderSelection = (folderId: string) => {
+    setIsSelectionMode(true);
+    setSelectedFolderIds((prev) =>
+      prev.includes(folderId) ? prev.filter((id) => id !== folderId) : [...prev, folderId]
+    );
+  };
+
+  useEffect(() => {
+    if (!isSelectionMode) return;
+    const handleEscSelection = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !contextMenu.isOpen) {
+        exitSelectionMode();
+      }
+    };
+    window.addEventListener('keydown', handleEscSelection);
+    return () => window.removeEventListener('keydown', handleEscSelection);
+  }, [isSelectionMode, contextMenu.isOpen]);
 
   const openContextMenu = (
     clientX: number,
     clientY: number,
     target: ContextMenuTarget
   ) => {
-    const menuWidth = 200;
-    const menuHeight = 260;
+    const menuWidth = 220;
+    const menuHeight = 290;
     const x = Math.min(clientX, window.innerWidth - menuWidth - 10);
     const y = Math.min(clientY, window.innerHeight - menuHeight - 10);
 
@@ -376,11 +360,13 @@ export const NotesSidebar: React.FC<NotesSidebarProps> = ({
       target,
     });
     setContextColorPickerOpen(false);
+    setConfirmDeleteFolderInMenu(false);
   };
 
   const closeContextMenu = () => {
     setContextMenu({ isOpen: false, x: 0, y: 0, target: null });
     setContextColorPickerOpen(false);
+    setConfirmDeleteFolderInMenu(false);
   };
 
   useEffect(() => {
@@ -507,18 +493,45 @@ export const NotesSidebar: React.FC<NotesSidebarProps> = ({
       }
     }
 
-    if (!search.trim()) return list;
-
-    const q = search.toLowerCase();
-    return list.filter(
-      (n) =>
-        (n.title && n.title.toLowerCase().includes(q)) ||
-        (n.preview_text && n.preview_text.toLowerCase().includes(q))
-    );
-  }, [allNotes, deletedNotes, activeView, selectedFolderId, search, selectedTag, noteTagsMap, recentNotes]);
+    return list;
+  }, [allNotes, deletedNotes, activeView, selectedFolderId, selectedTag, noteTagsMap, recentNotes]);
 
   // Set of existing folder IDs
   const existingFolderIds = useMemo(() => new Set(folders.map((f) => f.id)), [folders]);
+
+  // Dashboard Quick Access state synced with FoldersTemplatesWidget
+  const [quickAccessItems, setQuickAccessItems] = useState<DashboardQuickAccessItem[] | null>(() =>
+    loadDashboardQuickAccess(userId)
+  );
+
+  useEffect(() => {
+    const handleQuickAccessSync = () => {
+      setQuickAccessItems(loadDashboardQuickAccess(userId));
+    };
+    window.addEventListener(QUICK_ACCESS_CHANGED_EVENT, handleQuickAccessSync);
+    return () => window.removeEventListener(QUICK_ACCESS_CHANGED_EVENT, handleQuickAccessSync);
+  }, [userId]);
+
+  const defaultQuickAccessFolderIds = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const n of allNotes) {
+      if (n.deleted !== 1 && n.folder_id) {
+        counts.set(n.folder_id, (counts.get(n.folder_id) || 0) + 1);
+      }
+    }
+    return folders
+      .filter((f) => f.deleted !== 1 && (!f.parent_id || !existingFolderIds.has(f.parent_id)))
+      .sort((a, b) => {
+        if (a.is_pinned !== b.is_pinned) {
+          return (b.is_pinned || 0) - (a.is_pinned || 0);
+        }
+        const diffCount = (counts.get(b.id) || 0) - (counts.get(a.id) || 0);
+        if (diffCount !== 0) return diffCount;
+        return a.name.localeCompare(b.name);
+      })
+      .slice(0, 6)
+      .map((f) => f.id);
+  }, [folders, existingFolderIds, allNotes]);
 
   // Group events into smart containers (Option B)
   const eventCategories = useMemo(() => {
@@ -689,12 +702,157 @@ export const NotesSidebar: React.FC<NotesSidebarProps> = ({
     );
   }, [allNotes, existingFolderIds, eventNoteIds, sortMode, customNoteOrder]);
 
+  interface BatchDragPreviewItem {
+    id: string;
+    type: 'folder' | 'note';
+    label: string;
+    color?: string | null;
+  }
+
   type DraggedEntity =
     | { type: 'note'; id: string; folderId: string | null; eventId: string | null }
-    | { type: 'folder'; id: string; parentId: string | null };
+    | { type: 'folder'; id: string; parentId: string | null }
+    | {
+        type: 'batch';
+        noteIds: string[];
+        folderIds: string[];
+        previewItems: BatchDragPreviewItem[];
+      };
 
   const [draggedItem, setDraggedItem] = useState<DraggedEntity | null>(null);
   const [dragOverTarget, setDragOverTarget] = useState<string | null>(null);
+  const dragPreviewRef = useRef<HTMLDivElement | null>(null);
+  const dragPointerRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+  const transparentDragImgRef = useRef<HTMLCanvasElement | null>(null);
+
+  const setTransparentDragImage = (e: React.DragEvent) => {
+    if (typeof document === 'undefined') return;
+    if (!transparentDragImgRef.current) {
+      const canvas = document.createElement('canvas');
+      canvas.width = 1;
+      canvas.height = 1;
+      transparentDragImgRef.current = canvas;
+    }
+    e.dataTransfer.setDragImage(transparentDragImgRef.current, 0, 0);
+  };
+
+  const positionDragPreview = (x: number, y: number) => {
+    dragPointerRef.current = { x, y };
+    if (dragPreviewRef.current) {
+      dragPreviewRef.current.style.transform = `translate3d(${x + 14}px, ${y + 14}px, 0)`;
+    }
+  };
+
+  useEffect(() => {
+    if (draggedItem?.type !== 'batch') return;
+
+    let currentX = dragPointerRef.current.x;
+    let currentY = dragPointerRef.current.y;
+    let rafId = 0;
+
+    if (dragPreviewRef.current) {
+      dragPreviewRef.current.style.transform = `translate3d(${currentX + 14}px, ${currentY + 14}px, 0)`;
+    }
+
+    const tick = () => {
+      const targetX = dragPointerRef.current.x;
+      const targetY = dragPointerRef.current.y;
+      const dx = targetX - currentX;
+      const dy = targetY - currentY;
+
+      if (Math.abs(dx) < 0.5) {
+        currentX = targetX;
+      } else {
+        currentX += dx * 0.42;
+      }
+
+      if (Math.abs(dy) < 0.5) {
+        currentY = targetY;
+      } else {
+        currentY += dy * 0.42;
+      }
+
+      if (dragPreviewRef.current) {
+        const tilt = Math.max(-4.5, Math.min(4.5, dx * 0.16));
+        dragPreviewRef.current.style.transform = `translate3d(${currentX + 14}px, ${currentY + 14}px, 0) rotate(${tilt.toFixed(2)}deg)`;
+      }
+
+      rafId = window.requestAnimationFrame(tick);
+    };
+
+    rafId = window.requestAnimationFrame(tick);
+
+    const updatePointer = (e: DragEvent) => {
+      if (e.clientX !== 0 || e.clientY !== 0) {
+        dragPointerRef.current = { x: e.clientX, y: e.clientY };
+      }
+    };
+
+    const handleWindowDragEnd = () => {
+      setDraggedItem(null);
+      setDragOverTarget(null);
+    };
+
+    document.addEventListener('dragover', updatePointer, true);
+    document.addEventListener('drag', updatePointer, true);
+    window.addEventListener('dragend', handleWindowDragEnd, false);
+    window.addEventListener('drop', handleWindowDragEnd, false);
+
+    return () => {
+      window.cancelAnimationFrame(rafId);
+      document.removeEventListener('dragover', updatePointer, true);
+      document.removeEventListener('drag', updatePointer, true);
+      window.removeEventListener('dragend', handleWindowDragEnd, false);
+      window.removeEventListener('drop', handleWindowDragEnd, false);
+    };
+  }, [draggedItem]);
+
+  const buildBatchDragEntity = (lead: { type: 'folder' | 'note'; id: string }): DraggedEntity => {
+    const noteIds =
+      lead.type === 'note' && !selectedNoteIds.includes(lead.id)
+        ? [lead.id, ...selectedNoteIds]
+        : [...selectedNoteIds];
+    const folderIds =
+      lead.type === 'folder' && !selectedFolderIds.includes(lead.id)
+        ? [lead.id, ...selectedFolderIds]
+        : [...selectedFolderIds];
+
+    const folderMap = new Map(folders.map((f) => [f.id, f]));
+    const noteMap = new Map(allNotes.map((n) => [n.id, n]));
+    const previewItems: BatchDragPreviewItem[] = [];
+
+    const pushItem = (type: 'folder' | 'note', id: string) => {
+      if (previewItems.some((it) => it.type === type && it.id === id)) return;
+      if (type === 'folder') {
+        const f = folderMap.get(id);
+        if (f) {
+          previewItems.push({ id, type: 'folder', label: f.name, color: f.color });
+        }
+      } else {
+        const n = noteMap.get(id);
+        if (n) {
+          previewItems.push({ id, type: 'note', label: n.title || 'Nota sin título' });
+        }
+      }
+    };
+
+    pushItem(lead.type, lead.id);
+    for (const fid of folderIds) {
+      if (previewItems.length >= 3) break;
+      pushItem('folder', fid);
+    }
+    for (const nid of noteIds) {
+      if (previewItems.length >= 3) break;
+      pushItem('note', nid);
+    }
+
+    return {
+      type: 'batch',
+      noteIds,
+      folderIds,
+      previewItems,
+    };
+  };
 
   const canDropFolder = (draggedFolderId: string, targetFolderId: string): boolean => {
     if (draggedFolderId === targetFolderId) return false;
@@ -797,15 +955,171 @@ export const NotesSidebar: React.FC<NotesSidebarProps> = ({
 
   const canMoveToRoot = Boolean(
     (draggedItem?.type === 'note' && (draggedItem.folderId !== null || draggedItem.eventId !== null)) ||
-    (draggedItem?.type === 'folder' && draggedItem.parentId !== null)
+    (draggedItem?.type === 'folder' && draggedItem.parentId !== null) ||
+    (draggedItem?.type === 'batch' &&
+      (draggedItem.noteIds.some((nid) => {
+        const n = allNotes.find((item) => item.id === nid);
+        return Boolean(n && (n.folder_id !== null || n.event_id !== null));
+      }) ||
+        draggedItem.folderIds.some((fid) => {
+          const f = folders.find((item) => item.id === fid);
+          return Boolean(f && f.parent_id !== null);
+        })))
   );
+
+  const canBatchDropIntoFolder = (batchFolderIds: string[], targetFolderId: string): boolean => {
+    if (batchFolderIds.includes(targetFolderId)) return false;
+    const isDescendant = (parentId: string, searchId: string): boolean => {
+      const children = subfoldersByParentId.get(parentId) || [];
+      for (const child of children) {
+        if (child.id === searchId || isDescendant(child.id, searchId)) {
+          return true;
+        }
+      }
+      return false;
+    };
+    return !batchFolderIds.some((fid) => isDescendant(fid, targetFolderId));
+  };
+
+  const handleBatchMoveToFolder = async (
+    targetFolderId: string | null,
+    override?: { noteIds: string[]; folderIds: string[] }
+  ) => {
+    const noteIdsToMove = override ? override.noteIds : selectedNoteIds;
+    const folderIdsToMove = override ? override.folderIds : selectedFolderIds;
+    const moveCount = noteIdsToMove.length + folderIdsToMove.length;
+    if (moveCount === 0 || isBatchBusy) return;
+    setIsBatchBusy(true);
+    try {
+      const notesMap = new Map(allNotes.map((n) => [n.id, n]));
+      for (const noteId of noteIdsToMove) {
+        const note = notesMap.get(noteId);
+        if (!note) continue;
+        if (note.folder_id !== targetFolderId) {
+          await onMoveNote?.(noteId, targetFolderId);
+        }
+        if (note.event_id) {
+          await onMoveNoteToEvent?.(noteId, null);
+        }
+      }
+
+      const canDropTarget =
+        targetFolderId === null || canBatchDropIntoFolder(folderIdsToMove, targetFolderId);
+      if (canDropTarget) {
+        for (const folderId of folderIdsToMove) {
+          const folder = folders.find((f) => f.id === folderId);
+          if (!folder || folder.parent_id === targetFolderId) continue;
+          await onMoveFolder?.(folderId, targetFolderId);
+        }
+      }
+
+      if (targetFolderId) {
+        setExpandedFolders((prev) => ({ ...prev, [targetFolderId]: true }));
+      }
+      const destLabel = targetFolderId
+        ? folders.find((f) => f.id === targetFolderId)?.name || 'carpeta'
+        : 'Raíz';
+      toast.success(
+        `${moveCount} ${moveCount === 1 ? 'elemento movido' : 'elementos movidos'} a "${destLabel}"`
+      );
+      exitSelectionMode();
+    } catch (err) {
+      console.error('[NotesSidebar] Error moving batch selection:', err);
+      toast.error('No se pudieron mover algunos elementos');
+    } finally {
+      setIsBatchBusy(false);
+    }
+  };
+
+  const handleBatchMoveNotesToEvent = async (
+    targetEventId: string,
+    eventTitle: string,
+    overrideNoteIds?: string[]
+  ) => {
+    const noteIdsToMove = overrideNoteIds || selectedNoteIds;
+    if (noteIdsToMove.length === 0 || (!overrideNoteIds && selectedFolderIds.length > 0) || isBatchBusy) return;
+    setIsBatchBusy(true);
+    try {
+      const notesMap = new Map(allNotes.map((n) => [n.id, n]));
+      for (const noteId of noteIdsToMove) {
+        const note = notesMap.get(noteId);
+        if (!note) continue;
+        if (note.event_id !== targetEventId) {
+          await onMoveNoteToEvent?.(noteId, targetEventId);
+        }
+        if (note.folder_id !== null) {
+          await onMoveNote?.(noteId, null);
+        }
+      }
+      setExpandedEvents((prev) => ({ ...prev, [targetEventId]: true }));
+      toast.success(
+        `${noteIdsToMove.length} ${noteIdsToMove.length === 1 ? 'nota movida' : 'notas movidas'} a "${eventTitle}"`
+      );
+      exitSelectionMode();
+    } catch (err) {
+      console.error('[NotesSidebar] Error moving notes to event:', err);
+      toast.error('No se pudieron mover las notas al evento');
+    } finally {
+      setIsBatchBusy(false);
+    }
+  };
+
+  const handleBatchDelete = async () => {
+    if (totalSelectedCount === 0 || isBatchBusy) return;
+    setIsBatchBusy(true);
+    try {
+      for (const noteId of selectedNoteIds) {
+        if (activeView === 'trash') {
+          await onDeleteForever?.(noteId);
+        } else {
+          await onDeleteNote?.(noteId);
+        }
+      }
+      for (const folderId of selectedFolderIds) {
+        await onDeleteFolder?.(folderId);
+      }
+      toast.success(
+        activeView === 'trash'
+          ? `${totalSelectedCount} ${totalSelectedCount === 1 ? 'nota eliminada' : 'notas eliminadas'} definitivamente`
+          : `${totalSelectedCount} ${totalSelectedCount === 1 ? 'elemento eliminado' : 'elementos eliminados'}`
+      );
+      exitSelectionMode();
+    } catch (err) {
+      console.error('[NotesSidebar] Error deleting batch selection:', err);
+      toast.error('No se pudieron eliminar algunos elementos');
+    } finally {
+      setIsBatchBusy(false);
+    }
+  };
+
+  const handleBatchRestore = async () => {
+    if (selectedNoteIds.length === 0 || isBatchBusy) return;
+    setIsBatchBusy(true);
+    try {
+      for (const noteId of selectedNoteIds) {
+        await onRestoreNote?.(noteId);
+      }
+      toast.success(
+        `${selectedNoteIds.length} ${selectedNoteIds.length === 1 ? 'nota restaurada' : 'notas restauradas'}`
+      );
+      exitSelectionMode();
+    } catch (err) {
+      console.error('[NotesSidebar] Error restoring batch selection:', err);
+      toast.error('No se pudieron restaurar algunas notas');
+    } finally {
+      setIsBatchBusy(false);
+    }
+  };
 
   // Render a note item row (consistent between Tree Explorer and Filtered Lists)
   const renderNoteItem = (note: Note) => {
     const isSelected = selectedNoteId === note.id;
+    const isChecked = selectedNoteSet.has(note.id);
     const isPinned = note.is_pinned === 1;
     const noteTags = noteTagsMap[note.id] || [];
-    const isBeingDragged = draggedItem?.type === 'note' && draggedItem.id === note.id;
+    const isBeingDragged =
+      (draggedItem?.type === 'note' && draggedItem.id === note.id) ||
+      (draggedItem?.type === 'batch' && draggedItem.noteIds.includes(note.id));
 
     return (
       <div
@@ -813,6 +1127,17 @@ export const NotesSidebar: React.FC<NotesSidebarProps> = ({
         draggable={activeView !== 'trash'}
         onDragStart={(e) => {
           e.stopPropagation();
+          if (isSelectionMode && (isChecked || totalSelectedCount > 0)) {
+            if (!isChecked) {
+              setSelectedNoteIds((prev) => (prev.includes(note.id) ? prev : [...prev, note.id]));
+            }
+            e.dataTransfer.setData('application/x-veyra-type', 'batch');
+            e.dataTransfer.effectAllowed = 'move';
+            setTransparentDragImage(e);
+            positionDragPreview(e.clientX, e.clientY);
+            setDraggedItem(buildBatchDragEntity({ type: 'note', id: note.id }));
+            return;
+          }
           e.dataTransfer.setData('application/x-veyra-type', 'note');
           e.dataTransfer.setData('application/x-veyra-id', note.id);
           e.dataTransfer.effectAllowed = 'move';
@@ -828,7 +1153,7 @@ export const NotesSidebar: React.FC<NotesSidebarProps> = ({
           setDragOverTarget(null);
         }}
         onDragOver={(e) => {
-          if (!draggedItem || draggedItem.type !== 'note' || draggedItem.id === note.id || activeView === 'trash') return;
+          if (isSelectionMode || !draggedItem || draggedItem.type !== 'note' || draggedItem.id === note.id || activeView === 'trash') return;
           e.preventDefault();
           e.stopPropagation();
           e.dataTransfer.dropEffect = 'move';
@@ -854,7 +1179,7 @@ export const NotesSidebar: React.FC<NotesSidebarProps> = ({
           }
         }}
         onDrop={(e) => {
-          if (!draggedItem || draggedItem.type !== 'note' || draggedItem.id === note.id || activeView === 'trash') return;
+          if (isSelectionMode || !draggedItem || draggedItem.type !== 'note' || draggedItem.id === note.id || activeView === 'trash') return;
           e.preventDefault();
           e.stopPropagation();
           const currentPos = dragPosition;
@@ -862,23 +1187,52 @@ export const NotesSidebar: React.FC<NotesSidebarProps> = ({
           handleReorderNote(draggedItem.id, note.id, currentPos);
           setDraggedItem(null);
         }}
-        onClick={() => onSelectNote(note.id)}
+        onClick={(e) => {
+          if (isSelectionMode || e.ctrlKey || e.metaKey) {
+            e.preventDefault();
+            e.stopPropagation();
+            toggleNoteSelection(note.id);
+            return;
+          }
+          onSelectNote(note.id);
+        }}
         onContextMenu={(e) => {
           e.preventDefault();
           e.stopPropagation();
           openContextMenu(e.clientX, e.clientY, { type: 'note', note });
         }}
         className={cn(
-          'group flex items-center justify-between gap-2 px-2 py-1.5 rounded-lg text-xs truncate cursor-pointer transition-all relative select-none',
-          isSelected
-            ? 'bg-accent/15 text-accent font-semibold'
-            : 'text-veyra-muted hover:text-veyra-text hover:bg-white/[0.03]',
-          isBeingDragged && 'opacity-25 scale-[0.98] border border-dashed border-accent/60 bg-accent/5',
+          'group flex items-center justify-between gap-2 px-2 py-1.5 rounded-lg text-xs truncate cursor-pointer transition-all duration-200 ease-[cubic-bezier(0.16,1,0.3,1)] active:scale-[0.985] relative select-none border border-transparent',
+          isSelectionMode && isChecked
+            ? 'bg-accent/15 border-accent/35 text-veyra-text font-medium'
+            : isSelected
+              ? 'bg-accent/15 text-accent font-semibold'
+              : 'text-veyra-muted hover:text-veyra-text hover:bg-white/[0.03]',
+          isBeingDragged && 'opacity-25 scale-[0.98] border-dashed border-accent/60 bg-accent/5',
           dragOverTarget === note.id && dragPosition === 'before' && 'bg-accent/10 relative before:absolute before:top-0 before:left-1 before:right-1 before:h-0.5 before:bg-accent before:rounded-full before:z-10',
           dragOverTarget === note.id && dragPosition === 'after' && 'bg-accent/10 relative after:absolute after:bottom-0 after:left-1 after:right-1 after:h-0.5 after:bg-accent after:rounded-full after:z-10'
         )}
       >
         <div className="flex items-center gap-1.5 truncate flex-1 min-w-0">
+          <span
+            aria-hidden={!isSelectionMode}
+            className={cn(
+              'h-3.5 rounded flex items-center justify-center shrink-0 transition-all duration-200 ease-[cubic-bezier(0.16,1,0.3,1)]',
+              isSelectionMode
+                ? cn(
+                    'w-3.5 opacity-100 scale-100 border',
+                    isChecked
+                      ? 'bg-accent border-accent text-white'
+                      : 'border-veyra-border bg-veyra-canvas/60'
+                  )
+                : 'w-0 opacity-0 scale-75 -mr-1.5 overflow-hidden border-0 pointer-events-none'
+            )}
+          >
+            {isSelectionMode && isChecked && (
+              <Check className="w-2.5 h-2.5 stroke-[2.5] animate-veyra-check-pop" />
+            )}
+          </span>
+
           {isPinned && activeView !== 'trash' ? (
             <Star className="w-3.5 h-3.5 text-amber-400 fill-amber-400 shrink-0" />
           ) : (
@@ -888,7 +1242,7 @@ export const NotesSidebar: React.FC<NotesSidebarProps> = ({
           <span
             className={cn(
               'truncate text-xs',
-              isSelected ? 'text-accent font-semibold' : 'text-veyra-text'
+              isSelected && !isSelectionMode ? 'text-accent font-semibold' : 'text-veyra-text'
             )}
           >
             {note.title || 'Nota sin título'}
@@ -902,8 +1256,8 @@ export const NotesSidebar: React.FC<NotesSidebarProps> = ({
         </div>
 
         <div className="flex items-center gap-1 shrink-0 ml-1">
-          {/* Actions on hover */}
-          {activeView === 'trash' ? (
+          {/* Actions on hover (hidden during multi-select mode) */}
+          {!isSelectionMode && activeView === 'trash' ? (
             <div className="flex items-center gap-0.5">
               <button
                 type="button"
@@ -930,7 +1284,7 @@ export const NotesSidebar: React.FC<NotesSidebarProps> = ({
                 <Trash2 className="w-3 h-3" />
               </button>
             </div>
-          ) : (
+          ) : !isSelectionMode ? (
             <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
               {onTogglePinNote && (
                 <button
@@ -969,7 +1323,7 @@ export const NotesSidebar: React.FC<NotesSidebarProps> = ({
                 </button>
               )}
             </div>
-          )}
+          ) : null}
 
           <span className="text-[10px] font-mono text-veyra-subtle shrink-0">
             {formatNoteDate(note.updated_at_ms || note.created_at_ms)}
@@ -979,6 +1333,91 @@ export const NotesSidebar: React.FC<NotesSidebarProps> = ({
     );
   };
 
+  const renderInlineFolderCreator = (placeholder: string) => (
+    <div className="flex items-center gap-1.5 px-2 py-1.5 rounded-lg bg-veyra-elevated/95 border border-accent/60 shadow-sm relative select-none animate-veyra-inline-reveal mb-1">
+      {/* Color picker trigger button with tooltip palette */}
+      <div className="relative shrink-0 flex items-center">
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            setIsColorPickerOpen((prev) => !prev);
+          }}
+          className="w-3.5 h-3.5 rounded-full border border-white/20 transition-transform hover:scale-125 shrink-0 cursor-pointer shadow-xs"
+          style={{ backgroundColor: inlineSubfolderColor }}
+          title="Elegir color de la carpeta"
+        />
+        {isColorPickerOpen && (
+          <div
+            ref={colorPickerRef}
+            onClick={(e) => e.stopPropagation()}
+            className="absolute left-0 top-full mt-1.5 p-1.5 bg-veyra-elevated border border-veyra-border rounded-md shadow-md flex items-center gap-1.5 z-50 animate-veyra-scale-in"
+          >
+            {['#8B5CF6', '#60A5FA', '#F87171', '#34D399', '#FBBF24', '#F472B6', '#10B981', '#EC4899'].map((c) => (
+              <button
+                key={c}
+                type="button"
+                onClick={() => {
+                  setInlineSubfolderColor(c);
+                  setIsColorPickerOpen(false);
+                }}
+                className={cn(
+                  'w-4 h-4 rounded-full transition-transform hover:scale-125 cursor-pointer',
+                  inlineSubfolderColor === c && 'ring-2 ring-offset-1 ring-offset-veyra-card ring-accent scale-110'
+                )}
+                style={{ backgroundColor: c }}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+
+      <FolderIcon
+        className="w-3.5 h-3.5 shrink-0"
+        style={{ color: inlineSubfolderColor }}
+      />
+
+      <input
+        type="text"
+        autoFocus
+        disabled={isSavingInlineSubfolder}
+        value={inlineSubfolderName}
+        onChange={(e) => setInlineSubfolderName(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            handleConfirmInlineSubfolder();
+          } else if (e.key === 'Escape') {
+            e.preventDefault();
+            handleCancelInlineSubfolder();
+          }
+        }}
+        placeholder={placeholder}
+        className="flex-1 min-w-0 bg-transparent text-xs text-veyra-text placeholder:text-veyra-subtle outline-none border-none py-0.5"
+      />
+
+      <div className="flex items-center gap-0.5 shrink-0">
+        <button
+          type="button"
+          onClick={handleConfirmInlineSubfolder}
+          disabled={isSavingInlineSubfolder || !inlineSubfolderName.trim()}
+          className="p-1 rounded text-emerald-400 hover:text-emerald-300 hover:bg-emerald-500/10 disabled:opacity-40 disabled:hover:bg-transparent transition-colors cursor-pointer"
+          title="Crear (Enter)"
+        >
+          <Check className="w-3 h-3 stroke-[2.5]" />
+        </button>
+        <button
+          type="button"
+          onClick={handleCancelInlineSubfolder}
+          className="p-1 rounded text-veyra-subtle hover:text-veyra-text hover:bg-white/10 transition-colors cursor-pointer"
+          title="Cancelar (Esc)"
+        >
+          <X className="w-3 h-3" />
+        </button>
+      </div>
+    </div>
+  );
+
   // Render a folder node with nested subfolder support
   const renderFolderNode = (folder: Folder, depth = 0): React.ReactNode => {
     const isExpanded = !!expandedFolders[folder.id];
@@ -987,8 +1426,11 @@ export const NotesSidebar: React.FC<NotesSidebarProps> = ({
       allNotes.filter((n) => n.folder_id === folder.id && !eventNoteIds.has(n.id))
     );
 
-    const isBeingDragged = draggedItem?.type === 'folder' && draggedItem.id === folder.id;
+    const isBeingDragged =
+      (draggedItem?.type === 'folder' && draggedItem.id === folder.id) ||
+      (draggedItem?.type === 'batch' && draggedItem.folderIds.includes(folder.id));
     const isDragOver = dragOverTarget === folder.id;
+    const isFolderChecked = selectedFolderSet.has(folder.id);
 
     return (
       <div key={folder.id} className="space-y-0.5">
@@ -997,6 +1439,17 @@ export const NotesSidebar: React.FC<NotesSidebarProps> = ({
           draggable={activeView !== 'trash'}
           onDragStart={(e) => {
             e.stopPropagation();
+            if (isSelectionMode && (isFolderChecked || totalSelectedCount > 0)) {
+              if (!isFolderChecked) {
+                setSelectedFolderIds((prev) => (prev.includes(folder.id) ? prev : [...prev, folder.id]));
+              }
+              e.dataTransfer.setData('application/x-veyra-type', 'batch');
+              e.dataTransfer.effectAllowed = 'move';
+              setTransparentDragImage(e);
+              positionDragPreview(e.clientX, e.clientY);
+              setDraggedItem(buildBatchDragEntity({ type: 'folder', id: folder.id }));
+              return;
+            }
             e.dataTransfer.setData('application/x-veyra-type', 'folder');
             e.dataTransfer.setData('application/x-veyra-id', folder.id);
             e.dataTransfer.effectAllowed = 'move';
@@ -1008,7 +1461,17 @@ export const NotesSidebar: React.FC<NotesSidebarProps> = ({
           }}
           onDragOver={(e) => {
             if (!draggedItem) return;
-            if (draggedItem.type === 'note') {
+            if (draggedItem.type === 'batch') {
+              if (canBatchDropIntoFolder(draggedItem.folderIds, folder.id)) {
+                e.preventDefault();
+                e.stopPropagation();
+                e.dataTransfer.dropEffect = 'move';
+                setDragPosition('inside');
+                if (dragOverTarget !== folder.id) {
+                  setDragOverTarget(folder.id);
+                }
+              }
+            } else if (draggedItem.type === 'note') {
               if (draggedItem.folderId !== folder.id || draggedItem.eventId !== null) {
                 e.preventDefault();
                 e.stopPropagation();
@@ -1075,6 +1538,14 @@ export const NotesSidebar: React.FC<NotesSidebarProps> = ({
             const currentPos = dragPosition;
             setDragOverTarget(null);
             if (!draggedItem) return;
+            if (draggedItem.type === 'batch') {
+              const { noteIds, folderIds } = draggedItem;
+              setDraggedItem(null);
+              if (canBatchDropIntoFolder(folderIds, currentTarget)) {
+                handleBatchMoveToFolder(currentTarget, { noteIds, folderIds });
+              }
+              return;
+            }
             if (draggedItem.type === 'note') {
               if (draggedItem.folderId !== folder.id) {
                 onMoveNote?.(draggedItem.id, folder.id);
@@ -1088,30 +1559,67 @@ export const NotesSidebar: React.FC<NotesSidebarProps> = ({
             }
             setDraggedItem(null);
           }}
-          onClick={() => toggleFolderExpanded(null, folder.id)}
+          onClick={(e) => {
+            if (isSelectionMode || e.ctrlKey || e.metaKey) {
+              e.preventDefault();
+              e.stopPropagation();
+              toggleFolderSelection(folder.id);
+              return;
+            }
+            toggleFolderExpanded(null, folder.id);
+          }}
           onContextMenu={(e) => {
             e.preventDefault();
             e.stopPropagation();
             openContextMenu(e.clientX, e.clientY, { type: 'folder', folder });
           }}
           className={cn(
-            'group flex items-center justify-between px-2 py-1.5 rounded-lg transition-all cursor-pointer relative select-none',
-            selectedFolderId === folder.id
-              ? 'bg-accent/15 text-accent font-semibold'
-              : 'text-veyra-muted hover:text-veyra-text hover:bg-white/[0.03]',
-            isBeingDragged && 'opacity-25 scale-[0.98] border border-dashed border-accent/60 bg-accent/5',
+            'group flex items-center justify-between px-2 py-1.5 rounded-lg transition-all duration-200 ease-[cubic-bezier(0.16,1,0.3,1)] active:scale-[0.985] cursor-pointer relative select-none border border-transparent',
+            isSelectionMode && isFolderChecked
+              ? 'bg-accent/15 border-accent/35 text-veyra-text font-medium'
+              : selectedFolderId === folder.id
+                ? 'bg-accent/15 text-accent font-semibold'
+                : 'text-veyra-muted hover:text-veyra-text hover:bg-white/[0.03]',
+            isBeingDragged && 'opacity-25 scale-[0.98] border-dashed border-accent/60 bg-accent/5',
             isDragOver && dragPosition === 'inside' && 'bg-accent/25 text-accent font-semibold ring-2 ring-accent/60 shadow-md scale-[1.01]',
             isDragOver && dragPosition === 'before' && 'bg-accent/10 relative before:absolute before:top-0 before:left-1 before:right-1 before:h-0.5 before:bg-accent before:rounded-full before:z-10',
             isDragOver && dragPosition === 'after' && 'bg-accent/10 relative after:absolute after:bottom-0 after:left-1 after:right-1 after:h-0.5 after:bg-accent after:rounded-full after:z-10'
           )}
         >
           <div className="flex items-center gap-1.5 truncate flex-1 min-w-0">
-            <span className="p-0.5 text-veyra-subtle group-hover:text-veyra-text transition-colors flex items-center justify-center">
+            <span
+              onClick={(e) => {
+                if (isSelectionMode) {
+                  e.stopPropagation();
+                  toggleFolderExpanded(e, folder.id);
+                }
+              }}
+              className="p-0.5 text-veyra-subtle group-hover:text-veyra-text transition-colors flex items-center justify-center"
+            >
               <MorphIcon
                 icon={isExpanded ? ChevronDown : ChevronRight}
                 size={13}
                 color="currentColor"
               />
+            </span>
+
+            <span
+              aria-hidden={!isSelectionMode}
+              className={cn(
+                'h-3.5 rounded flex items-center justify-center shrink-0 transition-all duration-200 ease-[cubic-bezier(0.16,1,0.3,1)]',
+                isSelectionMode
+                  ? cn(
+                      'w-3.5 opacity-100 scale-100 border',
+                      isFolderChecked
+                        ? 'bg-accent border-accent text-white'
+                        : 'border-veyra-border bg-veyra-canvas/60'
+                    )
+                  : 'w-0 opacity-0 scale-75 -mr-1.5 overflow-hidden border-0 pointer-events-none'
+              )}
+            >
+              {isSelectionMode && isFolderChecked && (
+                <Check className="w-2.5 h-2.5 stroke-[2.5] animate-veyra-check-pop" />
+              )}
             </span>
 
             {isExpanded ? (
@@ -1151,51 +1659,52 @@ export const NotesSidebar: React.FC<NotesSidebarProps> = ({
           </div>
 
           <div className="flex items-center gap-1 shrink-0">
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                setInlineSubfolderParentId(folder.id);
-                setInlineSubfolderName('');
-                setInlineSubfolderColor(folder.color || '#60A5FA');
-                setIsColorPickerOpen(false);
-                setExpandedFolders((prev) => ({ ...prev, [folder.id]: true }));
-              }}
-              title={`Crear subcarpeta dentro de "${folder.name}"`}
-              className="opacity-0 group-hover:opacity-100 p-0.5 rounded text-veyra-subtle hover:text-veyra-text hover:bg-white/10 transition-all cursor-pointer"
-            >
-              <FolderPlus className="w-3 h-3" />
-            </button>
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                onSelectFolder(folder.id);
-                onCreateNote();
-              }}
-              title="Nueva nota en esta carpeta"
-              className="opacity-0 group-hover:opacity-100 p-0.5 rounded text-veyra-subtle hover:text-veyra-text hover:bg-white/10 transition-all cursor-pointer"
-            >
-              <Plus className="w-3 h-3" />
-            </button>
-            {onDeleteFolder && (
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  if (
-                    window.confirm(
-                      `¿Eliminar la carpeta "${folder.name}"? Sus notas se conservarán y se moverán a la raíz.`
-                    )
-                  ) {
-                    onDeleteFolder(folder.id);
-                  }
-                }}
-                title="Eliminar carpeta"
-                className="opacity-0 group-hover:opacity-100 p-0.5 rounded text-veyra-subtle hover:text-red-400 hover:bg-white/10 transition-all cursor-pointer"
-              >
-                <Trash2 className="w-3 h-3" />
-              </button>
+            {!isSelectionMode && (
+              <>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setInlineSubfolderParentId(folder.id);
+                    setInlineSubfolderName('');
+                    setInlineSubfolderColor(folder.color || '#60A5FA');
+                    setIsColorPickerOpen(false);
+                    setExpandedFolders((prev) => ({ ...prev, [folder.id]: true }));
+                  }}
+                  title={`Crear subcarpeta dentro de "${folder.name}"`}
+                  className="opacity-0 group-hover:opacity-100 p-0.5 rounded text-veyra-subtle hover:text-veyra-text hover:bg-white/10 transition-all cursor-pointer"
+                >
+                  <FolderPlus className="w-3 h-3" />
+                </button>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onSelectFolder(folder.id);
+                    onCreateNote();
+                  }}
+                  title="Nueva nota en esta carpeta"
+                  className="opacity-0 group-hover:opacity-100 p-0.5 rounded text-veyra-subtle hover:text-veyra-text hover:bg-white/10 transition-all cursor-pointer"
+                >
+                  <Plus className="w-3 h-3" />
+                </button>
+                {onDeleteFolder && (
+                  <ConfirmTooltip
+                    title="¿Eliminar carpeta?"
+                    description={`"${folder.name}". Sus notas se conservarán y se moverán a la raíz.`}
+                    confirmText="Eliminar"
+                    onConfirm={() => onDeleteFolder(folder.id)}
+                  >
+                    <button
+                      type="button"
+                      title="Eliminar carpeta"
+                      className="opacity-0 group-hover:opacity-100 p-0.5 rounded text-veyra-subtle hover:text-red-400 hover:bg-white/10 transition-all cursor-pointer"
+                    >
+                      <Trash2 className="w-3 h-3" />
+                    </button>
+                  </ConfirmTooltip>
+                )}
+              </>
             )}
             <span className="text-[10px] font-mono text-veyra-subtle pr-1">
               {folderNotes.length}
@@ -1207,90 +1716,8 @@ export const NotesSidebar: React.FC<NotesSidebarProps> = ({
         {isExpanded && (
           <div className="ml-3 pl-2 border-l border-veyra-border/60 space-y-0.5 py-0.5">
             {/* Inline Subfolder Creator (no modal) */}
-            {inlineSubfolderParentId === folder.id && (
-              <div className="flex items-center gap-1.5 px-2 py-1.5 rounded-lg bg-veyra-elevated/95 border border-accent/60 shadow-sm relative select-none animate-in fade-in duration-150 mb-1">
-                {/* Color picker trigger button with tooltip palette */}
-                <div className="relative shrink-0 flex items-center">
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setIsColorPickerOpen((prev) => !prev);
-                    }}
-                    className="w-3.5 h-3.5 rounded-full border border-white/20 transition-transform hover:scale-125 shrink-0 cursor-pointer shadow-xs"
-                    style={{ backgroundColor: inlineSubfolderColor }}
-                    title="Elegir color de la subcarpeta"
-                  />
-                  {isColorPickerOpen && (
-                    <div
-                      ref={colorPickerRef}
-                      onClick={(e) => e.stopPropagation()}
-                      className="absolute left-0 bottom-full mb-1.5 p-1.5 bg-veyra-elevated border border-veyra-border rounded-md shadow-md flex items-center gap-1.5 z-50"
-                    >
-                      {['#8B5CF6', '#60A5FA', '#F87171', '#34D399', '#FBBF24', '#F472B6', '#10B981', '#EC4899'].map((c) => (
-                        <button
-                          key={c}
-                          type="button"
-                          onClick={() => {
-                            setInlineSubfolderColor(c);
-                            setIsColorPickerOpen(false);
-                          }}
-                          className={cn(
-                            'w-4 h-4 rounded-full transition-transform hover:scale-125 cursor-pointer',
-                            inlineSubfolderColor === c && 'ring-2 ring-offset-1 ring-offset-veyra-card ring-accent scale-110'
-                          )}
-                          style={{ backgroundColor: c }}
-                        />
-                      ))}
-                    </div>
-                  )}
-                </div>
-
-                <FolderIcon
-                  className="w-3.5 h-3.5 shrink-0"
-                  style={{ color: inlineSubfolderColor }}
-                />
-
-                <input
-                  type="text"
-                  autoFocus
-                  disabled={isSavingInlineSubfolder}
-                  value={inlineSubfolderName}
-                  onChange={(e) => setInlineSubfolderName(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      e.preventDefault();
-                      handleConfirmInlineSubfolder();
-                    } else if (e.key === 'Escape') {
-                      e.preventDefault();
-                      handleCancelInlineSubfolder();
-                    }
-                  }}
-                  placeholder="Nombre de la subcarpeta..."
-                  className="flex-1 min-w-0 bg-transparent text-xs text-veyra-text placeholder:text-veyra-subtle outline-none border-none py-0.5"
-                />
-
-                <div className="flex items-center gap-0.5 shrink-0">
-                  <button
-                    type="button"
-                    onClick={handleConfirmInlineSubfolder}
-                    disabled={isSavingInlineSubfolder || !inlineSubfolderName.trim()}
-                    className="p-1 rounded text-emerald-400 hover:text-emerald-300 hover:bg-emerald-500/10 disabled:opacity-40 disabled:hover:bg-transparent transition-colors cursor-pointer"
-                    title="Crear (Enter)"
-                  >
-                    <Check className="w-3 h-3 stroke-[2.5]" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleCancelInlineSubfolder}
-                    className="p-1 rounded text-veyra-subtle hover:text-veyra-text hover:bg-white/10 transition-colors cursor-pointer"
-                    title="Cancelar (Esc)"
-                  >
-                    <X className="w-3 h-3" />
-                  </button>
-                </div>
-              </div>
-            )}
+            {inlineSubfolderParentId === folder.id &&
+              renderInlineFolderCreator('Nombre de la subcarpeta...')}
 
             {subfolders.map((sub) => renderFolderNode(sub, depth + 1))}
             {folderNotes.map((n) => renderNoteItem(n))}
@@ -1402,49 +1829,16 @@ export const NotesSidebar: React.FC<NotesSidebarProps> = ({
         />
       ) : (
         <>
-          {/* 2. Top Controls: Compact Search + New Note Action */}
-          <div className="p-2.5 border-b border-veyra-border shrink-0 flex items-center gap-1.5">
-            {/* Search Input with Clear button */}
-            <div className="relative flex-1">
-              <Search className="w-3.5 h-3.5 text-veyra-subtle absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-              <input
-                ref={searchInputRef}
-                type="text"
-                placeholder="Buscar..."
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className="w-full bg-veyra-elevated text-veyra-text placeholder:text-veyra-subtle rounded-lg pl-8 pr-7 py-1.5 text-xs border border-veyra-border focus:border-accent/60 outline-none transition-colors"
-              />
-              {search.trim().length > 0 && (
-                <button
-                  type="button"
-                  onClick={() => setSearch('')}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 text-veyra-subtle hover:text-veyra-text p-0.5 rounded cursor-pointer transition-colors"
-                  title="Borrar búsqueda"
-                >
-                  <X className="w-3.5 h-3.5" />
-                </button>
-              )}
-            </div>
-
-            {/* Compact + Nueva Nota Button */}
-            <button
-              onClick={onCreateNote}
-              title="Nueva Nota"
-              className="h-[30px] w-[30px] rounded-lg bg-accent text-white flex items-center justify-center hover:opacity-90 transition-opacity shadow-sm shrink-0 cursor-pointer"
-            >
-              <Plus className="w-4 h-4 stroke-[2.5]" />
-            </button>
-          </div>
-
-          {/* 3. Scrollable Middle Area: Vistas (icon-only) + Carpetas + Notas */}
+          {/* 2. Scrollable Middle Area: Vistas (icon-only) + Carpetas + Notas */}
           <div className="flex-1 overflow-y-auto p-3 space-y-3.5">
-            {/* Compact Icon-Only VISTAS Row: Visible only when NOT searching */}
-            {search.trim().length === 0 && (
+            {/* Top Vistas + Animated Sticky Batch Action Bar wrapper (zero gap when collapsed) */}
+            <div>
+              {/* Compact Icon-Only VISTAS Row */}
               <div className="flex items-center justify-between p-1 bg-veyra-elevated/40 border border-veyra-border rounded-lg">
                 <button
                   type="button"
                   onClick={() => {
+                    exitSelectionMode();
                     setActiveView('all');
                     onSelectFolder(null);
                   }}
@@ -1462,6 +1856,7 @@ export const NotesSidebar: React.FC<NotesSidebarProps> = ({
                 <button
                   type="button"
                   onClick={() => {
+                    exitSelectionMode();
                     setActiveView('favorites');
                     onSelectFolder(null);
                   }}
@@ -1479,6 +1874,7 @@ export const NotesSidebar: React.FC<NotesSidebarProps> = ({
                 <button
                   type="button"
                   onClick={() => {
+                    exitSelectionMode();
                     setActiveView('recent');
                     onSelectFolder(null);
                   }}
@@ -1496,6 +1892,7 @@ export const NotesSidebar: React.FC<NotesSidebarProps> = ({
                 <button
                   type="button"
                   onClick={() => {
+                    exitSelectionMode();
                     setActiveView('tags');
                     setSelectedTag(null);
                     onSelectFolder(null);
@@ -1514,6 +1911,7 @@ export const NotesSidebar: React.FC<NotesSidebarProps> = ({
                 <button
                   type="button"
                   onClick={() => {
+                    exitSelectionMode();
                     setActiveView('trash');
                     onSelectFolder(null);
                   }}
@@ -1527,11 +1925,87 @@ export const NotesSidebar: React.FC<NotesSidebarProps> = ({
                 >
                   <Trash2 className="w-4 h-4" />
                 </button>
-              </div>
-            )}
+            </div>
 
-            {/* VIEW A: Single Unified File Explorer Tree (When activeView === 'all' and not searching) */}
-            {search.trim().length === 0 && activeView === 'all' && (
+              {/* Batch Action Bar (Smooth GPU accordion during Multi-Selection Mode) */}
+              <div
+                aria-hidden={!isSelectionMode}
+                className={cn(
+                  'sticky top-0 z-20 grid transition-[grid-template-rows,opacity,transform,margin] duration-250 ease-[cubic-bezier(0.16,1,0.3,1)]',
+                  isSelectionMode
+                    ? 'grid-rows-[1fr] opacity-100 translate-y-0 mt-3'
+                    : 'grid-rows-[0fr] opacity-0 -translate-y-1.5 mt-0 pointer-events-none'
+                )}
+              >
+                <div className="overflow-hidden">
+                  <div className="p-2 rounded-lg bg-veyra-card/95 backdrop-blur-md border border-accent/40 shadow-md">
+                    <div className="flex items-center justify-between gap-2">
+                      <span
+                        key={totalSelectedCount}
+                        className="text-[11px] font-semibold text-veyra-text truncate animate-veyra-count-pop"
+                      >
+                        {totalSelectedCount > 0
+                          ? `${totalSelectedCount} ${totalSelectedCount === 1 ? 'seleccionado' : 'seleccionados'}`
+                          : 'Selecciona carpetas o notas'}
+                      </span>
+
+                      <div className="flex items-center gap-1 shrink-0">
+                        {activeView === 'trash' && (
+                          <button
+                            type="button"
+                            disabled={selectedNoteIds.length === 0 || isBatchBusy}
+                            onClick={handleBatchRestore}
+                            title="Restaurar notas seleccionadas"
+                            className="inline-flex items-center gap-1 px-2 py-1 rounded text-[11px] font-medium bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/30 transition-all duration-150 active:scale-95 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                          >
+                            <RotateCcw className="w-3 h-3" />
+                            <span>Restaurar</span>
+                          </button>
+                        )}
+
+                        <ConfirmTooltip
+                          title={
+                            activeView === 'trash'
+                              ? '¿Eliminar definitivamente?'
+                              : '¿Eliminar selección?'
+                          }
+                          description={
+                            activeView === 'trash'
+                              ? `Se eliminarán permanentemente ${totalSelectedCount} notas.`
+                              : `${selectedFolderIds.length > 0 ? `${selectedFolderIds.length} carpeta(s) ` : ''}${selectedFolderIds.length > 0 && selectedNoteIds.length > 0 ? 'y ' : ''}${selectedNoteIds.length > 0 ? `${selectedNoteIds.length} nota(s)` : ''}`
+                          }
+                          confirmText="Eliminar"
+                          disabled={totalSelectedCount === 0 || isBatchBusy}
+                          onConfirm={handleBatchDelete}
+                        >
+                          <button
+                            type="button"
+                            disabled={totalSelectedCount === 0 || isBatchBusy}
+                            title="Eliminar seleccionados"
+                            className="inline-flex items-center gap-1 px-2 py-1 rounded text-[11px] font-medium bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 border border-rose-500/30 transition-all duration-150 active:scale-95 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                            <span>Eliminar</span>
+                          </button>
+                        </ConfirmTooltip>
+
+                        <button
+                          type="button"
+                          onClick={exitSelectionMode}
+                          title="Cancelar selección (Esc)"
+                          className="p-1 rounded text-veyra-muted hover:text-veyra-text hover:bg-white/10 transition-colors active:scale-95 cursor-pointer"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* VIEW A: Single Unified File Explorer Tree */}
+            {activeView === 'all' && (
               <div className="space-y-2">
                 {/* Explorer Header */}
                 <div className="flex items-center justify-between px-2 mb-1">
@@ -1539,6 +2013,25 @@ export const NotesSidebar: React.FC<NotesSidebarProps> = ({
                     Explorador
                   </span>
                   <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        isSelectionMode ? exitSelectionMode() : setIsSelectionMode(true)
+                      }
+                      title={
+                        isSelectionMode
+                          ? 'Salir de selección múltiple (Esc)'
+                          : 'Seleccionar carpetas y notas (Ctrl+clic)'
+                      }
+                      className={cn(
+                        'p-1 rounded transition-all cursor-pointer flex items-center justify-center',
+                        isSelectionMode
+                          ? 'text-accent bg-accent/15 hover:bg-accent/25'
+                          : 'text-veyra-subtle hover:text-veyra-text hover:bg-white/5'
+                      )}
+                    >
+                      <CheckSquare className="w-3.5 h-3.5" />
+                    </button>
                     <button
                       type="button"
                       onClick={handleToggleSortMode}
@@ -1557,9 +2050,12 @@ export const NotesSidebar: React.FC<NotesSidebarProps> = ({
                       <ArrowDownAZ className="w-3.5 h-3.5" />
                     </button>
                     <button
+                      type="button"
                       onClick={() => {
-                        setNewFolderName('');
-                        setIsFolderModalOpen(true);
+                        setInlineSubfolderParentId(ROOT_INLINE_FOLDER);
+                        setInlineSubfolderName('');
+                        setInlineSubfolderColor('#60A5FA');
+                        setIsColorPickerOpen(false);
                       }}
                       className="p-1 rounded text-veyra-subtle hover:text-veyra-text hover:bg-white/5 transition-colors cursor-pointer"
                       title="Nueva carpeta"
@@ -1580,6 +2076,13 @@ export const NotesSidebar: React.FC<NotesSidebarProps> = ({
                   onDrop={(e) => {
                     if (canMoveToRoot) {
                       e.preventDefault();
+                      if (draggedItem?.type === 'batch') {
+                        const { noteIds, folderIds } = draggedItem;
+                        setDraggedItem(null);
+                        setDragOverTarget(null);
+                        handleBatchMoveToFolder(null, { noteIds, folderIds });
+                        return;
+                      }
                       if (draggedItem?.type === 'note') {
                         if (draggedItem.folderId !== null) {
                           onMoveNote?.(draggedItem.id, null);
@@ -1605,13 +2108,21 @@ export const NotesSidebar: React.FC<NotesSidebarProps> = ({
                         e.dataTransfer.dropEffect = 'move';
                         if (dragOverTarget !== 'root') setDragOverTarget('root');
                       }}
-                      onDragLeave={() => {
-                        if (dragOverTarget === 'root') setDragOverTarget(null);
+                      onDragLeave={(e) => {
+                        if (!e.currentTarget.contains(e.relatedTarget as Node | null) && dragOverTarget === 'root') {
+                          setDragOverTarget(null);
+                        }
                       }}
                       onDrop={(e) => {
                         e.preventDefault();
                         e.stopPropagation();
                         setDragOverTarget(null);
+                        if (draggedItem?.type === 'batch') {
+                          const { noteIds, folderIds } = draggedItem;
+                          setDraggedItem(null);
+                          handleBatchMoveToFolder(null, { noteIds, folderIds });
+                          return;
+                        }
                         if (draggedItem?.type === 'note') {
                           if (draggedItem.folderId !== null) {
                             onMoveNote?.(draggedItem.id, null);
@@ -1635,6 +2146,10 @@ export const NotesSidebar: React.FC<NotesSidebarProps> = ({
                       <span className="truncate">Soltar aquí para sacar a la raíz</span>
                     </div>
                   )}
+
+                  {/* Inline Root Folder Creator (no modal) */}
+                  {inlineSubfolderParentId === ROOT_INLINE_FOLDER &&
+                    renderInlineFolderCreator('Nombre de la carpeta...')}
 
                   {/* Top-level Folders (nested support) */}
                   {topLevelFolders.map((folder) => renderFolderNode(folder))}
@@ -1694,8 +2209,14 @@ export const NotesSidebar: React.FC<NotesSidebarProps> = ({
                                   {/* Event Row (Drop target for notes, but NOT draggable) */}
                                   <div
                                     onDragOver={(e) => {
-                                      if (!draggedItem || draggedItem.type !== 'note') return;
-                                      if (draggedItem.eventId !== event.id) {
+                                      if (!draggedItem) return;
+                                      const canDropBatchNotes =
+                                        draggedItem.type === 'batch' &&
+                                        draggedItem.folderIds.length === 0 &&
+                                        draggedItem.noteIds.length > 0;
+                                      const canDropSingleNote =
+                                        draggedItem.type === 'note' && draggedItem.eventId !== event.id;
+                                      if (canDropBatchNotes || canDropSingleNote) {
                                         e.preventDefault();
                                         e.stopPropagation();
                                         e.dataTransfer.dropEffect = 'move';
@@ -1721,6 +2242,16 @@ export const NotesSidebar: React.FC<NotesSidebarProps> = ({
                                       e.preventDefault();
                                       e.stopPropagation();
                                       setDragOverTarget(null);
+                                      if (
+                                        draggedItem?.type === 'batch' &&
+                                        draggedItem.folderIds.length === 0 &&
+                                        draggedItem.noteIds.length > 0
+                                      ) {
+                                        const noteIds = draggedItem.noteIds;
+                                        setDraggedItem(null);
+                                        handleBatchMoveNotesToEvent(event.id, event.title, noteIds);
+                                        return;
+                                      }
                                       if (draggedItem?.type === 'note' && draggedItem.eventId !== event.id) {
                                         onMoveNoteToEvent?.(draggedItem.id, event.id);
                                         setExpandedEvents((prev) => ({ ...prev, [event.id]: true }));
@@ -1847,55 +2378,75 @@ export const NotesSidebar: React.FC<NotesSidebarProps> = ({
               </div>
             )}
 
-            {/* VIEW B: Filtered Notes / Search Results View */}
-            {(search.trim().length > 0 || activeView !== 'all') && (
+            {/* VIEW B: Filtered Notes View */}
+            {activeView !== 'all' && (
               <div>
                 <div className="flex items-center justify-between px-2 mb-2">
                   <span className="text-[10px] font-semibold text-veyra-subtle uppercase tracking-wider truncate">
-                    {search.trim().length > 0
-                      ? `Resultados (${displayedNotes.length})`
-                      : activeView === 'favorites'
-                        ? `Favoritas (${displayedNotes.length})`
-                        : activeView === 'recent'
-                          ? `Recientes (${displayedNotes.length})`
-                          : activeView === 'tags'
-                            ? selectedTag
-                              ? `#${selectedTag} (${displayedNotes.length})`
-                              : `Etiquetas (${displayedNotes.length})`
-                            : activeView === 'trash'
-                              ? `Papelera (${displayedNotes.length})`
-                              : `Notas (${displayedNotes.length})`}
+                    {activeView === 'favorites'
+                      ? `Favoritas (${displayedNotes.length})`
+                      : activeView === 'recent'
+                        ? `Recientes (${displayedNotes.length})`
+                        : activeView === 'tags'
+                          ? selectedTag
+                            ? `#${selectedTag} (${displayedNotes.length})`
+                            : `Etiquetas (${displayedNotes.length})`
+                          : activeView === 'trash'
+                            ? `Papelera (${displayedNotes.length})`
+                            : `Notas (${displayedNotes.length})`}
                   </span>
 
-                  {activeView === 'trash' && (deletedNotes || []).length > 0 ? (
+                  <div className="flex items-center gap-1.5 shrink-0 ml-2">
                     <button
                       type="button"
-                      onClick={() => {
-                        if (window.confirm('¿Deseas vaciar la papelera de notas permanentemente?')) {
-                          onEmptyTrash?.();
-                        }
-                      }}
-                      className="text-[10px] font-mono text-red-400 hover:text-red-300 transition-colors cursor-pointer flex items-center gap-1"
-                      title="Vaciar papelera permanentemente"
+                      onClick={() =>
+                        isSelectionMode ? exitSelectionMode() : setIsSelectionMode(true)
+                      }
+                      title={
+                        isSelectionMode
+                          ? 'Salir de selección múltiple (Esc)'
+                          : 'Seleccionar notas (Ctrl+clic)'
+                      }
+                      className={cn(
+                        'p-1 rounded transition-all cursor-pointer flex items-center justify-center',
+                        isSelectionMode
+                          ? 'text-accent bg-accent/15 hover:bg-accent/25'
+                          : 'text-veyra-subtle hover:text-veyra-text hover:bg-white/5'
+                      )}
                     >
-                      <Trash2 className="w-3 h-3" />
-                      <span>Vaciar</span>
+                      <CheckSquare className="w-3.5 h-3.5" />
                     </button>
-                  ) : (
-                    <span className="text-[10px] font-mono text-veyra-subtle lowercase shrink-0 ml-2">
-                      {activeView === 'favorites'
-                        ? 'fijadas'
-                        : activeView === 'recent'
-                          ? 'últimos 7 días'
-                          : activeView === 'trash'
-                            ? 'eliminadas'
-                            : 'orden: reciente'}
-                    </span>
-                  )}
+
+                    {activeView === 'trash' && (deletedNotes || []).length > 0 ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (window.confirm('¿Deseas vaciar la papelera de notas permanentemente?')) {
+                            onEmptyTrash?.();
+                          }
+                        }}
+                        className="text-[10px] font-mono text-red-400 hover:text-red-300 transition-colors cursor-pointer flex items-center gap-1"
+                        title="Vaciar papelera permanentemente"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                        <span>Vaciar</span>
+                      </button>
+                    ) : (
+                      <span className="text-[10px] font-mono text-veyra-subtle lowercase shrink-0">
+                        {activeView === 'favorites'
+                          ? 'fijadas'
+                          : activeView === 'recent'
+                            ? 'últimos 7 días'
+                            : activeView === 'trash'
+                              ? 'eliminadas'
+                              : 'orden: reciente'}
+                      </span>
+                    )}
+                  </div>
                 </div>
 
                 {/* Tags Pills Bar (Only in Tags view when tags exist) */}
-                {activeView === 'tags' && allTags.length > 0 && search.trim().length === 0 && (
+                {activeView === 'tags' && allTags.length > 0 && (
                   <div className="flex items-center gap-1.5 overflow-x-auto pb-2 px-1 mb-2">
                     <button
                       type="button"
@@ -1981,59 +2532,6 @@ export const NotesSidebar: React.FC<NotesSidebarProps> = ({
         </>
       )}
 
-      {/* Modal: Nueva Carpeta Raíz */}
-      <Modal
-        isOpen={isFolderModalOpen}
-        onClose={() => setIsFolderModalOpen(false)}
-        title="Nueva Carpeta"
-        maxWidth="sm"
-      >
-        <form onSubmit={handleCreateFolderSubmit} className="space-y-4">
-          <Input
-            label="Nombre de la carpeta"
-            placeholder="ej. Marketing, Trabajo, Universidades..."
-            value={newFolderName}
-            onChange={(e) => setNewFolderName(e.target.value)}
-            required
-            autoFocus
-          />
-
-          <div>
-            <label className="block text-xs font-medium text-veyra-muted mb-2">
-              Color identificativo
-            </label>
-            <div className="flex items-center gap-2">
-              {['#8B5CF6', '#60A5FA', '#F87171', '#34D399', '#FBBF24', '#F472B6'].map((c) => (
-                <button
-                  key={c}
-                  type="button"
-                  onClick={() => setSelectedFolderColor(c)}
-                  className={cn(
-                    'w-6 h-6 rounded-full transition-transform cursor-pointer',
-                    selectedFolderColor === c && 'scale-110 ring-2 ring-offset-2 ring-offset-veyra-card ring-accent'
-                  )}
-                  style={{ backgroundColor: c }}
-                />
-              ))}
-            </div>
-          </div>
-
-          <div className="flex items-center justify-end gap-2 pt-2">
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              onClick={() => setIsFolderModalOpen(false)}
-            >
-              Cancelar
-            </Button>
-            <Button type="submit" size="sm" loading={creatingFolder}>
-              Crear Carpeta
-            </Button>
-          </div>
-        </form>
-      </Modal>
-
       {/* Modal: Preferencias y Cuenta */}
       <UserSettingsModal
         isOpen={isSettingsOpen}
@@ -2062,7 +2560,7 @@ export const NotesSidebar: React.FC<NotesSidebarProps> = ({
         <div
           ref={contextMenuRef}
           style={{ top: `${contextMenu.y}px`, left: `${contextMenu.x}px` }}
-          className="fixed z-50 min-w-[190px] p-1 bg-veyra-elevated border border-veyra-border rounded-md shadow-lg text-xs text-veyra-text select-none"
+          className="fixed z-50 min-w-[190px] p-1 bg-veyra-elevated border border-veyra-border rounded-md shadow-lg text-xs text-veyra-text select-none animate-veyra-scale-in"
           onClick={(e) => e.stopPropagation()}
         >
           {contextMenu.target.type === 'folder' && (
@@ -2117,6 +2615,50 @@ export const NotesSidebar: React.FC<NotesSidebarProps> = ({
                 <Pencil className="w-3.5 h-3.5 text-veyra-subtle shrink-0" />
                 <span>Renombrar carpeta</span>
               </button>
+
+              {/* Acceso rápido en Dashboard */}
+              {(() => {
+                const targetFolder = contextMenu.target.type === 'folder' ? contextMenu.target.folder : null;
+                const isPinnedToDashboard = targetFolder
+                  ? isItemInDashboardQuickAccess(
+                      quickAccessItems,
+                      { type: 'folder', id: targetFolder.id },
+                      defaultQuickAccessFolderIds
+                    )
+                  : false;
+                return (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      closeContextMenu();
+                      if (targetFolder) {
+                        const res = toggleDashboardQuickAccessItem(
+                          userId,
+                          { type: 'folder', id: targetFolder.id },
+                          defaultQuickAccessFolderIds
+                        );
+                        setQuickAccessItems(res.items);
+                        toast.success(
+                          res.added
+                            ? `"${targetFolder.name}" añadido a accesos rápidos`
+                            : `"${targetFolder.name}" quitado de accesos rápidos`
+                        );
+                      }
+                    }}
+                    className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded hover:bg-white/5 text-left transition-colors cursor-pointer"
+                  >
+                    <Pin
+                      className={cn(
+                        'w-3.5 h-3.5 shrink-0',
+                        isPinnedToDashboard ? 'text-amber-400 fill-amber-400' : 'text-accent'
+                      )}
+                    />
+                    <span>
+                      {isPinnedToDashboard ? 'Quitar de accesos rápidos' : 'Mandar a acceso rápido'}
+                    </span>
+                  </button>
+                );
+              })()}
 
               {/* Compartir carpeta */}
               <button
@@ -2181,21 +2723,46 @@ export const NotesSidebar: React.FC<NotesSidebarProps> = ({
 
               <div className="my-1 border-t border-veyra-border" />
 
-              {/* Eliminar carpeta */}
-              <button
-                type="button"
-                onClick={() => {
-                  const targetFolder = contextMenu.target?.type === 'folder' ? contextMenu.target.folder : null;
-                  closeContextMenu();
-                  if (targetFolder && window.confirm(`¿Eliminar la carpeta "${targetFolder.name}"? Sus notas se conservarán y se moverán a la raíz.`)) {
-                    onDeleteFolder?.(targetFolder.id);
-                  }
-                }}
-                className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded hover:bg-red-500/10 text-red-400 hover:text-red-300 text-left transition-colors cursor-pointer"
-              >
-                <Trash2 className="w-3.5 h-3.5 shrink-0" />
-                <span>Eliminar carpeta</span>
-              </button>
+              {/* Eliminar carpeta (confirmación en tooltip del menú) */}
+              {!confirmDeleteFolderInMenu ? (
+                <button
+                  type="button"
+                  onClick={() => setConfirmDeleteFolderInMenu(true)}
+                  className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded hover:bg-red-500/10 text-red-400 hover:text-red-300 text-left transition-colors cursor-pointer"
+                >
+                  <Trash2 className="w-3.5 h-3.5 shrink-0" />
+                  <span>Eliminar carpeta</span>
+                </button>
+              ) : (
+                <div className="p-2 rounded bg-red-500/10 border border-red-500/30 space-y-2 animate-veyra-inline-reveal">
+                  <p className="text-[11px] text-red-200 leading-snug">
+                    ¿Eliminar <strong className="text-white">&quot;{contextMenu.target.folder.name}&quot;</strong>? Sus notas se moverán a la raíz.
+                  </p>
+                  <div className="flex items-center justify-end gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => setConfirmDeleteFolderInMenu(false)}
+                      className="px-2 py-1 rounded text-[11px] text-veyra-muted hover:text-veyra-text hover:bg-white/10 transition-colors cursor-pointer"
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const targetFolder =
+                          contextMenu.target?.type === 'folder' ? contextMenu.target.folder : null;
+                        closeContextMenu();
+                        if (targetFolder) {
+                          onDeleteFolder?.(targetFolder.id);
+                        }
+                      }}
+                      className="px-2.5 py-1 rounded text-[11px] font-semibold bg-rose-600 hover:bg-rose-700 text-white transition-colors cursor-pointer"
+                    >
+                      Eliminar
+                    </button>
+                  </div>
+                </div>
+              )}
             </>
           )}
 
@@ -2385,6 +2952,48 @@ export const NotesSidebar: React.FC<NotesSidebarProps> = ({
                   <span>Crear apunte para esta materia</span>
                 </button>
               )}
+              {(() => {
+                const targetEvent = contextMenu.target.type === 'event' ? contextMenu.target.event : null;
+                const isPinnedToDashboard = targetEvent
+                  ? isItemInDashboardQuickAccess(
+                      quickAccessItems,
+                      { type: 'event', id: targetEvent.id },
+                      defaultQuickAccessFolderIds
+                    )
+                  : false;
+                return (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      closeContextMenu();
+                      if (targetEvent) {
+                        const res = toggleDashboardQuickAccessItem(
+                          userId,
+                          { type: 'event', id: targetEvent.id },
+                          defaultQuickAccessFolderIds
+                        );
+                        setQuickAccessItems(res.items);
+                        toast.success(
+                          res.added
+                            ? `"${targetEvent.title}" añadido a accesos rápidos`
+                            : `"${targetEvent.title}" quitado de accesos rápidos`
+                        );
+                      }
+                    }}
+                    className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded hover:bg-white/5 text-left transition-colors cursor-pointer"
+                  >
+                    <Pin
+                      className={cn(
+                        'w-3.5 h-3.5 shrink-0',
+                        isPinnedToDashboard ? 'text-amber-400 fill-amber-400' : 'text-accent'
+                      )}
+                    />
+                    <span>
+                      {isPinnedToDashboard ? 'Quitar de accesos rápidos' : 'Mandar a acceso rápido'}
+                    </span>
+                  </button>
+                );
+              })()}
               <button
                 type="button"
                 onClick={() => {
@@ -2408,6 +3017,80 @@ export const NotesSidebar: React.FC<NotesSidebarProps> = ({
           )}
         </div>
       )}
+
+      {/* Stacked Floating Drag Preview following cursor during multi-item drag */}
+      {draggedItem?.type === 'batch' &&
+        typeof document !== 'undefined' &&
+        createPortal(
+          <div
+            ref={dragPreviewRef}
+            className="fixed top-0 left-0 z-[99999] pointer-events-none select-none will-change-transform"
+          >
+            <div className="relative w-[210px] animate-veyra-drag-stack-in">
+              {/* Back stacked cards */}
+              {draggedItem.previewItems.slice(1, 3).map((stackItem, idx) => {
+                const layer = idx + 1;
+                return (
+                  <div
+                    key={`${stackItem.type}-${stackItem.id}`}
+                    style={{
+                      transform:
+                        layer === 1
+                          ? 'translate3d(4px, 5px, 0) rotate(2.5deg) scale(0.97)'
+                          : 'translate3d(-3px, 10px, 0) rotate(-2.5deg) scale(0.94)',
+                      zIndex: 10 - layer,
+                    }}
+                    className="absolute inset-0 rounded-xl bg-veyra-elevated border border-veyra-border/90 shadow-lg flex items-center gap-2 px-2.5 py-2 opacity-85"
+                  >
+                    {stackItem.type === 'folder' ? (
+                      <FolderIcon
+                        className="w-3.5 h-3.5 shrink-0"
+                        style={{ color: stackItem.color || 'var(--accent-primary)' }}
+                      />
+                    ) : (
+                      <FileText className="w-3.5 h-3.5 shrink-0 text-veyra-subtle" />
+                    )}
+                    <span className="truncate text-[11px] font-medium text-veyra-muted">
+                      {stackItem.label}
+                    </span>
+                  </div>
+                );
+              })}
+
+              {/* Front lead card */}
+              {draggedItem.previewItems[0] && (
+                <div className="relative z-20 rounded-xl bg-veyra-card border border-accent/65 px-2.5 py-2 shadow-2xl shadow-black/45 flex items-center gap-2">
+                  <div className="w-6 h-6 rounded-lg bg-accent/15 border border-accent/30 flex items-center justify-center shrink-0">
+                    {draggedItem.previewItems[0].type === 'folder' ? (
+                      <FolderIcon
+                        className="w-3.5 h-3.5 shrink-0"
+                        style={{ color: draggedItem.previewItems[0].color || 'var(--accent-primary)' }}
+                      />
+                    ) : (
+                      <FileText className="w-3.5 h-3.5 shrink-0 text-accent" />
+                    )}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-xs font-semibold text-veyra-text leading-tight">
+                      {draggedItem.previewItems[0].label}
+                    </div>
+                    {draggedItem.noteIds.length + draggedItem.folderIds.length > 1 && (
+                      <div className="text-[10px] text-veyra-muted leading-tight mt-0.5">
+                        +{draggedItem.noteIds.length + draggedItem.folderIds.length - 1} más seleccionados
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Floating count badge */}
+              <div className="absolute -top-2 -right-2 z-30 min-w-[22px] h-[22px] px-1.5 rounded-full bg-accent text-white text-[10.5px] font-bold flex items-center justify-center shadow-lg ring-2 ring-veyra-canvas">
+                {draggedItem.noteIds.length + draggedItem.folderIds.length}
+              </div>
+            </div>
+          </div>,
+          document.body
+        )}
     </aside>
   );
 };

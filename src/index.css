@@ -889,6 +889,28 @@ html.dark .sheet-light-mode textarea {
   color: #18181B !important;
 }
 
+/* Prompts interactivos (/ia, /enlace) dentro de la hoja blanca en modo oscuro */
+html.dark .sheet-light-mode .veyra-inline-prompt {
+  background-color: #18181b !important;
+  border-color: #3f3f46 !important;
+  color: #f4f4f5 !important;
+}
+
+html.dark .sheet-light-mode .veyra-inline-prompt input.veyra-inline-prompt-input {
+  color: #f4f4f5 !important;
+  caret-color: var(--accent-primary, #60A5FA) !important;
+}
+
+html.dark .sheet-light-mode .veyra-inline-prompt input.veyra-inline-prompt-input::placeholder {
+  color: #a1a1aa !important;
+}
+
+html.dark .sheet-light-mode .tiptap .veyra-inline-prompt input.veyra-inline-prompt-input::selection,
+html.dark .sheet-light-mode .ProseMirror .veyra-inline-prompt input.veyra-inline-prompt-input::selection {
+  background-color: color-mix(in srgb, var(--accent-primary, #60A5FA) 45%, transparent) !important;
+  color: #ffffff !important;
+}
+
 /* Enlaces y botones de enlaces dentro de la hoja blanca en modo oscuro */
 html.dark .sheet-light-mode .tiptap a,
 html.dark .sheet-light-mode .prose a,
@@ -1798,109 +1820,13 @@ figcaption,
 }
 
 /* ==========================================================================
-   Transiciones suaves al abrir y cerrar notas (solo GPU: transform + opacity)
+   Transiciones suaves al abrir y cerrar notas (GPU: transform + opacity)
    ========================================================================== */
-
-@keyframes veyra-note-fade-in {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
-}
-
-@keyframes veyra-note-fade-out {
-  from {
-    opacity: 1;
-  }
-  to {
-    opacity: 0;
-  }
-}
-
-@keyframes veyra-note-chrome-in {
-  from {
-    opacity: 0;
-    transform: translate3d(0, -6px, 0);
-  }
-  to {
-    opacity: 1;
-    transform: none;
-  }
-}
-
-@keyframes veyra-note-chrome-out {
-  from {
-    opacity: 1;
-    transform: translate3d(0, 0, 0);
-  }
-  to {
-    opacity: 0;
-    transform: translate3d(0, -6px, 0);
-  }
-}
-
-@keyframes veyra-note-sheet-in {
-  from {
-    opacity: 0;
-    transform: translate3d(0, 20px, 0) scale(0.985);
-  }
-  to {
-    opacity: 1;
-    transform: none;
-  }
-}
-
-/* En A4 no aplicamos scale en la entrada para no alterar las mediciones getBoundingClientRect() */
-@keyframes veyra-note-sheet-a4-in {
-  from {
-    opacity: 0;
-    transform: translate3d(0, 22px, 0);
-  }
-  to {
-    opacity: 1;
-    transform: none;
-  }
-}
-
-@keyframes veyra-note-sheet-out {
-  from {
-    opacity: 1;
-    transform: translate3d(0, 0, 0) scale(1);
-  }
-  to {
-    opacity: 0;
-    transform: translate3d(0, 18px, 0) scale(0.978);
-  }
-}
-
-@keyframes veyra-note-pages-in {
-  from {
-    opacity: 0;
-    transform: translate3d(16px, 0, 0);
-  }
-  to {
-    opacity: 1;
-    transform: none;
-  }
-}
-
-@keyframes veyra-note-pages-out {
-  from {
-    opacity: 1;
-    transform: translate3d(0, 0, 0);
-  }
-  to {
-    opacity: 0;
-    transform: translate3d(16px, 0, 0);
-  }
-}
 
 @keyframes veyra-stage-in {
   from {
     opacity: 0;
-    transform: scale(0.99);
+    transform: translate3d(0, 12px, 0) scale(0.985);
   }
   to {
     opacity: 1;
@@ -1908,68 +1834,358 @@ figcaption,
   }
 }
 
-.veyra-note-enter {
-  animation: veyra-note-fade-in 220ms cubic-bezier(0.16, 1, 0.3, 1) backwards;
+.veyra-note-root-entering {
+  opacity: 0;
 }
 
-.veyra-note-exit {
-  animation: veyra-note-fade-out 240ms cubic-bezier(0.32, 0.72, 0, 1) forwards;
+.veyra-note-root-entered {
+  opacity: 1;
+  transition: opacity 280ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-.veyra-note-chrome-enter {
-  animation: veyra-note-chrome-in 280ms cubic-bezier(0.16, 1, 0.3, 1) backwards;
+.veyra-note-root-closing {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 280ms cubic-bezier(0.32, 0.72, 0, 1);
 }
 
-.veyra-note-chrome-exit {
-  animation: veyra-note-chrome-out 200ms cubic-bezier(0.32, 0.72, 0, 1) forwards;
+.veyra-note-chrome-entering {
+  opacity: 0;
+  transform: translate3d(0, -10px, 0);
+  will-change: transform, opacity;
 }
 
-.veyra-note-sheet-enter {
-  animation: veyra-note-sheet-in 380ms cubic-bezier(0.16, 1, 0.3, 1) 25ms backwards;
+.veyra-note-chrome-entered {
+  opacity: 1;
+  transform: none;
+  transition:
+    opacity 340ms cubic-bezier(0.16, 1, 0.3, 1),
+    transform 340ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.veyra-note-chrome-closing {
+  opacity: 0;
+  transform: translate3d(0, -10px, 0);
+  will-change: transform, opacity;
+  transition:
+    opacity 240ms cubic-bezier(0.32, 0.72, 0, 1),
+    transform 240ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+.veyra-note-sheet-entering {
+  opacity: 0;
+  transform: translate3d(0, 36px, 0) scale(0.96);
   transform-origin: center top;
+  will-change: transform, opacity;
 }
 
-.veyra-note-sheet-a4-enter {
-  animation: veyra-note-sheet-a4-in 380ms cubic-bezier(0.16, 1, 0.3, 1) 25ms backwards;
+/* En A4 no aplicamos scale en la entrada para no alterar las mediciones getBoundingClientRect() */
+.veyra-note-sheet-a4-entering {
+  opacity: 0;
+  transform: translate3d(0, 38px, 0);
+  will-change: transform, opacity;
 }
 
-.veyra-note-sheet-exit {
-  animation: veyra-note-sheet-out 240ms cubic-bezier(0.32, 0.72, 0, 1) forwards;
+.veyra-note-sheet-entered {
+  opacity: 1;
+  transform: none;
   transform-origin: center top;
+  transition:
+    opacity 420ms cubic-bezier(0.16, 1, 0.3, 1),
+    transform 420ms cubic-bezier(0.16, 1, 0.3, 1),
+    background-color 150ms ease,
+    border-color 150ms ease,
+    box-shadow 150ms ease !important;
 }
 
-.veyra-note-pages-enter {
-  animation: veyra-note-pages-in 340ms cubic-bezier(0.16, 1, 0.3, 1) 45ms backwards;
+.veyra-note-sheet-closing {
+  opacity: 0;
+  transform: translate3d(0, 32px, 0) scale(0.955);
+  transform-origin: center top;
+  will-change: transform, opacity;
+  transition:
+    opacity 300ms cubic-bezier(0.32, 0.72, 0, 1),
+    transform 300ms cubic-bezier(0.32, 0.72, 0, 1) !important;
 }
 
-.veyra-note-pages-exit {
-  animation: veyra-note-pages-out 200ms cubic-bezier(0.32, 0.72, 0, 1) forwards;
+.veyra-note-content-switching {
+  opacity: 0.45 !important;
+  pointer-events: none;
+  transition: opacity 140ms ease-out !important;
 }
 
-.veyra-note-loading-enter {
-  animation: veyra-note-fade-in 200ms ease-out 90ms both;
+.veyra-note-content-wipe-entering {
+  opacity: 0;
+}
+
+/* Barrido vertical suave hacia abajo al cambiar de nota (sin scale para no alterar A4) */
+@keyframes veyra-vertical-wipe-down {
+  0% {
+    opacity: 0.96;
+    -webkit-mask-image: linear-gradient(
+      to bottom,
+      #000 0%,
+      #000 45%,
+      transparent 51%,
+      transparent 100%
+    );
+    mask-image: linear-gradient(
+      to bottom,
+      #000 0%,
+      #000 45%,
+      transparent 51%,
+      transparent 100%
+    );
+    -webkit-mask-size: 100% 260vh;
+    mask-size: 100% 260vh;
+    -webkit-mask-repeat: no-repeat;
+    mask-repeat: no-repeat;
+    -webkit-mask-position: 0 -134vh;
+    mask-position: 0 -134vh;
+  }
+  100% {
+    opacity: 1;
+    -webkit-mask-image: linear-gradient(
+      to bottom,
+      #000 0%,
+      #000 45%,
+      transparent 51%,
+      transparent 100%
+    );
+    mask-image: linear-gradient(
+      to bottom,
+      #000 0%,
+      #000 45%,
+      transparent 51%,
+      transparent 100%
+    );
+    -webkit-mask-size: 100% 260vh;
+    mask-size: 100% 260vh;
+    -webkit-mask-repeat: no-repeat;
+    mask-repeat: no-repeat;
+    -webkit-mask-position: 0 0px;
+    mask-position: 0 0px;
+  }
+}
+
+.veyra-note-content-wipe {
+  animation: veyra-vertical-wipe-down 460ms cubic-bezier(0.22, 1, 0.36, 1) backwards;
+}
+
+@keyframes veyra-vertical-wipe-edge {
+  0% {
+    opacity: 0;
+    transform: translate3d(0, -10vh, 0);
+  }
+  10% {
+    opacity: 1;
+  }
+  78% {
+    opacity: 0.85;
+  }
+  100% {
+    opacity: 0;
+    transform: translate3d(0, 124vh, 0);
+  }
+}
+
+.veyra-note-wipe-accent-edge {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 26px;
+  background: linear-gradient(
+    to bottom,
+    transparent 0%,
+    color-mix(in srgb, var(--accent-primary, #60A5FA) 10%, transparent) 60%,
+    color-mix(in srgb, var(--accent-primary, #60A5FA) 28%, transparent) 90%,
+    color-mix(in srgb, var(--accent-primary, #60A5FA) 68%, transparent) 97%,
+    transparent 100%
+  );
+  -webkit-mask-image: linear-gradient(
+    to right,
+    transparent 0%,
+    #000 8%,
+    #000 92%,
+    transparent 100%
+  );
+  mask-image: linear-gradient(
+    to right,
+    transparent 0%,
+    #000 8%,
+    #000 92%,
+    transparent 100%
+  );
+  will-change: transform, opacity;
+  animation: veyra-vertical-wipe-edge 460ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+.veyra-note-pages-entering {
+  opacity: 0;
+  transform: translate3d(28px, 0, 0);
+  will-change: transform, opacity;
+}
+
+.veyra-note-pages-entered {
+  opacity: 1;
+  transform: none;
+  transition:
+    width 300ms cubic-bezier(0.16, 1, 0.3, 1),
+    opacity 380ms cubic-bezier(0.16, 1, 0.3, 1),
+    transform 380ms cubic-bezier(0.16, 1, 0.3, 1) !important;
+}
+
+.veyra-note-pages-closing {
+  opacity: 0 !important;
+  transform: translate3d(28px, 0, 0);
+  will-change: transform, opacity;
+  transition:
+    opacity 240ms cubic-bezier(0.32, 0.72, 0, 1),
+    transform 240ms cubic-bezier(0.32, 0.72, 0, 1) !important;
 }
 
 .veyra-stage-enter {
-  animation: veyra-stage-in 260ms cubic-bezier(0.16, 1, 0.3, 1) backwards;
+  animation: veyra-stage-in 340ms cubic-bezier(0.16, 1, 0.3, 1) backwards;
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .veyra-note-enter,
-  .veyra-note-exit,
-  .veyra-note-chrome-enter,
-  .veyra-note-chrome-exit,
-  .veyra-note-sheet-enter,
-  .veyra-note-sheet-a4-enter,
-  .veyra-note-sheet-exit,
-  .veyra-note-pages-enter,
-  .veyra-note-pages-exit,
-  .veyra-note-loading-enter,
-  .veyra-stage-enter {
-    animation-duration: 0.01ms !important;
-    animation-delay: 0ms !important;
+/* ==========================================================================
+   In-App Alert Modal & Side Toast Animations
+   ========================================================================== */
+
+@keyframes veyra-alert-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
   }
 }
+
+@keyframes veyra-alert-scale-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96) translate3d(0, 6px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes veyra-toast-slide-in {
+  from {
+    opacity: 0;
+    transform: translate3d(24px, 0, 0) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes veyra-toast-progress {
+  from {
+    transform: scaleX(1);
+  }
+  to {
+    transform: scaleX(0);
+  }
+}
+
+.animate-veyra-fade-in {
+  animation: veyra-alert-fade-in 180ms ease-out forwards;
+}
+
+.animate-veyra-scale-in {
+  animation: veyra-alert-scale-in 220ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.animate-veyra-toast-in {
+  animation: veyra-toast-slide-in 260ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.animate-veyra-toast-progress {
+  transform-origin: left center;
+  animation-name: veyra-toast-progress;
+  animation-timing-function: linear;
+  animation-fill-mode: forwards;
+}
+
+/* ==========================================================================
+   Sidebar Multi-Selection, Batch Actions & Inline Creator Micro-Animations
+   ========================================================================== */
+
+@keyframes veyra-count-pop {
+  0% {
+    transform: scale(0.82);
+    opacity: 0.6;
+  }
+  60% {
+    transform: scale(1.08);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+@keyframes veyra-inline-reveal {
+  from {
+    opacity: 0;
+    transform: translate3d(0, -6px, 0) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes veyra-check-pop {
+  0% {
+    transform: scale(0.4);
+    opacity: 0;
+  }
+  70% {
+    transform: scale(1.15);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+.animate-veyra-count-pop {
+  animation: veyra-count-pop 220ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.animate-veyra-inline-reveal {
+  animation: veyra-inline-reveal 220ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.animate-veyra-check-pop {
+  animation: veyra-check-pop 180ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes veyra-drag-stack-in {
+  from {
+    opacity: 0;
+    transform: scale(0.9);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.animate-veyra-drag-stack-in {
+  animation: veyra-drag-stack-in 160ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+
+
 
 
 

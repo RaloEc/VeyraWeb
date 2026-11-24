@@ -5,7 +5,6 @@ import { Button } from '../../components/common/Button';
 import { HashtagInput } from '../../components/common/HashtagInput';
 import {
   Bell,
-  AlertCircle,
   ShieldAlert,
   Calendar as CalendarIcon,
   Repeat,
@@ -21,7 +20,7 @@ import {
   Loader2,
 } from 'lucide-react';
 import { toast } from 'sonner';
-import type { Reminder, ReminderPriority, ReminderControlLevel, Subtask } from '../../types/reminders';
+import { normalizeReminderControlLevel, type Reminder, type ReminderPriority, type ReminderControlLevel, type Subtask } from '../../types/reminders';
 import type { CalendarEvent } from '../../hooks/useEvents';
 import { parseSubtasks, cn, toLocalYmd, type AttachmentItem } from '../../lib/utils';
 import {
@@ -86,8 +85,7 @@ export const ReminderModal: React.FC<ReminderModalProps> = ({
   onSave,
   onDelete,
 }) => {
-  const initialDefaultLevel: ReminderControlLevel =
-    defaultControlLevel === 'gentle' ? 'normal' : (defaultControlLevel as ReminderControlLevel) || 'normal';
+  const initialDefaultLevel: ReminderControlLevel = normalizeReminderControlLevel(defaultControlLevel);
 
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
@@ -136,8 +134,9 @@ export const ReminderModal: React.FC<ReminderModalProps> = ({
       setDateStr(toLocalYmd(d));
       setTimeStr(d.toTimeString().substring(0, 5));
       setControlLevel(
-        reminder.control_level ||
-          (reminder.priority === 3 ? 'critical' : reminder.priority === 2 ? 'strict' : 'normal')
+        reminder.control_level
+          ? normalizeReminderControlLevel(reminder.control_level)
+          : (reminder.priority === 3 ? 'critical' : 'normal')
       );
       setSubtasks(parseSubtasks(reminder.subtasks));
 
@@ -212,15 +211,6 @@ export const ReminderModal: React.FC<ReminderModalProps> = ({
           label: 'CRÍTICO',
           desc: 'Alarma máxima con sonido continuo hasta confirmar',
           icon: ShieldAlert,
-        };
-      case 'strict':
-        return {
-          color: '#F59E0B',
-          bg: 'rgba(245, 158, 11, 0.12)',
-          border: 'rgba(245, 158, 11, 0.35)',
-          label: 'ESTRICTO',
-          desc: 'Alarma persistente e insistente que repite periódicamente',
-          icon: AlertCircle,
         };
       case 'normal':
       default:
@@ -391,8 +381,7 @@ export const ReminderModal: React.FC<ReminderModalProps> = ({
       const [hours, minutes] = timeStr.split(':').map(Number);
       const dueDate = new Date(year, month - 1, day, hours, minutes);
 
-      const priorityNum: ReminderPriority =
-        controlLevel === 'critical' ? 3 : controlLevel === 'strict' ? 2 : 1;
+      const priorityNum: ReminderPriority = controlLevel === 'critical' ? 3 : 1;
 
       // Recurrence rule JSON
       let repeatRule: string | null = null;
@@ -622,7 +611,7 @@ export const ReminderModal: React.FC<ReminderModalProps> = ({
         </span>
       </div>
 
-      <div className="grid grid-cols-3 gap-2">
+      <div className="grid grid-cols-2 gap-2">
         {[
           {
             key: 'normal' as ReminderControlLevel,
@@ -630,13 +619,6 @@ export const ReminderModal: React.FC<ReminderModalProps> = ({
             desc: 'Estándar',
             icon: Bell,
             color: '#64748B',
-          },
-          {
-            key: 'strict' as ReminderControlLevel,
-            label: 'Estricto',
-            desc: 'Insistente',
-            icon: AlertCircle,
-            color: '#F59E0B',
           },
           {
             key: 'critical' as ReminderControlLevel,

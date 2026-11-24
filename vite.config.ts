@@ -10,14 +10,17 @@ export default defineConfig({
       srcDir: 'src',
       filename: 'sw.ts',
       registerType: 'prompt',
+      injectRegister: null,
       injectManifest: {
-        globPatterns: ['**/*.{js,css,html,svg,png,woff,woff2,ttf}'],
+        globPatterns: ['**/*.{js,css,html,svg,png,woff2}'],
         maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
       },
       manifest: {
+        id: '/',
         name: 'Veyra',
         short_name: 'Veyra',
         description: 'Veyra — Asistente de Productividad y Notas',
+        lang: 'es',
         theme_color: '#030303',
         background_color: '#030303',
         display: 'standalone',
@@ -27,6 +30,24 @@ export default defineConfig({
         scope: '/',
         categories: ['productivity', 'utilities'],
         icons: [
+          {
+            src: '/pwa-192x192.png',
+            sizes: '192x192',
+            type: 'image/png',
+            purpose: 'any',
+          },
+          {
+            src: '/pwa-512x512.png',
+            sizes: '512x512',
+            type: 'image/png',
+            purpose: 'any',
+          },
+          {
+            src: '/pwa-512x512.png',
+            sizes: '512x512',
+            type: 'image/png',
+            purpose: 'maskable',
+          },
           {
             src: '/pwa-192x192.svg',
             sizes: '192x192',
@@ -58,6 +79,10 @@ export default defineConfig({
             description: 'Abrir bloc de notas',
           },
         ],
+      },
+      devOptions: {
+        enabled: true,
+        type: 'module',
       },
     }),
   ],

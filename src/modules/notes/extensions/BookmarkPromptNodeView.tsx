@@ -123,9 +123,9 @@ export const BookmarkPromptNodeView: React.FC<NodeViewProps> = (props) => {
           inputRef.current?.focus();
         }}
         onMouseDown={(e) => e.stopPropagation()}
-        className="w-full flex items-center gap-2.5 px-3 py-1.5 rounded-md border border-slate-200 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-900 text-slate-800 dark:text-zinc-200 transition-colors cursor-text"
+        className="veyra-inline-prompt w-full flex items-center gap-2.5 px-3 py-1.5 rounded-md border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-900 text-slate-900 dark:text-zinc-100 focus-within:border-accent/70 transition-colors cursor-text"
       >
-        <div className="flex items-center gap-1 text-xs font-mono text-neutral-400 dark:text-neutral-500 select-none shrink-0">
+        <div className="flex items-center gap-1 text-xs font-mono font-medium text-slate-500 dark:text-zinc-400 select-none shrink-0">
           <Link2 className="w-3.5 h-3.5 text-accent" />
           <span>/enlace</span>
         </div>
@@ -139,7 +139,7 @@ export const BookmarkPromptNodeView: React.FC<NodeViewProps> = (props) => {
           onMouseDown={(e) => e.stopPropagation()}
           onClick={(e) => e.stopPropagation()}
           placeholder={onlyLink ? "URL para enlace de texto (ej: https://...)" : "Pega o escribe la dirección web (ej: wikipedia.org)..."}
-          className="flex-1 bg-transparent border-none outline-none text-[13px] text-neutral-800 dark:text-neutral-200 placeholder:text-neutral-400 dark:placeholder:text-neutral-600 cursor-text"
+          className="veyra-inline-prompt-input flex-1 bg-transparent border-none outline-none text-[13px] text-slate-900 dark:text-zinc-50 placeholder:text-slate-400 dark:placeholder:text-zinc-400 caret-accent cursor-text"
         />
 
         {/* Switch Solo Enlace (para bibliografías, citas, etc.) */}
@@ -170,8 +170,8 @@ export const BookmarkPromptNodeView: React.FC<NodeViewProps> = (props) => {
           </div>
         </div>
 
-        <div className="flex items-center gap-1 text-[10px] text-neutral-400 dark:text-neutral-500 shrink-0 select-none">
-          <span className="px-1.5 py-0.5 rounded border border-neutral-200 dark:border-neutral-800 font-mono text-[9px]">
+        <div className="flex items-center gap-1 text-[10px] text-slate-500 dark:text-zinc-300 shrink-0 select-none">
+          <span className="px-1.5 py-0.5 rounded border border-slate-300 dark:border-zinc-700 bg-white/80 dark:bg-zinc-800 font-mono text-[9px]">
             Enter ↵
           </span>
         </div>

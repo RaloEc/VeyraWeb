@@ -158,7 +158,6 @@ export const AgendaQuickPreview: React.FC<AgendaQuickPreviewProps> = ({
     const completedSubtasksCount = subtasks.filter((s) => s.completed).length;
 
     const isCritical = reminder.control_level === 'critical' || reminder.priority === 3;
-    const isStrict = reminder.control_level === 'strict' || reminder.priority === 2;
 
     const dueDate = reminder.due_date_ms ? new Date(reminder.due_date_ms) : null;
     const formattedDue = dueDate
@@ -188,8 +187,6 @@ export const AgendaQuickPreview: React.FC<AgendaQuickPreviewProps> = ({
                   ? 'bg-accent border-accent text-white shadow-xs'
                   : isCritical
                   ? 'border-rose-400 bg-rose-500/10'
-                  : isStrict
-                  ? 'border-amber-400 bg-amber-500/10'
                   : 'border-slate-300 dark:border-white/30 hover:border-accent bg-transparent'
               )}
               title={isCompleted ? 'Marcar como pendiente' : 'Marcar como completado'}
@@ -212,11 +209,6 @@ export const AgendaQuickPreview: React.FC<AgendaQuickPreviewProps> = ({
                 {isCritical && (
                   <span className="px-1.5 py-0.5 rounded text-[8.5px] font-bold uppercase tracking-wider bg-rose-500/15 text-rose-400 border border-rose-500/20">
                     Prioridad Alta
-                  </span>
-                )}
-                {isStrict && (
-                  <span className="px-1.5 py-0.5 rounded text-[8.5px] font-bold uppercase tracking-wider bg-amber-500/15 text-amber-400 border border-amber-500/20">
-                    Prioridad Media
                   </span>
                 )}
               </div>

@@ -1,4 +1,5 @@
 import { supabase } from './supabase';
+import { PushService } from './pushService';
 
 export interface ConnectedDevice {
   id: string;
@@ -140,9 +141,7 @@ export class DeviceService {
         .order('last_seen_at', { ascending: false });
 
       if (!webErr && webSubs && webSubs.length > 0) {
-        const currentEndpoint = typeof window !== 'undefined'
-          ? (await (await navigator.serviceWorker?.ready)?.pushManager?.getSubscription())?.endpoint
-          : null;
+        const currentEndpoint = (await PushService.getExistingSubscription(1500))?.endpoint ?? null;
 
         for (const sub of webSubs) {
           // Omitir si es exactamente la misma suscripción de este navegador

@@ -376,12 +376,21 @@ export function useNotes(userId?: string, initialNoteId?: string | null) {
   const createNote = async (
     folderId: string | null = null,
     eventId: string | null = null,
-    initialTitle?: string
+    initialTitle?: string,
+    initialHtmlContent?: string
   ) => {
     if (!userId) return;
     const nowMs = Date.now();
     const id = crypto.randomUUID();
     const pageId = crypto.randomUUID();
+    const hasInitialHtml = Boolean(initialHtmlContent && initialHtmlContent.trim());
+    const previewText = hasInitialHtml
+      ? initialHtmlContent!
+          .replace(/<[^>]+>/g, ' ')
+          .replace(/\s+/g, ' ')
+          .trim()
+          .slice(0, 180)
+      : '';
 
     const initialPaginatedContent: NoteContentPaginated = {
       isPaginated: true,
@@ -390,7 +399,7 @@ export function useNotes(userId?: string, initialNoteId?: string | null) {
       pages: [
         {
           id: pageId,
-          content: '<p></p>',
+          content: hasInitialHtml ? initialHtmlContent! : '<p></p>',
         },
       ],
     };
@@ -409,7 +418,7 @@ export function useNotes(userId?: string, initialNoteId?: string | null) {
       last_modified_ms: nowMs,
       created_at: new Date().toISOString(),
       sync_mode: 'rest',
-      preview_text: '',
+      preview_text: previewText,
     };
 
     setNotes((prev) => [newNote, ...prev]);

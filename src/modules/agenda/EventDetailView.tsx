@@ -100,7 +100,7 @@ export const EventDetailView: React.FC<EventDetailViewProps> = ({
   const [newReminderTitle, setNewReminderTitle] = useState('');
   const [newReminderDueDate, setNewReminderDueDate] = useState('');
   const [newReminderDueTime, setNewReminderDueTime] = useState('');
-  const [newReminderPriority, setNewReminderPriority] = useState<1 | 2 | 3>(1);
+  const [newReminderPriority, setNewReminderPriority] = useState<1 | 3>(1);
   const [isSavingReminder, setIsSavingReminder] = useState(false);
 
   const handleOpenAddReminder = () => {
@@ -1075,11 +1075,10 @@ export const EventDetailView: React.FC<EventDetailViewProps> = ({
                     <span className="text-[10.5px] text-veyra-subtle">Prioridad:</span>
                     <select
                       value={newReminderPriority}
-                      onChange={(e) => setNewReminderPriority(Number(e.target.value) as 1 | 2 | 3)}
+                      onChange={(e) => setNewReminderPriority(Number(e.target.value) as 1 | 3)}
                       className="px-2 py-1 rounded bg-veyra-canvas border border-veyra-border text-[11px] text-veyra-text focus:outline-none focus:border-accent cursor-pointer"
                     >
                       <option value={1}>Normal</option>
-                      <option value={2}>Estricto</option>
                       <option value={3}>Crítico</option>
                     </select>
                   </div>
@@ -1121,7 +1120,6 @@ export const EventDetailView: React.FC<EventDetailViewProps> = ({
                 {linkedReminders.map((reminder) => {
                   const isDone = reminder.status === 'completed';
                   const isCritical = reminder.control_level === 'critical' || reminder.priority === 3;
-                  const isStrict = reminder.control_level === 'strict' || reminder.priority === 2;
 
                   return (
                     <div
@@ -1157,11 +1155,6 @@ export const EventDetailView: React.FC<EventDetailViewProps> = ({
                         {isCritical && !isDone && (
                           <span className="px-1 py-0.2 rounded text-[8px] font-extrabold uppercase tracking-wider bg-rose-500/15 text-rose-400 border border-rose-500/25 shrink-0">
                             Alta
-                          </span>
-                        )}
-                        {isStrict && !isDone && (
-                          <span className="px-1 py-0.2 rounded text-[8px] font-extrabold uppercase tracking-wider bg-amber-500/15 text-amber-400 border border-amber-500/25 shrink-0">
-                            Media
                           </span>
                         )}
                       </div>

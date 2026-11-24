@@ -1,6 +1,10 @@
-export type ReminderPriority = 1 | 2 | 3; // 1: Normal, 2: Estricto (Medio), 3: Crítico (Alto)
+export type ReminderPriority = 1 | 3; // 1: Normal, 3: Crítico (Alto)
 export type ReminderStatus = 'pending' | 'completed' | 'snoozed' | 'failed' | string;
-export type ReminderControlLevel = 'normal' | 'strict' | 'critical' | string;
+export type ReminderControlLevel = 'normal' | 'critical';
+
+export function normalizeReminderControlLevel(raw?: string | null): ReminderControlLevel {
+  return raw?.toLowerCase() === 'critical' ? 'critical' : 'normal';
+}
 
 export interface Subtask {
   id: string;

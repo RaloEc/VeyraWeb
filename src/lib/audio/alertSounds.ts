@@ -19,15 +19,13 @@ class AlertSoundPlayer {
     }
   }
 
-  public play(level: 'normal' | 'strict' | 'critical' | string = 'normal') {
+  public play(level: 'normal' | 'critical' | string = 'normal') {
     const ctx = this.getContext();
     if (!ctx) return;
 
     try {
       if (level === 'critical') {
         this.playCritical(ctx);
-      } else if (level === 'strict') {
-        this.playStrict(ctx);
       } else {
         this.playNormal(ctx);
       }
@@ -65,13 +63,6 @@ class AlertSoundPlayer {
     const now = ctx.currentTime;
     this.playTone(ctx, 587.33, now, 0.22, 'sine', 0.2); // D5
     this.playTone(ctx, 880.0, now + 0.14, 0.45, 'sine', 0.22); // A5
-  }
-
-  private playStrict(ctx: AudioContext) {
-    const now = ctx.currentTime;
-    this.playTone(ctx, 523.25, now, 0.16, 'triangle', 0.22); // C5
-    this.playTone(ctx, 659.25, now + 0.11, 0.16, 'triangle', 0.24); // E5
-    this.playTone(ctx, 783.99, now + 0.22, 0.4, 'triangle', 0.28); // G5
   }
 
   private playCritical(ctx: AudioContext) {

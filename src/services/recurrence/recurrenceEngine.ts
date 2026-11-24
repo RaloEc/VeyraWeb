@@ -180,9 +180,19 @@ export function parseRecurrenceRule(raw: unknown): RecurrenceRule {
 
   let parsed: any = raw;
   if (typeof raw === 'string') {
+    const trimmed = raw.trim();
+    if (!trimmed || trimmed === 'none' || trimmed === 'null') {
+      return { type: 'none' };
+    }
     try {
-      parsed = JSON.parse(raw);
+      parsed = JSON.parse(trimmed);
     } catch {
+      const lower = trimmed.toLowerCase();
+      if (lower === 'weekdays' || lower.includes('weekdays')) return { type: 'weekdays' };
+      if (lower.includes('daily') || lower.includes('diario')) return { type: 'daily', interval: 1 };
+      if (lower.includes('weekly') || lower.includes('semanal')) return { type: 'weekly', interval: 1 };
+      if (lower.includes('monthly') || lower.includes('mensual')) return { type: 'monthly', interval: 1 };
+      if (lower.includes('yearly') || lower.includes('anual')) return { type: 'yearly', interval: 1 };
       return { type: 'none' };
     }
   }
@@ -318,8 +328,15 @@ export function expandOccurrences(
     }
 
     // Verificar que no sea anterior a la creación original y que esté en la ventana
-    if (endMs >= fromLimitMs && startMs <= toLimitMs && startMs >= event.start_time_ms) {
-      const isOriginal = occDateStr === (event.all_day_date || formatYmd(eventStartParts.year, eventStartParts.month, eventStartParts.day));
+    const origDateStr =
+      event.all_day_date ||
+      formatYmd(eventStartParts.year, eventStartParts.month, eventStartParts.day);
+    const isNotBeforeStart = isAllDay
+      ? occDateStr >= origDateStr
+      : startMs >= event.start_time_ms - 1000;
+
+    if (endMs >= fromLimitMs && startMs <= toLimitMs && isNotBeforeStart) {
+      const isOriginal = occDateStr === origDateStr;
       occurrences.push({
         eventId: event.id,
         startTimeMs: startMs,
@@ -380,7 +397,7 @@ export function expandOccurrences(
       while (currentDayMs <= toLimitMs + 86400000 * 7) {
         const p = getZonedDateParts(new Date(currentDayMs + 43200000), tz);
         if (targetDays.includes(p.weekday)) {
-          const daysSinceOrig = Math.floor((currentDayMs - origDayMs) / 86400000);
+          const daysSinceOrig = Math.round((currentDayMs - origDayMs) / 86400000);
           if (daysSinceOrig >= -6) {
             const weekDiff = Math.floor((daysSinceOrig + (eventStartParts.weekday === 0 ? 6 : eventStartParts.weekday - 1)) / 7);
             if (weekDiff % interval === 0) {
@@ -402,7 +419,7 @@ export function expandOccurrences(
       const startYear = eventStartParts.year;
       const endYear = toParts.year + 1;
 
-      for (let y = fromParts.year; y <= endYear; y++) {
+      for (let y = Math.max(startYear, fromParts.year); y <= endYear; y++) {
         for (let m = 1; m <= 12; m++) {
           const monthsSinceStart = (y - startYear) * 12 + (m - eventStartParts.month);
           if (monthsSinceStart >= 0 && monthsSinceStart % interval === 0) {

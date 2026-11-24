@@ -791,6 +791,15 @@ export interface Database {
           updated_at: string;
         }[];
       };
+      upsert_web_push_subscription: {
+        Args: {
+          p_endpoint: string;
+          p_p256dh: string;
+          p_auth: string;
+          p_user_agent?: string | null;
+        };
+        Returns: undefined;
+      };
     };
     Enums: {
       [_ in never]: never;

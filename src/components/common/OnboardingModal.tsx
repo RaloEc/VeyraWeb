@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import {
   Bell,
-  AlertCircle,
   ShieldAlert,
   ArrowRight,
   Check,
@@ -9,6 +8,8 @@ import {
 } from 'lucide-react';
 import { Button } from './Button';
 import { supabase } from '../../lib/supabase';
+import { PushService } from '../../lib/pushService';
+import { toast } from 'sonner';
 import { cn } from '../../lib/utils';
 import { useUserSettings } from '../../context/UserSettingsContext';
 import confetti from 'canvas-confetti';
@@ -19,7 +20,7 @@ export interface OnboardingModalProps {
   onComplete: () => void;
 }
 
-export type ControlLevelChoice = 'normal' | 'strict' | 'critical';
+export type ControlLevelChoice = 'normal' | 'critical';
 
 export const OnboardingModal: React.FC<OnboardingModalProps> = ({
   userId,
@@ -36,6 +37,7 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
     return 'default';
   });
   const [saving, setSaving] = useState(false);
+  const [pushLoading, setPushLoading] = useState(false);
 
   const controlLevelOptions = [
     {
@@ -46,29 +48,35 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
       color: '#64748B',
     },
     {
-      id: 'strict' as ControlLevelChoice,
-      title: 'Estricto',
-      desc: 'Insistente: notificación principal + 2 repeticiones cada 15 min si no confirmas.',
-      icon: AlertCircle,
-      color: '#F59E0B',
-    },
-    {
       id: 'critical' as ControlLevelChoice,
       title: 'Crítico',
-      desc: 'Máxima prioridad: alerta persistente con repeticiones cada 5 min.',
+      desc: 'Máxima prioridad: alerta persistente con repeticiones cada 5 min hasta confirmar.',
       icon: ShieldAlert,
       color: '#EF4444',
     },
   ];
 
   const handleRequestNotification = async () => {
-    if (typeof window !== 'undefined' && 'Notification' in window) {
-      try {
+    if (typeof window === 'undefined' || !('Notification' in window)) return;
+
+    setPushLoading(true);
+    try {
+      if (PushService.isSupported()) {
+        const res = await PushService.subscribe(userId);
+        setNotificationStatus(Notification.permission);
+        if (res.success) {
+          toast.success('Notificaciones Push Web activadas.');
+        } else if (res.error) {
+          toast.error(res.error);
+        }
+      } else {
         const perm = await Notification.requestPermission();
         setNotificationStatus(perm);
-      } catch (err) {
-        console.error('[Onboarding] Error requesting notification permission:', err);
       }
+    } catch (err) {
+      console.error('[Onboarding] Error requesting notification permission / push subscribe:', err);
+    } finally {
+      setPushLoading(false);
     }
   };
 
@@ -236,6 +244,7 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
                   type="button"
                   variant="secondary"
                   size="sm"
+                  loading={pushLoading}
                   onClick={handleRequestNotification}
                 >
                   <Bell className="w-3.5 h-3.5" />
