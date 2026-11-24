@@ -6,12 +6,30 @@ import type { MeasuredVisualLine, ParagraphMeasurementResult, ParagraphSplitCand
  */
 function collectTextNodes(root: Node): Text[] {
   const textNodes: Text[] = [];
-  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null);
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+    acceptNode(node) {
+      let parent = node.parentElement;
+      while (parent && parent !== root) {
+        const tag = parent.tagName.toLowerCase();
+        if (
+          tag === 'ul' ||
+          tag === 'ol' ||
+          parent.getAttribute('contenteditable') === 'false' ||
+          parent.classList.contains('a4-virtual-page-break') ||
+          parent.classList.contains('veyra-math-inline')
+        ) {
+          return NodeFilter.FILTER_REJECT;
+        }
+        parent = parent.parentElement;
+      }
+      return node.textContent && node.textContent.trim().length > 0
+        ? NodeFilter.FILTER_ACCEPT
+        : NodeFilter.FILTER_SKIP;
+    },
+  });
   let current = walker.nextNode();
   while (current) {
-    if (current.textContent && current.textContent.trim().length > 0) {
-      textNodes.push(current as Text);
-    }
+    textNodes.push(current as Text);
     current = walker.nextNode();
   }
   return textNodes;
@@ -286,17 +304,21 @@ export function calculateParagraphSplit(
     let splitPos: number;
     try {
       splitPos = view.posAtDOM(lastNode, targetOffset);
-    } catch (err) {
-      console.warn('[lineBreakMeasurer] Error calculando posAtDOM:', err);
-      if (candidates.length === 0) {
-        return {
-          candidate: null,
-          candidates: [],
-          shouldPushWholeBlock: true,
-          totalLines: lines.length,
-        };
+    } catch {
+      try {
+        splitPos = view.posAtDOM(lastNode, splitLine.lastOffset);
+      } catch (err) {
+        console.warn('[lineBreakMeasurer] Error calculando posAtDOM:', err);
+        if (candidates.length === 0) {
+          return {
+            candidate: null,
+            candidates: [],
+            shouldPushWholeBlock: true,
+            totalLines: lines.length,
+          };
+        }
+        break;
       }
-      break;
     }
 
     // Altura del espaciador: distancia exacta desde el fondo renderizado de la última línea

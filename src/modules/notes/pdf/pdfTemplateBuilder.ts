@@ -1,7 +1,10 @@
 import type { NotePage } from '../../../types/notes';
 import type { PdfExportConfig } from './pdfExportTypes';
 import { PAPER_SIZES } from './pdfExportTypes';
-import type { A4HeaderFooterConfig } from '../components/A4HeaderFooterTypes';
+import {
+  type A4HeaderFooterConfig,
+  getEffectiveZoneHeightPx,
+} from '../components/A4HeaderFooterTypes';
 import { hydrateMathInHtml } from '../extensions/mathUtils';
 import katexCssRaw from 'katex/dist/katex.min.css?inline';
 
@@ -94,6 +97,22 @@ export function buildDynamicPdfCss(
   const { widthMm, heightMm } = getEffectivePaperDimensions(config);
   const fontStack = getFontFamilyStack(config.fontFamily);
 
+  const PX_TO_MM = 25.4 / 96;
+  const effectiveTopMm =
+    config.includeHeader && options.headerFooterConfig
+      ? Math.max(
+        config.margins.top,
+        Number((getEffectiveZoneHeightPx(options.headerFooterConfig, 'header') * PX_TO_MM).toFixed(2))
+      )
+      : config.margins.top;
+  const effectiveBottomMm =
+    config.includeFooter && options.headerFooterConfig
+      ? Math.max(
+        config.margins.bottom,
+        Number((getEffectiveZoneHeightPx(options.headerFooterConfig, 'footer') * PX_TO_MM).toFixed(2))
+      )
+      : config.margins.bottom;
+
   const paragraphMarginRule =
     config.paragraphSpacing === 'compact'
       ? '0.15rem 0 0.35rem 0'
@@ -133,7 +152,7 @@ export function buildDynamicPdfCss(
         height: ${heightMm}mm;
         min-height: ${heightMm}mm;
         max-height: ${heightMm}mm;
-        padding: ${config.margins.top}mm ${config.margins.right}mm ${config.margins.bottom}mm ${config.margins.left}mm;
+        padding: ${effectiveTopMm}mm ${config.margins.right}mm ${effectiveBottomMm}mm ${config.margins.left}mm;
         background: #FFFFFF;
         color: #1F2937;
         box-shadow: 0 6px 24px rgba(0, 0, 0, ${isDarkCanvas ? '0.65' : '0.14'});
@@ -159,7 +178,7 @@ export function buildDynamicPdfCss(
         height: ${heightMm}mm;
         min-height: ${heightMm}mm;
         max-height: ${heightMm}mm;
-        padding: ${config.margins.top}mm ${config.margins.right}mm ${config.margins.bottom}mm ${config.margins.left}mm;
+        padding: ${effectiveTopMm}mm ${config.margins.right}mm ${effectiveBottomMm}mm ${config.margins.left}mm;
         background: #FFFFFF;
         color: #1F2937;
         margin: 0;
@@ -204,7 +223,7 @@ export function buildDynamicPdfCss(
         height: ${heightMm}mm !important;
         max-height: ${heightMm}mm !important;
         min-height: ${heightMm}mm !important;
-        padding: ${config.margins.top}mm ${config.margins.right}mm ${config.margins.bottom}mm ${config.margins.left}mm !important;
+        padding: ${effectiveTopMm}mm ${config.margins.right}mm ${effectiveBottomMm}mm ${config.margins.left}mm !important;
         margin: 0 !important;
         border: none !important;
         box-shadow: none !important;
@@ -230,7 +249,7 @@ export function buildDynamicPdfCss(
         left: 0 !important;
         right: 0 !important;
         width: 100% !important;
-        height: ${config.margins.top}mm !important;
+        height: ${effectiveTopMm}mm !important;
         box-sizing: border-box !important;
         overflow: visible !important;
         pointer-events: none !important;
@@ -245,7 +264,7 @@ export function buildDynamicPdfCss(
         left: 0 !important;
         right: 0 !important;
         width: 100% !important;
-        height: ${config.margins.bottom}mm !important;
+        height: ${effectiveBottomMm}mm !important;
         box-sizing: border-box !important;
         overflow: visible !important;
         pointer-events: none !important;
@@ -1108,6 +1127,144 @@ export function buildPdfDocumentHtml(
           return false;
         }
 
+        function trimLeadingWhitespace(rootEl) {
+          while (rootEl.firstChild) {
+            var first = rootEl.firstChild;
+            if (first.nodeType === 3) {
+              var trimmed = (first.textContent || '').replace(/^\s+/, '');
+              if (!trimmed) {
+                rootEl.removeChild(first);
+                continue;
+              }
+              first.textContent = trimmed;
+              break;
+            }
+            if (first.nodeType === 1) {
+              if (first.tagName === 'BR') {
+                rootEl.removeChild(first);
+                continue;
+              }
+              if (!(first.textContent || '').trim() && !first.querySelector('img, svg')) {
+                rootEl.removeChild(first);
+                continue;
+              }
+              trimLeadingWhitespace(first);
+              break;
+            }
+            break;
+          }
+        }
+
+        function splitOverflowingParagraph(pEl, container) {
+          if (
+            typeof document.createTreeWalker !== 'function' ||
+            typeof document.createRange !== 'function'
+          ) {
+            return null;
+          }
+          var cRect = container.getBoundingClientRect();
+          if (!cRect || cRect.height <= 0) return null;
+          var maxBottom = cRect.bottom - 4;
+
+          var textNodes = [];
+          var walker = document.createTreeWalker(pEl, NodeFilter.SHOW_TEXT, null);
+          var curNode = walker.nextNode();
+          while (curNode) {
+            if (curNode.textContent && curNode.textContent.trim().length > 0) {
+              textNodes.push(curNode);
+            }
+            curNode = walker.nextNode();
+          }
+          if (textNodes.length === 0) return null;
+
+          var words = [];
+          var range = document.createRange();
+          for (var tIdx = 0; tIdx < textNodes.length; tIdx++) {
+            var tn = textNodes[tIdx];
+            var txt = tn.textContent || '';
+            var re = /\S+/gu;
+            var m;
+            while ((m = re.exec(txt)) !== null) {
+              try {
+                range.setStart(tn, m.index);
+                range.setEnd(tn, m.index + m[0].length);
+                var rects = range.getClientRects();
+                if (rects.length > 0) {
+                  var r = rects[0];
+                  words.push({
+                    top: r.top,
+                    bottom: r.bottom,
+                    node: tn,
+                    endOffset: m.index + m[0].length,
+                  });
+                }
+              } catch (e) {}
+            }
+          }
+          if (words.length < 2) return null;
+
+          var lines = [];
+          var currentLine = [words[0]];
+          for (var wIdx = 1; wIdx < words.length; wIdx++) {
+            var w = words[wIdx];
+            var prevW = currentLine[currentLine.length - 1];
+            var prevCenter = (prevW.top + prevW.bottom) / 2;
+            var curCenter = (w.top + w.bottom) / 2;
+            if (Math.abs(curCenter - prevCenter) < 10) {
+              currentLine.push(w);
+            } else {
+              lines.push(currentLine);
+              currentLine = [w];
+            }
+          }
+          if (currentLine.length > 0) lines.push(currentLine);
+          if (lines.length <= 1) return null;
+
+          var lastFittingIdx = -1;
+          for (var lIdx = 0; lIdx < lines.length; lIdx++) {
+            var lineBottom = lines[lIdx][0].bottom;
+            for (var j = 1; j < lines[lIdx].length; j++) {
+              if (lines[lIdx][j].bottom > lineBottom) lineBottom = lines[lIdx][j].bottom;
+            }
+            if (lineBottom <= maxBottom) {
+              lastFittingIdx = lIdx;
+            } else {
+              break;
+            }
+          }
+
+          var linesOnCurr = lastFittingIdx + 1;
+          // Control de huérfanas (mínimo 2 líneas arriba)
+          if (linesOnCurr < 2) return null;
+
+          // Control de viudas (si queda 1 línea sola abajo, retroceder 1)
+          var remaining = lines.length - linesOnCurr;
+          if (remaining === 1) {
+            if (linesOnCurr > 2) {
+              lastFittingIdx -= 1;
+            } else {
+              return null;
+            }
+          }
+
+          var splitLineWords = lines[lastFittingIdx];
+          var lastWord = splitLineWords[splitLineWords.length - 1];
+          try {
+            var extractRange = document.createRange();
+            extractRange.setStart(pEl, 0);
+            extractRange.setEnd(lastWord.node, lastWord.endOffset);
+            var firstFrag = extractRange.extractContents();
+            var firstEl = pEl.cloneNode(false);
+            firstEl.appendChild(firstFrag);
+            trimLeadingWhitespace(pEl);
+            pEl.style.textIndent = '0';
+            if (!(pEl.textContent || '').trim()) return null;
+            return { firstEl: firstEl, restEl: pEl };
+          } catch (e) {
+            return null;
+          }
+        }
+
         createNewSheet();
 
         // Normalizar anchos y alineación de imágenes
@@ -1199,7 +1356,27 @@ export function buildPdfDocumentHtml(
             currentBody.appendChild(clone);
 
             if (checkOverflow(currentBody)) {
-              if (currentBody.children.length > 1) {
+              if (
+                clone.tagName === 'P' &&
+                !(clone.querySelector && clone.querySelector('img, table, iframe'))
+              ) {
+                while (clone && checkOverflow(currentBody)) {
+                  var splitResult = splitOverflowingParagraph(clone, currentBody);
+                  if (splitResult) {
+                    currentBody.replaceChild(splitResult.firstEl, clone);
+                    createNewSheet();
+                    clone = splitResult.restEl;
+                    currentBody.appendChild(clone);
+                  } else {
+                    if (currentBody.children.length > 1) {
+                      currentBody.removeChild(clone);
+                      createNewSheet();
+                      currentBody.appendChild(clone);
+                    }
+                    break;
+                  }
+                }
+              } else if (currentBody.children.length > 1) {
                 currentBody.removeChild(clone);
                 createNewSheet();
                 currentBody.appendChild(clone);

@@ -15,10 +15,13 @@ function createVirtualBreakDOM(spec: A4VirtualBreakWidgetSpec): HTMLElement {
   spacer.setAttribute('contenteditable', 'false');
   spacer.setAttribute('data-sheet-index', String(spec.sheetIndex + 1));
   spacer.setAttribute('data-spacer-height', `${spec.spacerHeight}px`);
-  spacer.style.display = 'inline-block';
-  spacer.style.verticalAlign = 'top';
+  spacer.style.display = 'block';
   spacer.style.height = `${spec.spacerHeight}px`;
   spacer.style.width = '100%';
+  spacer.style.lineHeight = '0';
+  spacer.style.fontSize = '0';
+  spacer.style.margin = '0';
+  spacer.style.padding = '0';
   spacer.style.pointerEvents = 'none';
   spacer.style.userSelect = 'none';
   spacer.style.background = 'transparent';

@@ -1848,33 +1848,26 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
             }
 
             if (renderedItemBottom > maxPrintableY) {
-              // Retroceder si el bloque anterior es un título o encabezado que quedaría huérfano al final de la hoja
-              let pushIdx = k;
-              while (pushIdx > 0 && items[pushIdx - 1].isHeadingOrLead) {
-                const prevTop =
-                  items[pushIdx - 1].topEl.getBoundingClientRect().top -
-                  sheetRect.top +
-                  totalVirtualSpacersHeight;
-                const orphanThreshold = enableVirtualPaginationRef.current
-                  ? maxPrintableY - 96
-                  : minPrintableY + 28;
-                if (prevTop > orphanThreshold) {
-                  pushIdx -= 1;
-                } else {
-                  break;
-                }
-              }
+              const targetTag = item.targetEl.tagName.toLowerCase();
+              const splittableEl: HTMLElement | null =
+                targetTag === 'p'
+                  ? item.targetEl
+                  : targetTag === 'li' && !item.targetEl.querySelector('ul, ol')
+                    ? ((item.targetEl.querySelector(':scope > p') as HTMLElement | null) || item.targetEl)
+                    : targetTag === 'blockquote'
+                      ? ((item.targetEl.querySelector(':scope > p:last-of-type') as HTMLElement | null) || item.targetEl)
+                      : null;
 
-              // En modo experimental, intentar dividir visualmente párrafos extensos mediante decoraciones
+              // Intentar dividir visualmente párrafos extensos (incluidos párrafos en listas o citas)
+              // antes de retroceder un título previo: si caben >= 2 líneas en la hoja actual, el título no queda huérfano.
               if (
                 enableVirtualPaginationRef.current &&
                 editor &&
-                item.targetEl.tagName.toLowerCase() === 'p' &&
-                !item.isHeadingOrLead &&
-                pushIdx === k
+                splittableEl &&
+                !item.isHeadingOrLead
               ) {
                 const splitResult = calculateParagraphSplit(
-                  item.targetEl,
+                  splittableEl,
                   sheetRect.top,
                   STRIDE,
                   marginTopPx,
@@ -1906,6 +1899,29 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
                   minPrintableY = currentPage * STRIDE + marginTopPx;
                   maxPrintableY = currentPage * STRIDE + A4_HEIGHT_PX - marginBottomPx;
                   continue;
+                }
+
+                // Si todas las líneas medidas caben en la hoja actual (p. ej. solo sobresale el half-leading inferior),
+                // no empujar el párrafo completo a la siguiente hoja.
+                if (!splitResult.shouldPushWholeBlock) {
+                  continue;
+                }
+              }
+
+              // Retroceder si el bloque anterior es un título o encabezado que quedaría huérfano al final de la hoja
+              let pushIdx = k;
+              while (pushIdx > 0 && items[pushIdx - 1].isHeadingOrLead) {
+                const prevTop =
+                  items[pushIdx - 1].topEl.getBoundingClientRect().top -
+                  sheetRect.top +
+                  totalVirtualSpacersHeight;
+                const orphanThreshold = enableVirtualPaginationRef.current
+                  ? maxPrintableY - 96
+                  : minPrintableY + 28;
+                if (prevTop > orphanThreshold) {
+                  pushIdx -= 1;
+                } else {
+                  break;
                 }
               }
 

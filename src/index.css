@@ -1678,8 +1678,11 @@ figcaption,
 
 /* Espaciador decorativo de salto de página virtual A4 */
 .a4-virtual-page-break {
-  display: inline-block !important;
-  vertical-align: top !important;
+  display: block !important;
+  line-height: 0 !important;
+  font-size: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
   user-select: none !important;
   pointer-events: none !important;
   background: transparent !important;
