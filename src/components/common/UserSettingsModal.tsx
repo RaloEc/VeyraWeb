@@ -728,6 +728,48 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
                 )}
               </div>
 
+              {/* Legal y Privacidad */}
+              <div className="p-3.5 rounded-lg bg-veyra-card/70 border border-veyra-border space-y-2.5">
+                <div>
+                  <h5 className="text-xs font-semibold text-veyra-text flex items-center gap-1.5">
+                    <ShieldCheck className="w-3.5 h-3.5 text-teal-400" />
+                    <span>Legal y Privacidad</span>
+                  </h5>
+                  <p className="text-[10.5px] text-veyra-muted mt-0.5">
+                    Consulta nuestra información legal vigente y las opciones públicas de gestión de cuenta.
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <a
+                    href="/privacy"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-veyra-elevated border border-veyra-border text-[11px] font-medium text-veyra-muted hover:text-veyra-text hover:border-teal-500/40 transition-colors"
+                  >
+                    <ShieldCheck className="w-3.5 h-3.5 text-teal-400" />
+                    <span>Política de Privacidad</span>
+                  </a>
+                  <a
+                    href="/terms"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-veyra-elevated border border-veyra-border text-[11px] font-medium text-veyra-muted hover:text-veyra-text hover:border-teal-500/40 transition-colors"
+                  >
+                    <FileText className="w-3.5 h-3.5 text-teal-400" />
+                    <span>Términos de Servicio</span>
+                  </a>
+                  <a
+                    href="/delete-account"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-veyra-elevated border border-veyra-border text-[11px] font-medium text-veyra-muted hover:text-red-400 hover:border-red-500/30 transition-colors"
+                  >
+                    <Trash2 className="w-3.5 h-3.5 text-red-400" />
+                    <span>Eliminación de Cuenta</span>
+                  </a>
+                </div>
+              </div>
+
               {/* Zona de peligro: Eliminación permanente de cuenta */}
               <div className="p-3.5 rounded-lg bg-red-500/5 border border-red-500/25 space-y-2.5">
                 <div className="flex items-center justify-between gap-2">

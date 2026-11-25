@@ -12,8 +12,21 @@ export const AuthPage: React.FC = () => {
         <LoginCard />
       </main>
 
-      <footer className="relative z-10 mt-8 text-center text-xs text-veyra-subtle">
+      <footer className="relative z-10 mt-8 text-center text-xs text-veyra-subtle space-y-2">
         <p>Veyra — Notas, Recordatorios y Agenda en Tiempo Real</p>
+        <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1 text-[11px] text-veyra-muted">
+          <a href="/privacy" target="_blank" rel="noopener noreferrer" className="hover:text-teal-400 transition-colors">
+            Política de Privacidad
+          </a>
+          <span aria-hidden="true">•</span>
+          <a href="/terms" target="_blank" rel="noopener noreferrer" className="hover:text-teal-400 transition-colors">
+            Términos de Servicio
+          </a>
+          <span aria-hidden="true">•</span>
+          <a href="/delete-account" target="_blank" rel="noopener noreferrer" className="hover:text-teal-400 transition-colors">
+            Eliminar cuenta
+          </a>
+        </div>
       </footer>
     </div>
   );
