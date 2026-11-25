@@ -60,7 +60,9 @@ export const BookmarkNodeView: React.FC<NodeViewProps> = ({
   const handleClick = (e: React.MouseEvent) => {
     // Si el editor es editable, abrimos el link al hacer clic o con Ctrl+Click
     if (e.metaKey || e.ctrlKey || !editor.isEditable) {
-      window.open(fullUrl, '_blank', 'noopener,noreferrer');
+      if (fullUrl.startsWith('http://') || fullUrl.startsWith('https://')) {
+        window.open(fullUrl, '_blank', 'noopener,noreferrer');
+      }
     }
   };
 

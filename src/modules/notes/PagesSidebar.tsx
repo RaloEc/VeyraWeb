@@ -28,6 +28,7 @@ import {
 } from 'lucide-react';
 import type { Editor } from '@tiptap/react';
 import * as Y from 'yjs';
+import { sanitizeRichHtml } from '../../lib/sanitizeHtml';
 import { cn } from '../../lib/utils';
 import { resolvePageFragmentName, yFragmentToHtml } from '../../lib/yjs-loader';
 import type { A4HeaderFooterConfig } from './components/A4HeaderFooterTypes';
@@ -1167,7 +1168,7 @@ export const PagesSidebar: React.FC<PagesSidebarProps> = ({
                                       <div
                                         className="ProseMirror prose max-w-none text-left text-slate-900 text-sm leading-relaxed"
                                         dangerouslySetInnerHTML={{
-                                          __html: getPageHtml(page) || '',
+                                          __html: sanitizeRichHtml(getPageHtml(page) || ''),
                                         }}
                                       />
                                     </div>

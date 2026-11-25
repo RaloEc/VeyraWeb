@@ -8,7 +8,7 @@ export function useRealtimeConnection() {
   useEffect(() => {
     // Monitor realtime connection status via a lightweight ping channel
     const channelName = `system:conn-${Math.random().toString(36).substring(2, 8)}`;
-    const pingChannel = supabase.channel(channelName);
+    const pingChannel = supabase.channel(channelName, { config: { private: true } });
 
     pingChannel.subscribe((status) => {
       if (status === 'SUBSCRIBED') {

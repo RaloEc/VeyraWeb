@@ -21,6 +21,13 @@ export interface CollaborationCursorOptions {
  * Tiptap v3 native CollaborationCursor extension powered by @tiptap/y-tiptap.
  * Replaces the deprecated v2 extension to ensure perfect alignment with Tiptap v3 ySyncPlugin.
  */
+const SAFE_HEX_COLOR_RE = /^#[0-9A-Fa-f]{6}$/;
+const DEFAULT_CURSOR_COLOR = '#8B5CF6';
+
+function getSafeCursorColor(color: string | null | undefined): string {
+  return color && SAFE_HEX_COLOR_RE.test(color.trim()) ? color.trim() : DEFAULT_CURSOR_COLOR;
+}
+
 export const CollaborationCursor = Extension.create<CollaborationCursorOptions>({
   name: 'collaborationCursor',
 
@@ -32,17 +39,14 @@ export const CollaborationCursor = Extension.create<CollaborationCursorOptions>(
         color: null,
       },
       render: (user: { name: string; color: string }) => {
+        const safeColor = getSafeCursorColor(user.color);
         const cursor = document.createElement('span');
         cursor.classList.add('collaboration-cursor__caret');
-        if (user.color) {
-          cursor.setAttribute('style', `border-color: ${user.color}`);
-        }
+        cursor.style.borderColor = safeColor;
 
         const label = document.createElement('div');
         label.classList.add('collaboration-cursor__label');
-        if (user.color) {
-          label.setAttribute('style', `background-color: ${user.color}`);
-        }
+        label.style.backgroundColor = safeColor;
         label.insertBefore(document.createTextNode(user.name || 'Colaborador'), null);
 
         cursor.insertBefore(label, null);

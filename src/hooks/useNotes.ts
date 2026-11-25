@@ -194,7 +194,7 @@ export function useNotes(userId?: string, initialNoteId?: string | null) {
 
     const channelName = `notes-folders-${userId}-${Math.random().toString(36).substring(2, 8)}`;
     const channel = supabase
-      .channel(channelName)
+      .channel(channelName, { config: { private: true } })
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'notes' },

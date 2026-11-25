@@ -104,6 +104,7 @@ export const ExportPdfModal: React.FC<ExportPdfModalProps> = ({
     });
   }, [isOpen, title, pages, config, isDark, previewZoom, headerFooterConfig, userName]);
 
+  const [iframeSrcDoc, setIframeSrcDoc] = useState<string>('');
   const isIframeLoadedRef = useRef(false);
 
   // Resetear estado del iframe si cambian las páginas o el título de la nota
@@ -111,20 +112,15 @@ export const ExportPdfModal: React.FC<ExportPdfModalProps> = ({
     isIframeLoadedRef.current = false;
   }, [title, pages]);
 
-  // Inyectar HTML en el iframe de previsualización o actualizar en caliente sin parpadeo
+  // Inyectar HTML en el iframe sandboxed de previsualización o actualizar en caliente vía postMessage
   useEffect(() => {
     if (!isOpen) {
       isIframeLoadedRef.current = false;
       return;
     }
     const iframe = previewIframeRef.current;
-    if (!iframe) return;
 
-    const win = iframe.contentWindow as any;
-    const doc = iframe.contentDocument || win?.document;
-
-    // Si el iframe ya está inicializado y tiene el método en caliente, actualizar al instante sin parpadeo
-    if (isIframeLoadedRef.current && win && typeof win.__updatePdfPreview === 'function' && doc) {
+    if (isIframeLoadedRef.current && iframe?.contentWindow) {
       const dynamicCss = buildDynamicPdfCss(config, {
         isForPrint: false,
         isDarkCanvas: isDark,
@@ -132,52 +128,42 @@ export const ExportPdfModal: React.FC<ExportPdfModalProps> = ({
         headerFooterConfig,
         authorName: userName,
       });
-      win.__updatePdfPreview(dynamicCss, config);
+      iframe.contentWindow.postMessage(
+        { type: 'VEYRA_PDF_UPDATE_PREVIEW', css: dynamicCss, config },
+        '*'
+      );
       return;
     }
 
-    // Primera carga al abrir el modal
-    if (doc) {
-      if (!previewHtml.includes(VEYRA_ATTACHMENT_SCHEME)) {
-        doc.open();
-        doc.write(previewHtml);
-        doc.close();
-        isIframeLoadedRef.current = true;
-        return;
-      }
-
-      let cancelled = false;
-      resolveAttachmentUrisInHtml(previewHtml)
-        .catch(() => previewHtml)
-        .then((resolvedHtml) => {
-          if (cancelled) return;
-          const currentDoc =
-            iframe.contentDocument || (iframe.contentWindow as any)?.document;
-          if (!currentDoc) return;
-          currentDoc.open();
-          currentDoc.write(resolvedHtml);
-          currentDoc.close();
-          isIframeLoadedRef.current = true;
-        });
-
-      return () => {
-        cancelled = true;
-      };
+    if (!previewHtml.includes(VEYRA_ATTACHMENT_SCHEME)) {
+      setIframeSrcDoc(previewHtml);
+      isIframeLoadedRef.current = true;
+      return;
     }
+
+    let cancelled = false;
+    resolveAttachmentUrisInHtml(previewHtml)
+      .catch(() => previewHtml)
+      .then((resolvedHtml) => {
+        if (cancelled) return;
+        setIframeSrcDoc(resolvedHtml);
+        isIframeLoadedRef.current = true;
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, [isOpen, config, isDark, previewZoom, previewHtml]);
 
-  // Navegar suavemente a una hoja física específica en la vista previa
+  // Navegar suavemente a una hoja física específica en la vista previa sandboxed
   const scrollToSheet = useCallback((sheetIndex: number) => {
     const iframe = previewIframeRef.current;
-    if (!iframe) return;
-    const doc = iframe.contentDocument || iframe.contentWindow?.document;
-    if (!doc) return;
-
-    const targetSheet = doc.querySelector(`[data-sheet-num="${sheetIndex}"]`);
-    if (targetSheet) {
-      targetSheet.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      setCurrentPage(sheetIndex);
-    }
+    if (!iframe?.contentWindow) return;
+    iframe.contentWindow.postMessage(
+      { type: 'VEYRA_PDF_SCROLL_TO', sheetIndex },
+      '*'
+    );
+    setCurrentPage(sheetIndex);
   }, []);
 
   if (!isOpen) return null;
@@ -857,6 +843,8 @@ export const ExportPdfModal: React.FC<ExportPdfModalProps> = ({
               <iframe
                 ref={previewIframeRef}
                 title="Previsualización de Documento PDF"
+                srcDoc={iframeSrcDoc}
+                sandbox="allow-scripts allow-modals"
                 className="w-full h-full border-0 pointer-events-auto block"
               />
             </div>

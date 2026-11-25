@@ -5,6 +5,7 @@ import { supabase } from './supabase';
 import { uint8ArrayToBase64, computeSha256 } from './crypto-utils';
 import { activateNoteYjsMode } from './yjs-activation';
 import { IndexeddbPersistence } from 'y-indexeddb';
+import { sanitizeRichHtml } from './sanitizeHtml';
 
 export interface YjsLoadedNote {
   noteId: string;
@@ -804,7 +805,7 @@ export function yFragmentToHtml(frag: Y.XmlFragment): string {
       return '';
     })
     .join('');
-  return html || '<p></p>';
+  return sanitizeRichHtml(html) || '<p></p>';
 }
 
 /**

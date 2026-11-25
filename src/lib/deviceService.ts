@@ -186,7 +186,7 @@ export class DeviceService {
       // 2. Emitir señal WebSocket para cerrar sesión de inmediato en ese dispositivo
       if (userId) {
         supabase
-          .channel(`collab_sync_${userId}`)
+          .channel(`collab_sync_${userId}`, { config: { private: true } })
           .send({
             type: 'broadcast',
             event: 'FORCE_SIGNOUT_DEVICE',

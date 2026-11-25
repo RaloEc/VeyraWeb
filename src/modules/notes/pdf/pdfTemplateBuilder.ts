@@ -6,6 +6,7 @@ import {
   getEffectiveZoneHeightPx,
 } from '../components/A4HeaderFooterTypes';
 import { hydrateMathInHtml } from '../extensions/mathUtils';
+import { sanitizeRichHtml } from '../../../lib/sanitizeHtml';
 import katexCssRaw from 'katex/dist/katex.min.css?inline';
 
 const KATEX_INLINE_CSS = katexCssRaw.replace(
@@ -388,7 +389,7 @@ export function buildPdfDocumentHtml(
     .map(
       (p, idx) => `
       <div class="raw-hoja" data-hoja-index="${idx}">
-        ${normalizeContentHtmlForPdf(hydrateMathInHtml(p.content || '<p><br></p>'))}
+        ${sanitizeRichHtml(normalizeContentHtmlForPdf(hydrateMathInHtml(p.content || '<p><br></p>')))}
       </div>
     `
     )
@@ -928,11 +929,11 @@ export function buildPdfDocumentHtml(
 
   <script>
     (function() {
-      var activeConfig = ${JSON.stringify(config)};
+      var activeConfig = ${JSON.stringify(config).replace(/</g, '\\u003c')};
       var isForPrint = ${isForPrint};
-      var hfConfig = ${JSON.stringify(options.headerFooterConfig || null)};
-      var authorName = ${JSON.stringify(options.authorName || '')};
-      var noteTitle = ${JSON.stringify(cleanTitle)};
+      var hfConfig = ${JSON.stringify(options.headerFooterConfig || null).replace(/</g, '\\u003c')};
+      var authorName = ${JSON.stringify(options.authorName || '').replace(/</g, '\\u003c')};
+      var noteTitle = ${JSON.stringify(cleanTitle).replace(/</g, '\\u003c')};
       var currentDateFormatted = '${currentDateFormatted}';
 
       window.__updatePdfPreview = function(newCss, newConfig) {
@@ -945,6 +946,18 @@ export function buildPdfDocumentHtml(
         }
         runPaginator();
       };
+
+      window.addEventListener('message', function(ev) {
+        if (!ev || !ev.data) return;
+        if (ev.data.type === 'VEYRA_PDF_UPDATE_PREVIEW') {
+          window.__updatePdfPreview(ev.data.css, ev.data.config);
+        } else if (ev.data.type === 'VEYRA_PDF_SCROLL_TO') {
+          var targetSheet = document.querySelector('[data-sheet-num="' + Number(ev.data.sheetIndex) + '"]');
+          if (targetSheet && typeof targetSheet.scrollIntoView === 'function') {
+            targetSheet.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          }
+        }
+      });
 
       function runPaginator() {
         var rawDoc = document.getElementById('raw-document');

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import type { User, Session } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
+import { clearAllWebLocalData } from '../lib/clearLocalData';
 import type { Database } from '../types/database';
 
 type Profile = Database['public']['Tables']['profiles']['Row'];
@@ -133,6 +134,7 @@ export function useAuth() {
       } else if (error) {
         console.warn('[useAuth] Error consultando perfil:', error);
         if (error.code === 'PGRST301' || (error as any).status === 401 || (error as any).status === 521) {
+          await clearAllWebLocalData();
           await supabase.auth.signOut().catch(() => {});
           setUser(null);
           setSession(null);
@@ -156,6 +158,7 @@ export function useAuth() {
   };
 
   const signOut = async () => {
+    await clearAllWebLocalData();
     const { error } = await supabase.auth.signOut();
     if (error) throw error;
     setUser(null);

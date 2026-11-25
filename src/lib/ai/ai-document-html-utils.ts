@@ -1,3 +1,5 @@
+import { sanitizeRichHtml } from '../sanitizeHtml';
+
 export const MAX_FULL_DOCUMENT_HTML_CHARS = 28000;
 
 const MEDIA_TOKEN_PREFIX = 'VEYRA_MEDIA_';
@@ -200,7 +202,7 @@ export function sanitizeAiHtmlOutput(html: string): string {
     .replace(/^```(?:html)?\s*/i, '')
     .replace(/```\s*$/i, '')
     .trim();
-  return stripPromptNodesFromHtml(withoutFences);
+  return sanitizeRichHtml(stripPromptNodesFromHtml(withoutFences));
 }
 
 /**

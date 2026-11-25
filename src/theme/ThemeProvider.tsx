@@ -86,7 +86,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
       }
 
       // Canal WebSocket compartido con el móvil (collab_sync_${userId})
-      activeChannel = supabase.channel(`collab_sync_${user.id}`)
+      activeChannel = supabase.channel(`collab_sync_${user.id}`, { config: { private: true } })
         .on('broadcast', { event: 'THEME_CHANGED' }, ({ payload }) => {
           if (payload?.accentTheme && ACCENT_PALETTES[payload.accentTheme as AccentTheme]) {
             console.log('🎨 [Realtime Theme] Nuevo acento recibido desde el móvil:', payload.accentTheme);
@@ -109,7 +109,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     if (!userId) return;
 
     // 1. Emitir por WebSocket para actualización instantánea en el móvil (100–250ms)
-    supabase.channel(`collab_sync_${userId}`).send({
+    supabase.channel(`collab_sync_${userId}`, { config: { private: true } }).send({
       type: 'broadcast',
       event: 'THEME_CHANGED',
       payload: { accentTheme: newAccent },

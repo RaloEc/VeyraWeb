@@ -4,6 +4,7 @@ import { useTheme } from '../theme/ThemeProvider';
 import type { AccentTheme } from '../theme/accentColors';
 import { DeviceService } from '../lib/deviceService';
 import { PushService } from '../lib/pushService';
+import { clearAllWebLocalData } from '../lib/clearLocalData';
 import { toast } from 'sonner';
 
 export type UserProfileType = 'student' | 'work' | 'personal' | 'custom';
@@ -191,7 +192,7 @@ export const UserSettingsProvider: React.FC<{ children: React.ReactNode }> = ({ 
         });
 
         // C) Suscripción Realtime por WebSocket (canal `collab_sync_${user.id}`) para sincronización instantánea con el móvil
-        activeChannel = supabase.channel(`collab_sync_${user.id}`)
+        activeChannel = supabase.channel(`collab_sync_${user.id}`, { config: { private: true } })
           .on('broadcast', { event: 'THEME_CHANGED' }, ({ payload }) => {
             if (payload?.accentTheme) {
               setSettings((s) => ({ ...s, accentTheme: payload.accentTheme }));
@@ -220,6 +221,7 @@ export const UserSettingsProvider: React.FC<{ children: React.ReactNode }> = ({ 
                 (payload?.targetDeviceId && payload.targetDeviceId === myDeviceId) ||
                 (payload?.targetEndpoint && myEndpoint && payload.targetEndpoint === myEndpoint);
               if (isTarget) {
+                await clearAllWebLocalData();
                 await supabase.auth.signOut();
                 if (typeof window !== 'undefined') {
                   window.location.href = '/';
@@ -309,7 +311,7 @@ export const UserSettingsProvider: React.FC<{ children: React.ReactNode }> = ({ 
 
       // 3. Broadcast instantáneo por WebSocket hacia la App Móvil
       supabase
-        .channel(`collab_sync_${currentUserId}`)
+        .channel(`collab_sync_${currentUserId}`, { config: { private: true } })
         .send({
           type: 'broadcast',
           event: 'SETTINGS_CHANGED',
@@ -320,7 +322,7 @@ export const UserSettingsProvider: React.FC<{ children: React.ReactNode }> = ({ 
       // Si cambió el color de acento, emitir también el evento THEME_CHANGED que escucha nativamente la app móvil
       if (newSettings.accentTheme) {
         supabase
-          .channel(`collab_sync_${currentUserId}`)
+          .channel(`collab_sync_${currentUserId}`, { config: { private: true } })
           .send({
             type: 'broadcast',
             event: 'THEME_CHANGED',

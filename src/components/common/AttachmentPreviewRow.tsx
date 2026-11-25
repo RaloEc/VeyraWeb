@@ -6,6 +6,7 @@ import {
   resolveAttachmentUri,
   useResolvedAttachmentSrc,
 } from '../../lib/storage';
+import { isSafeOpenUrl } from '../../lib/sanitizeHtml';
 
 interface AttachmentPreviewRowProps {
   attachment: AttachmentItem;
@@ -26,6 +27,7 @@ export const AttachmentPreviewRow: React.FC<AttachmentPreviewRowProps> = ({
     e.preventDefault();
     try {
       const signedUrl = await resolveAttachmentUri(attachment.uri);
+      if (!isSafeOpenUrl(signedUrl)) return;
       window.open(signedUrl, '_blank', 'noopener,noreferrer');
     } catch (err) {
       console.warn('[AttachmentPreviewRow] Error opening private attachment:', err);

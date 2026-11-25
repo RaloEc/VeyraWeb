@@ -160,8 +160,11 @@ async function fetchDriveProxyAsObjectUrl(
 /**
  * Abre un `veyra-attachment://<id>` o URL normal en una nueva pestaña.
  */
+import { isSafeOpenUrl } from '../sanitizeHtml';
+
 export async function openAttachmentInNewTab(uri: string): Promise<void> {
   const resolved = await resolveAttachmentUri(uri);
+  if (!isSafeOpenUrl(resolved)) return;
   window.open(resolved, '_blank', 'noopener,noreferrer');
 }
 
