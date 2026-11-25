@@ -113,7 +113,7 @@ export const LoginCard: React.FC<LoginCardProps> = ({ onSuccess }) => {
         });
         if (error) throw error;
         if (data.session) {
-          const { error: consentError } = await supabase.rpc('record_user_consent', {
+          const { error: consentError } = await (supabase.rpc as any)('record_user_consent', {
             age_verified: true,
           });
           if (consentError) {

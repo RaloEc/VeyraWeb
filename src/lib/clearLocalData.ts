@@ -1,4 +1,4 @@
-import { localDB } from '../db/localDB';
+import { localDB } from './db/local-db';
 
 /**
  * Limpieza completa de datos locales del usuario al cerrar sesión o revocar dispositivo.
