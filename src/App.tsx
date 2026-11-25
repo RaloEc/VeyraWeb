@@ -5,6 +5,7 @@ import { AuthCallbackPage } from './modules/auth/AuthCallbackPage';
 import { GoogleDriveCallbackPage } from './modules/auth/GoogleDriveCallbackPage';
 import { ResetPasswordPage } from './modules/auth/ResetPasswordPage';
 import { JoinPage } from './modules/join/JoinPage';
+import { PrivacyPolicyPage, TermsPage, DeleteAccountPage } from './modules/legal/LegalPages';
 import { AppLayout } from './components/layout/AppLayout';
 import { OnboardingModal } from './components/common/OnboardingModal';
 import { ErrorBoundary } from './components/common/ErrorBoundary';
@@ -67,6 +68,31 @@ function AppContent() {
     return (
       <ErrorBoundary>
         <JoinPage currentUser={user} />
+      </ErrorBoundary>
+    );
+  }
+
+  // Public legal & account deletion routes (accessible without authentication)
+  if (currentPath.startsWith('/privacy')) {
+    return (
+      <ErrorBoundary>
+        <PrivacyPolicyPage />
+      </ErrorBoundary>
+    );
+  }
+
+  if (currentPath.startsWith('/terms')) {
+    return (
+      <ErrorBoundary>
+        <TermsPage />
+      </ErrorBoundary>
+    );
+  }
+
+  if (currentPath.startsWith('/delete-account')) {
+    return (
+      <ErrorBoundary>
+        <DeleteAccountPage />
       </ErrorBoundary>
     );
   }

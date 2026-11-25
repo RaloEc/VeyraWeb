@@ -16,6 +16,8 @@ export const LoginCard: React.FC<LoginCardProps> = ({ onSuccess }) => {
   const [isForgotPassword, setIsForgotPassword] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [ageVerified, setAgeVerified] = useState(false);
+  const [termsAccepted, setTermsAccepted] = useState(false);
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -30,6 +32,11 @@ export const LoginCard: React.FC<LoginCardProps> = ({ onSuccess }) => {
   }, []);
 
   const handleGoogleSignIn = async () => {
+    if (isSignUp && (!ageVerified || !termsAccepted)) {
+      setErrorMsg('Debes declarar ser mayor de 18 años y aceptar los Términos y la Política de Privacidad para registrarte.');
+      return;
+    }
+
     try {
       setGoogleLoading(true);
       setErrorMsg(null);
@@ -89,6 +96,11 @@ export const LoginCard: React.FC<LoginCardProps> = ({ onSuccess }) => {
       return;
     }
 
+    if (isSignUp && (!ageVerified || !termsAccepted)) {
+      setErrorMsg('Debes declarar ser mayor de 18 años y aceptar los Términos y la Política de Privacidad para registrarte.');
+      return;
+    }
+
     try {
       setLoading(true);
       setErrorMsg(null);
@@ -101,6 +113,12 @@ export const LoginCard: React.FC<LoginCardProps> = ({ onSuccess }) => {
         });
         if (error) throw error;
         if (data.session) {
+          const { error: consentError } = await supabase.rpc('record_user_consent', {
+            age_verified: true,
+          });
+          if (consentError) {
+            console.warn('[LoginCard] record_user_consent warning:', consentError);
+          }
           onSuccess?.();
         } else {
           setInfoMsg('¡Cuenta creada! Revisa tu correo o inicia sesión con tus credenciales.');
@@ -245,10 +263,56 @@ export const LoginCard: React.FC<LoginCardProps> = ({ onSuccess }) => {
             )}
           </div>
 
+          {isSignUp && (
+            <div className="space-y-2.5 pt-1">
+              <label className="flex items-start gap-2.5 cursor-pointer select-none text-left">
+                <input
+                  type="checkbox"
+                  checked={ageVerified}
+                  onChange={(e) => setAgeVerified(e.target.checked)}
+                  className="mt-0.5 h-4 w-4 rounded border-veyra-border bg-veyra-elevated text-teal-500 focus:ring-teal-500/40 shrink-0"
+                />
+                <span className="text-xs text-veyra-text leading-snug">
+                  Declaro ser mayor de 18 años.
+                </span>
+              </label>
+
+              <label className="flex items-start gap-2.5 cursor-pointer select-none text-left">
+                <input
+                  type="checkbox"
+                  checked={termsAccepted}
+                  onChange={(e) => setTermsAccepted(e.target.checked)}
+                  className="mt-0.5 h-4 w-4 rounded border-veyra-border bg-veyra-elevated text-teal-500 focus:ring-teal-500/40 shrink-0"
+                />
+                <span className="text-xs text-veyra-muted leading-snug">
+                  Acepto los{' '}
+                  <a
+                    href="/terms"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-teal-400 hover:underline font-medium"
+                  >
+                    Términos de Servicio
+                  </a>{' '}
+                  y la{' '}
+                  <a
+                    href="/privacy"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-teal-400 hover:underline font-medium"
+                  >
+                    Política de Privacidad
+                  </a>
+                  .
+                </span>
+              </label>
+            </div>
+          )}
+
           <Button
             type="submit"
             loading={loading}
-            disabled={googleLoading}
+            disabled={googleLoading || (isSignUp && (!ageVerified || !termsAccepted))}
             className="w-full mt-2"
             size="md"
           >
@@ -276,7 +340,7 @@ export const LoginCard: React.FC<LoginCardProps> = ({ onSuccess }) => {
             variant="secondary"
             size="md"
             loading={googleLoading}
-            disabled={loading}
+            disabled={loading || (isSignUp && (!ageVerified || !termsAccepted))}
             onClick={handleGoogleSignIn}
             className="w-full"
           >
@@ -289,6 +353,8 @@ export const LoginCard: React.FC<LoginCardProps> = ({ onSuccess }) => {
               type="button"
               onClick={() => {
                 setIsSignUp(!isSignUp);
+                setAgeVerified(false);
+                setTermsAccepted(false);
                 setErrorMsg(null);
                 setInfoMsg(null);
               }}
