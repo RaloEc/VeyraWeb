@@ -131,16 +131,9 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
 
         const { error: rpcError } = await supabase.rpc('delete_user_account');
         if (rpcError) {
-          console.warn('[UserSettingsModal] RPC delete_user_account fallback:', rpcError.message);
-          await Promise.allSettled([
-            supabase.from('reminders').delete().eq('user_id', userId),
-            supabase.from('notes').delete().eq('user_id', userId),
-            supabase.from('folders').delete().eq('user_id', userId),
-            supabase.from('events').delete().eq('user_id', userId),
-            supabase.from('compliance_events').delete().eq('user_id', userId),
-            supabase.from('web_push_subscriptions').delete().eq('user_id', userId),
-            supabase.from('profiles').delete().eq('id', userId),
-          ]);
+          console.error('[UserSettingsModal] Error en RPC delete_user_account:', rpcError.message);
+          toast.error(`No se pudo eliminar la cuenta en el servidor: ${rpcError.message}`);
+          return;
         }
       }
 
@@ -149,21 +142,44 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
       } catch {
         // ignore localDB delete error
       }
-      if (typeof window !== 'undefined') {
-        localStorage.clear();
+
+      // Eliminar todas las bases IndexedDB locales de Yjs (veyra-yjs-*)
+      if (typeof window !== 'undefined' && typeof indexedDB !== 'undefined') {
+        try {
+          const dbs = typeof indexedDB.databases === 'function' ? await indexedDB.databases() : [];
+          for (const dbInfo of dbs) {
+            if (dbInfo.name && dbInfo.name.startsWith('veyra-yjs-')) {
+              await new Promise<void>((resolve) => {
+                const req = indexedDB.deleteDatabase(dbInfo.name!);
+                req.onsuccess = () => resolve();
+                req.onerror = () => resolve();
+                req.onblocked = () => resolve();
+              });
+            }
+          }
+        } catch {
+          // ignore indexedDB enumeration errors
+        }
+        try {
+          localStorage.clear();
+          sessionStorage.clear();
+        } catch {
+          // ignore storage clear errors
+        }
       }
+
+      await supabase.auth.signOut().catch(() => {});
 
       toast.success('Tu cuenta y todos tus datos han sido eliminados.');
       onClose();
       if (onSignOut) {
         onSignOut();
       } else {
-        await supabase.auth.signOut().catch(() => {});
         window.location.href = '/';
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('[UserSettingsModal] Error deleting account:', err);
-      toast.error('No se pudo eliminar la cuenta. Intenta de nuevo.');
+      toast.error(err?.message || 'No se pudo eliminar la cuenta. Intenta de nuevo.');
     } finally {
       setIsDeletingAccount(false);
     }
