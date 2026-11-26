@@ -29,6 +29,9 @@ importers:
       '@tiptap/extension-image':
         specifier: ^3.32.2
         version: 3.35.0(@tiptap/core@3.35.0(@tiptap/pm@3.35.0))
+      '@tiptap/extension-ordered-list':
+        specifier: ^3.32.2
+        version: 3.35.0(@tiptap/extension-list@3.35.0(@tiptap/core@3.35.0(@tiptap/pm@3.35.0))(@tiptap/pm@3.35.0))
       '@tiptap/extension-placeholder':
         specifier: ^3.32.2
         version: 3.35.0(@tiptap/extensions@3.35.0(@tiptap/core@3.35.0(@tiptap/pm@3.35.0))(@tiptap/pm@3.35.0))
@@ -68,6 +71,9 @@ importers:
       '@tiptap/starter-kit':
         specifier: ^3.32.2
         version: 3.35.0
+      '@tiptap/y-tiptap':
+        specifier: ^3.0.12
+        version: 3.3.1(prosemirror-model@1.25.13)(prosemirror-state@1.4.4)(prosemirror-view@1.44.0)(y-protocols@1.0.7(yjs@13.6.33))(yjs@13.6.33)
       canvas-confetti:
         specifier: ^1.9.4
         version: 1.9.4
