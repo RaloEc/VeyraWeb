@@ -516,14 +516,14 @@ export const EventDetailView: React.FC<EventDetailViewProps> = ({
   return (
     <div className="flex-1 flex flex-col h-full bg-veyra-canvas overflow-hidden select-text font-sans">
       {/* 1. Top Header Toolbar */}
-      <div className="h-10 border-b border-veyra-border px-3.5 flex items-center justify-between text-xs shrink-0 select-none bg-veyra-card/50">
+      <div className="min-h-10 py-1.5 border-b border-veyra-border px-3 sm:px-3.5 flex flex-wrap items-center justify-between gap-2 text-xs shrink-0 select-none bg-veyra-card/50">
         <div className="flex items-center gap-2 min-w-0">
           {!isSidebarOpen && onToggleSidebar && (
             <button
               type="button"
               onClick={onToggleSidebar}
               title="Mostrar barra lateral (Ctrl+\)"
-              className="p-1 rounded text-veyra-muted hover:text-accent hover:bg-white/5 transition-colors cursor-pointer flex items-center justify-center mr-0.5"
+              className="p-1 rounded text-veyra-muted hover:text-accent hover:bg-white/5 transition-colors cursor-pointer flex items-center justify-center mr-0.5 shrink-0"
             >
               <PanelLeft className="w-3.5 h-3.5 text-accent" />
             </button>
@@ -536,16 +536,16 @@ export const EventDetailView: React.FC<EventDetailViewProps> = ({
             <Calendar className="w-2.5 h-2.5 stroke-[2.2]" />
           </div>
 
-          <span className="text-[11px] font-bold text-veyra-subtle uppercase tracking-wider truncate">
+          <span className="hidden sm:inline text-[11px] font-bold text-veyra-subtle uppercase tracking-wider shrink-0">
             Evento
           </span>
-          <span className="text-veyra-subtle/50 text-[11px]">•</span>
-          <span className="text-xs font-semibold text-veyra-text truncate max-w-[200px] sm:max-w-xs">
+          <span className="hidden sm:inline text-veyra-subtle/50 text-[11px]">•</span>
+          <span className="text-xs font-semibold text-veyra-text truncate max-w-[150px] sm:max-w-xs">
             {event.title}
           </span>
         </div>
 
-        <div className="flex items-center gap-1.5 shrink-0">
+        <div className="flex items-center gap-1 sm:gap-1.5 flex-wrap shrink-0">
           {/* Status Badge */}
           {isHappeningNow ? (
             <span
@@ -682,9 +682,9 @@ export const EventDetailView: React.FC<EventDetailViewProps> = ({
       </div>
 
       {/* 2. Main Body: Left Details Stage + Right Notes Sidebar */}
-      <div className="flex-1 flex overflow-hidden">
+      <div className="flex-1 flex flex-col lg:flex-row overflow-y-auto lg:overflow-hidden">
         {/* LEFT / CENTER: Event Information & Reminders */}
-        <div className="flex-1 overflow-y-auto px-6 py-6 md:px-8 space-y-5">
+        <div className="flex-1 lg:overflow-y-auto px-4 py-5 sm:px-6 md:px-8 space-y-5">
           {/* Title Header with Color Indicator & All-Day */}
           <div className="space-y-1.5">
             <div className="flex items-center gap-2.5 flex-wrap">
@@ -1221,9 +1221,9 @@ export const EventDetailView: React.FC<EventDetailViewProps> = ({
           )}
         </div>
 
-        {/* RIGHT: Notas del Evento (Dedicated Right Sidebar) */}
+        {/* RIGHT: Notas del Evento (Dedicated Right Sidebar on lg+, stacked below on mobile) */}
         {isRightSidebarOpen && (
-          <div className="w-80 md:w-96 border-l border-veyra-border shrink-0 flex flex-col h-full bg-veyra-card/25 overflow-hidden">
+          <div className="w-full lg:w-80 xl:w-96 border-t lg:border-t-0 lg:border-l border-veyra-border shrink-0 flex flex-col lg:h-full bg-veyra-card/25 lg:overflow-hidden">
             {/* Header of the Right Notes Sidebar */}
             <div className="h-10 px-3.5 border-b border-veyra-border flex items-center justify-between text-xs shrink-0 select-none bg-veyra-card/50">
               <div className="flex items-center gap-1.5 font-bold text-veyra-text uppercase tracking-wider text-[11px]">

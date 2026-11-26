@@ -3,6 +3,21 @@ import { defineConfig } from 'vite';
 import { VitePWA } from 'vite-plugin-pwa';
 
 export default defineConfig({
+  resolve: {
+    dedupe: [
+      'prosemirror-view',
+      'prosemirror-state',
+      'prosemirror-model',
+      'prosemirror-transform',
+      'prosemirror-commands',
+      'prosemirror-keymap',
+      'prosemirror-schema-list',
+      'prosemirror-tables',
+      'yjs',
+      'y-prosemirror',
+      '@tiptap/pm',
+    ],
+  },
   plugins: [
     react(),
     VitePWA({

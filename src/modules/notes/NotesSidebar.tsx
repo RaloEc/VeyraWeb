@@ -483,13 +483,20 @@ export const NotesSidebar: React.FC<NotesSidebarProps> = ({
       if (selectedFolderId) {
         list = allNotes.filter((n) => n.folder_id === selectedFolderId);
       } else {
-        // Sort pinned notes to the top, then by updated_at_ms
-        list = [...allNotes].sort((a, b) => {
-          if ((b.is_pinned || 0) !== (a.is_pinned || 0)) {
-            return (b.is_pinned || 0) - (a.is_pinned || 0);
-          }
-          return (b.updated_at_ms || 0) - (a.updated_at_ms || 0);
-        });
+        const activeEventIds = new Set(
+          (eventsHook?.events || [])
+            .filter((ev) => ev.deleted !== 1)
+            .map((ev) => ev.id)
+        );
+        // En raíz, ocultar notas ligadas a un Cuaderno Inteligente activo (si el evento fue borrado, sí se muestran)
+        list = allNotes
+          .filter((n) => !n.event_id || !activeEventIds.has(n.event_id))
+          .sort((a, b) => {
+            if ((b.is_pinned || 0) !== (a.is_pinned || 0)) {
+              return (b.is_pinned || 0) - (a.is_pinned || 0);
+            }
+            return (b.updated_at_ms || 0) - (a.updated_at_ms || 0);
+          });
       }
     }
 

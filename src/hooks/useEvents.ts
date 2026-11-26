@@ -355,6 +355,35 @@ export function useEvents(userId?: string) {
     await syncEngine.enqueue('events', 'delete', id, null, nowMs);
   }, []);
 
+  const restoreEvent = useCallback(async (id: string) => {
+    const nowMs = Date.now();
+
+    await localDB.events.update(id, {
+      deleted: 0,
+      last_modified_ms: nowMs,
+      updated_at_ms: nowMs,
+    });
+
+    const restored = await localDB.events.get(id);
+    if (restored) {
+      setEvents((prev) => {
+        if (prev.some((e) => e.id === id)) return prev;
+        return [...prev, restored as CalendarEvent];
+      });
+      await syncEngine.enqueue(
+        'events',
+        'upsert',
+        id,
+        {
+          deleted: 0,
+          last_modified_ms: nowMs,
+          updated_at_ms: nowMs,
+        },
+        nowMs
+      );
+    }
+  }, []);
+
   const todayEvents = useMemo(() => {
     const now = new Date();
     const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
@@ -499,6 +528,7 @@ export function useEvents(userId?: string) {
     createEvent,
     updateEvent,
     deleteEvent,
+    restoreEvent,
     refresh: fetchEvents,
   };
 }

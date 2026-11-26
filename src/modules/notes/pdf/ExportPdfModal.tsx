@@ -57,7 +57,15 @@ export const ExportPdfModal: React.FC<ExportPdfModalProps> = ({
   const { isDark } = useTheme();
   const [config, setConfig] = useState<PdfExportConfig>(DEFAULT_PDF_CONFIG);
   const [isExporting, setIsExporting] = useState(false);
-  const [previewZoom, setPreviewZoom] = useState<number>(0.85);
+  const getOptimalPreviewZoom = () => {
+    if (typeof window === 'undefined') return 0.85;
+    if (window.innerWidth < 640) {
+      return Math.max(0.32, Number(((window.innerWidth - 48) / 840).toFixed(2)));
+    }
+    return 0.85;
+  };
+  const [previewZoom, setPreviewZoom] = useState<number>(getOptimalPreviewZoom);
+  const [mobileTab, setMobileTab] = useState<'options' | 'preview'>('preview');
   const [totalPagesCount, setTotalPagesCount] = useState<number>(pages.length || 1);
   const [currentPage, setCurrentPage] = useState<number>(1);
 
@@ -237,58 +245,91 @@ export const ExportPdfModal: React.FC<ExportPdfModalProps> = ({
     PAPER_SIZES.find((s) => s.id === config.paperSizeId) || PAPER_SIZES[6];
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-black/70 animate-in fade-in duration-100 select-none">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-5 bg-black/70 animate-in fade-in duration-100 select-none">
       {/* Contenedor Modal: 100% FLAT Y SÓLIDO (sin transparencias) */}
-      <div className="w-full max-w-6xl h-[92vh] max-h-[860px] bg-white dark:bg-[#121214] border border-slate-200 dark:border-zinc-800 rounded-xl shadow-2xl flex flex-col overflow-hidden text-slate-800 dark:text-zinc-100">
+      <div className="w-full max-w-6xl h-[94dvh] sm:h-[92vh] max-h-[860px] bg-white dark:bg-[#121214] border border-slate-200 dark:border-zinc-800 rounded-xl shadow-2xl flex flex-col overflow-hidden text-slate-800 dark:text-zinc-100">
         
         {/* Cabecera FLAT */}
-        <div className="h-13 px-5 border-b border-slate-200 dark:border-zinc-800 flex items-center justify-between shrink-0 bg-white dark:bg-[#121214]">
-          <div className="flex items-center gap-3">
-            <div className="w-7 h-7 rounded-md bg-accent/15 text-accent flex items-center justify-center">
+        <div className="min-h-12 py-2 px-3 sm:px-5 border-b border-slate-200 dark:border-zinc-800 flex items-center justify-between gap-2 shrink-0 bg-white dark:bg-[#121214]">
+          <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
+            <div className="w-7 h-7 rounded-md bg-accent/15 text-accent flex items-center justify-center shrink-0">
               <FileDown className="w-4 h-4" />
             </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h2 className="text-xs font-bold text-slate-900 dark:text-zinc-100 tracking-tight">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <h2 className="text-xs font-bold text-slate-900 dark:text-zinc-100 tracking-tight truncate">
                   Exportar nota a PDF
                 </h2>
-                <span className="px-2 py-0.5 rounded bg-accent/10 text-accent font-semibold text-[10px] border border-accent/25">
-                  {totalPagesCount} {totalPagesCount === 1 ? 'página' : 'páginas'} en total
+                <span className="px-2 py-0.5 rounded bg-accent/10 text-accent font-semibold text-[10px] border border-accent/25 shrink-0">
+                  {totalPagesCount} {totalPagesCount === 1 ? 'página' : 'páginas'}
                 </span>
               </div>
-              <p className="text-[11px] text-slate-500 dark:text-zinc-400 truncate max-w-md">
-                {title || 'Nota sin título'} • {pages.length} {pages.length === 1 ? 'sección' : 'secciones de Veyra'}
+              <p className="text-[11px] text-slate-500 dark:text-zinc-400 truncate max-w-[180px] sm:max-w-md">
+                {title || 'Nota sin título'} • {pages.length} {pages.length === 1 ? 'sección' : 'secciones'}
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1 sm:gap-2 shrink-0">
             <button
               type="button"
               onClick={handleResetDefaults}
               title="Restablecer configuración predeterminada"
-              className="px-2.5 py-1 rounded-md text-[11px] text-slate-500 dark:text-zinc-400 hover:text-slate-800 dark:hover:text-zinc-200 hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors flex items-center gap-1.5 cursor-pointer font-medium"
+              className="px-2 sm:px-2.5 py-1 rounded-md text-[11px] text-slate-500 dark:text-zinc-400 hover:text-slate-800 dark:hover:text-zinc-200 hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors flex items-center gap-1.5 cursor-pointer font-medium"
             >
-              <RotateCcw className="w-3 h-3" />
-              <span>Restablecer</span>
+              <RotateCcw className="w-3.5 h-3.5 sm:w-3 sm:h-3" />
+              <span className="hidden sm:inline">Restablecer</span>
             </button>
-            <div className="w-[1px] h-4 bg-slate-200 dark:bg-zinc-800 mx-1" />
+            <div className="w-[1px] h-4 bg-slate-200 dark:bg-zinc-800 mx-0.5 sm:mx-1" />
             <button
               type="button"
               onClick={onClose}
               disabled={isExporting}
-              className="p-1 rounded-md text-slate-400 hover:text-slate-700 dark:hover:text-zinc-200 hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer"
+              className="p-1.5 sm:p-1 rounded-md text-slate-400 hover:text-slate-700 dark:hover:text-zinc-200 hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer"
             >
               <X className="w-4 h-4" />
             </button>
           </div>
         </div>
 
+        {/* Selector de pestaña en móvil (< md): Vista previa vs Configuración */}
+        <div className="flex md:hidden border-b border-slate-200 dark:border-zinc-800 bg-slate-50 dark:bg-[#141417] p-1.5 gap-1 shrink-0">
+          <button
+            type="button"
+            onClick={() => setMobileTab('preview')}
+            className={cn(
+              'flex-1 py-1.5 rounded-md text-xs font-medium transition-colors cursor-pointer',
+              mobileTab === 'preview'
+                ? 'bg-white dark:bg-[#1E1E22] text-accent font-semibold shadow-xs border border-slate-200/80 dark:border-zinc-700/80'
+                : 'text-slate-500 dark:text-zinc-400'
+            )}
+          >
+            Vista previa ({totalPagesCount})
+          </button>
+          <button
+            type="button"
+            onClick={() => setMobileTab('options')}
+            className={cn(
+              'flex-1 py-1.5 rounded-md text-xs font-medium transition-colors cursor-pointer',
+              mobileTab === 'options'
+                ? 'bg-white dark:bg-[#1E1E22] text-accent font-semibold shadow-xs border border-slate-200/80 dark:border-zinc-700/80'
+                : 'text-slate-500 dark:text-zinc-400'
+            )}
+          >
+            Configuración y Márgenes
+          </button>
+        </div>
+
         {/* Cuerpo: Panel Lateral de Opciones Continuas + Vista Previa */}
         <div className="flex-1 flex flex-col md:flex-row overflow-hidden min-h-0">
           
           {/* Panel Izquierdo: TODAS LAS OPCIONES HACIA ABAJO (SIN TABS) */}
-          <div className="w-full md:w-[360px] border-r border-slate-200 dark:border-zinc-800 bg-slate-50/70 dark:bg-[#141417] flex flex-col shrink-0 overflow-y-auto">
+          <div
+            className={cn(
+              'w-full md:w-[360px] md:border-r border-slate-200 dark:border-zinc-800 bg-slate-50/70 dark:bg-[#141417] flex-col shrink-0 overflow-y-auto flex-1 md:flex-initial min-h-0',
+              mobileTab === 'options' ? 'flex' : 'hidden md:flex'
+            )}
+          >
             <div className="p-4 space-y-5 text-xs">
 
               {/* SECCIÓN 1: PÁGINA Y ORIENTACIÓN */}
@@ -757,27 +798,32 @@ export const ExportPdfModal: React.FC<ExportPdfModalProps> = ({
           </div>
 
           {/* Panel Derecho: Previsualización en Vivo de las Hojas Físicas */}
-          <div className="flex-1 flex flex-col bg-slate-200/80 dark:bg-[#090A0C] overflow-hidden min-h-0">
+          <div
+            className={cn(
+              'flex-1 flex-col bg-slate-200/80 dark:bg-[#090A0C] overflow-hidden min-h-0',
+              mobileTab === 'preview' ? 'flex' : 'hidden md:flex'
+            )}
+          >
             
             {/* Barra superior de la previsualización con Navegación y Conteo Real de Páginas */}
-            <div className="h-10 px-4 border-b border-slate-200 dark:border-zinc-800 bg-white dark:bg-[#121214] flex items-center justify-between shrink-0 text-xs text-slate-600 dark:text-zinc-400">
-              <div className="flex items-center gap-2">
-                <span className="font-semibold text-slate-800 dark:text-zinc-200">Vista previa</span>
-                <span className="text-slate-300 dark:text-zinc-700">•</span>
+            <div className="min-h-10 py-1.5 px-3 sm:px-4 border-b border-slate-200 dark:border-zinc-800 bg-white dark:bg-[#121214] flex flex-wrap items-center justify-between gap-2 shrink-0 text-xs text-slate-600 dark:text-zinc-400">
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="font-semibold text-slate-800 dark:text-zinc-200 hidden sm:inline">Vista previa</span>
+                <span className="text-slate-300 dark:text-zinc-700 hidden sm:inline">•</span>
                 
                 {/* Conteo destacado de cuántas hojas físicas tiene la nota */}
-                <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-accent/15 text-accent font-semibold text-[11px] border border-accent/25">
+                <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-accent/15 text-accent font-semibold text-[11px] border border-accent/25 shrink-0">
                   <span>{totalPagesCount} {totalPagesCount === 1 ? 'página' : 'páginas'}</span>
                 </div>
 
-                <span className="text-slate-300 dark:text-zinc-700">•</span>
-                <span className="text-[11px] text-slate-500 dark:text-zinc-400 hidden sm:inline">
+                <span className="text-slate-300 dark:text-zinc-700 hidden sm:inline">•</span>
+                <span className="text-[11px] text-slate-500 dark:text-zinc-400 hidden sm:inline truncate">
                   {activePaperOption.name} ({config.orientation === 'portrait' ? 'Vertical' : 'Horizontal'}) — {(widthMm / 10).toFixed(1)} × {(heightMm / 10).toFixed(1)} cm
                 </span>
               </div>
 
               {/* Controles de Navegación entre Hojas y Zoom */}
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-2 sm:gap-3 ml-auto">
                 {/* Selector rápido para saltar entre páginas */}
                 {totalPagesCount > 1 && (
                   <div className="flex items-center gap-1 bg-slate-100 dark:bg-zinc-800/80 px-1.5 py-0.5 rounded-lg border border-slate-200 dark:border-zinc-700/60 text-[11px]">
@@ -809,7 +855,7 @@ export const ExportPdfModal: React.FC<ExportPdfModalProps> = ({
                 <div className="flex items-center gap-1">
                   <button
                     type="button"
-                    onClick={() => setPreviewZoom((z) => Math.max(0.4, Number((z - 0.1).toFixed(2))))}
+                    onClick={() => setPreviewZoom((z) => Math.max(0.25, Number((z - 0.1).toFixed(2))))}
                     title="Reducir zoom"
                     className="p-1 rounded hover:bg-slate-100 dark:hover:bg-zinc-800 text-slate-500 dark:text-zinc-400 transition-colors cursor-pointer"
                   >
@@ -828,8 +874,8 @@ export const ExportPdfModal: React.FC<ExportPdfModalProps> = ({
                   </button>
                   <button
                     type="button"
-                    onClick={() => setPreviewZoom(0.85)}
-                    title="Ajuste óptimo (85%)"
+                    onClick={() => setPreviewZoom(getOptimalPreviewZoom())}
+                    title="Ajustar al ancho"
                     className="px-2 py-0.5 text-[10px] rounded hover:bg-slate-100 dark:hover:bg-zinc-800 text-slate-600 dark:text-zinc-400 transition-colors cursor-pointer ml-0.5 font-medium"
                   >
                     Ajustar
@@ -839,12 +885,13 @@ export const ExportPdfModal: React.FC<ExportPdfModalProps> = ({
             </div>
 
             {/* Lienzo con iframe que renderiza todas las hojas físicas en secuencia con su badge */}
-            <div className="flex-1 w-full h-full overflow-hidden bg-slate-200/90 dark:bg-[#090A0C]">
+            <div className="flex-1 w-full h-full overflow-auto [-webkit-overflow-scrolling:touch] bg-slate-200/90 dark:bg-[#090A0C]">
               <iframe
                 ref={previewIframeRef}
                 title="Previsualización de Documento PDF"
                 srcDoc={iframeSrcDoc}
                 sandbox="allow-scripts allow-modals"
+                scrolling="yes"
                 className="w-full h-full border-0 pointer-events-auto block"
               />
             </div>
@@ -852,12 +899,12 @@ export const ExportPdfModal: React.FC<ExportPdfModalProps> = ({
         </div>
 
         {/* Pie del Modal FLAT */}
-        <div className="h-14 px-5 border-t border-slate-200 dark:border-zinc-800 flex items-center justify-between shrink-0 bg-white dark:bg-[#121214]">
+        <div className="min-h-14 py-2.5 px-3 sm:px-5 border-t border-slate-200 dark:border-zinc-800 flex items-center justify-between gap-2 shrink-0 bg-white dark:bg-[#121214]">
           <div className="text-[11px] text-slate-500 dark:text-zinc-400 hidden sm:block">
             <span>Se generará un documento de {totalPagesCount} {totalPagesCount === 1 ? 'página' : 'páginas'} listo para imprimir o guardar como PDF.</span>
           </div>
 
-          <div className="flex items-center gap-2.5 ml-auto">
+          <div className="flex items-center gap-2 sm:gap-2.5 w-full sm:w-auto justify-end ml-auto">
             <button
               type="button"
               onClick={onClose}

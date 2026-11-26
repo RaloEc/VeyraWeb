@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { RemindersModule } from '../../modules/reminders/RemindersModule';
 import { NotesModule } from '../../modules/notes/NotesModule';
+import { MobileAppShell } from '../../modules/mobile/MobileAppShell';
 import { useReminders } from '../../hooks/useReminders';
 import { useNotes } from '../../hooks/useNotes';
 import { useEvents } from '../../hooks/useEvents';
@@ -90,10 +91,26 @@ export interface AppLayoutProps {
 export const AppLayout: React.FC<AppLayoutProps> = ({ user, profile, onSignOut }) => {
   const initialRoute = parseInitialRoute();
   const [activeModule, setActiveModule] = useState<ActiveModule>(initialRoute.module);
+  const [isMobileViewport, setIsMobileViewport] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    return window.innerWidth < 768;
+  });
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const mq = window.matchMedia('(max-width: 767px)');
+    const handleChange = () => setIsMobileViewport(mq.matches);
+    handleChange();
+    mq.addEventListener('change', handleChange);
+    return () => mq.removeEventListener('change', handleChange);
+  }, []);
+
   const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(() => {
     if (typeof window === 'undefined') return true;
+    // En móviles (< 768px), iniciar con el sidebar cerrado para dar protagonismo al contenido
+    if (window.innerWidth < 768) return false;
     const stored = localStorage.getItem('veyra_sidebar_open');
-    return stored !== null ? stored === 'true' : true; // Desplegada por defecto (true)
+    return stored !== null ? stored === 'true' : true; // Desplegada por defecto en desktop
   });
 
   const remindersState = useReminders(user.id);
@@ -173,12 +190,12 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ user, profile, onSignOut }
   // Keep Web Push subscription synced on launch and handle SW pushsubscriptionchange
   useEffect(() => {
     if (!user?.id) return;
-    PushService.syncIfSubscribed(user.id).catch(() => {});
+    PushService.syncIfSubscribed(user.id).catch(() => { });
 
     if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return;
     const handleSwMessage = (event: MessageEvent) => {
       if (event.data?.type === 'PUSH_SUBSCRIPTION_CHANGED') {
-        PushService.syncIfSubscribed(user.id).catch(() => {});
+        PushService.syncIfSubscribed(user.id).catch(() => { });
       }
     };
     navigator.serviceWorker.addEventListener('message', handleSwMessage);
@@ -186,10 +203,22 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ user, profile, onSignOut }
   }, [user?.id]);
 
   return (
-    <div className="h-screen bg-veyra-canvas text-veyra-text flex flex-col overflow-hidden">
-      {/* Main Workspace (Full width: Note editor and Folders sidebar have full stage) */}
+    <div className="h-screen h-[100dvh] bg-veyra-canvas text-veyra-text flex flex-col overflow-hidden">
+      {/* Main Workspace: Dedicated Mobile App Shell on <768px, Desktop Workspace on >=768px */}
       <main className="flex-1 flex overflow-hidden bg-veyra-canvas h-full">
-        {activeModule === 'reminders' ? (
+        {isMobileViewport ? (
+          <MobileAppShell
+            userId={user.id}
+            userEmail={user.email || ''}
+            userName={user.user_metadata?.full_name || user.user_metadata?.name || user.email?.split('@')[0]}
+            notesHook={notesState}
+            remindersHook={remindersState}
+            eventsHook={eventsState}
+            initialEventId={initialRoute.eventId}
+            initialReminderId={initialRoute.reminderId}
+            onSignOut={onSignOut}
+          />
+        ) : activeModule === 'reminders' ? (
           <RemindersModule
             userId={user.id}
             defaultControlLevel={profile?.default_control_level}

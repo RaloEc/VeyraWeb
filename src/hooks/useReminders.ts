@@ -533,6 +533,36 @@ export function useReminders(userId?: string) {
     await syncEngine.enqueue('reminders', 'delete', id, null, nowMs);
   }, []);
 
+  // Restore soft-deleted reminder (Undo)
+  const restoreReminder = useCallback(async (id: string) => {
+    const nowMs = Date.now();
+
+    await localDB.reminders.update(id, {
+      deleted: 0,
+      deleted_at_ms: null,
+      last_modified_ms: nowMs,
+    });
+
+    const restored = await localDB.reminders.get(id);
+    if (restored) {
+      setReminders((prev) => {
+        if (prev.some((r) => r.id === id)) return prev;
+        return [...prev, restored as Reminder];
+      });
+      await syncEngine.enqueue(
+        'reminders',
+        'upsert',
+        id,
+        {
+          deleted: 0,
+          deleted_at_ms: null,
+          last_modified_ms: nowMs,
+        },
+        nowMs
+      );
+    }
+  }, []);
+
   // Filtered views
   const todayReminders = useMemo(() => {
     return reminders.filter((r) => {
@@ -570,6 +600,7 @@ export function useReminders(userId?: string) {
     createReminder,
     updateReminder,
     deleteReminder,
+    restoreReminder,
     snoozeReminder,
     refresh: fetchReminders,
   };

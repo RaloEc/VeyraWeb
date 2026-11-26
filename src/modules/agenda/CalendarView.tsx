@@ -272,14 +272,14 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
   return (
     <div className="flex-1 flex flex-col h-full bg-veyra-canvas overflow-hidden select-none text-xs">
       {/* Top Toolbar */}
-      <div className="h-12 border-b border-veyra-border px-4 flex items-center justify-between gap-3 bg-veyra-card/70 backdrop-blur-md shrink-0">
-        <div className="flex items-center gap-3 min-w-0">
+      <div className="min-h-12 py-2 border-b border-veyra-border px-3 sm:px-4 flex flex-wrap items-center justify-between gap-2 bg-veyra-card/70 backdrop-blur-md shrink-0">
+        <div className="flex items-center gap-2 sm:gap-3 min-w-0">
           {!isSidebarOpen && onToggleSidebar && (
             <button
               type="button"
               onClick={onToggleSidebar}
               title="Mostrar barra lateral (Ctrl+\)"
-              className="p-1.5 rounded-lg text-veyra-muted hover:text-veyra-text hover:bg-veyra-elevated transition-colors cursor-pointer"
+              className="p-1.5 rounded-lg text-veyra-muted hover:text-veyra-text hover:bg-veyra-elevated transition-colors cursor-pointer shrink-0"
             >
               <PanelLeft className="w-4 h-4 text-accent" />
             </button>
@@ -291,26 +291,27 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
               type="button"
               onClick={onOpenDashboard}
               title="Volver al Dashboard dinámico"
-              className="flex items-center gap-1.5 px-3 py-1 rounded-md font-medium text-veyra-muted hover:text-veyra-text transition-colors cursor-pointer"
+              className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1 rounded-md font-medium text-veyra-muted hover:text-veyra-text transition-colors cursor-pointer"
             >
               <LayoutDashboard className="w-3.5 h-3.5" />
-              <span>Dashboard</span>
+              <span className="hidden xs:inline sm:inline">Dashboard</span>
             </button>
 
             <button
               type="button"
-              className="flex items-center gap-1.5 px-3 py-1 rounded-md font-semibold bg-accent/15 text-accent shadow-xs cursor-default"
+              className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1 rounded-md font-semibold bg-accent/15 text-accent shadow-xs cursor-default"
             >
               <CalendarIcon className="w-3.5 h-3.5" />
-              <span>Calendario Completo</span>
+              <span className="hidden sm:inline">Calendario Completo</span>
+              <span className="sm:hidden">Calendario</span>
             </button>
           </div>
 
           <div className="h-4 w-px bg-veyra-border shrink-0 hidden md:block" />
 
           {/* Date navigation */}
-          <div className="flex items-center gap-2 min-w-0">
-            <h2 className="text-sm font-bold text-veyra-text capitalize truncate hidden sm:block">{headerLabel}</h2>
+          <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
+            <h2 className="text-xs sm:text-sm font-bold text-veyra-text capitalize truncate hidden sm:block">{headerLabel}</h2>
 
             <div className="flex items-center gap-1 shrink-0">
               <button
@@ -340,60 +341,66 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
           </div>
         </div>
 
-        <div className="flex items-center gap-2 shrink-0">
-          {/* View mode switcher (Mes / Semana / Día) */}
-          <div className="flex items-center p-0.5 rounded-lg bg-veyra-elevated border border-veyra-border">
-            {(
-              [
-                { id: 'month', label: 'Mes' },
-                { id: 'week', label: 'Semana' },
-                { id: 'day', label: 'Día' },
-              ] as const
-            ).map((m) => (
-              <button
-                key={m.id}
-                type="button"
-                onClick={() => setViewMode(m.id)}
-                className={cn(
-                  'px-2.5 py-1 rounded-md font-medium transition-colors cursor-pointer',
-                  viewMode === m.id
-                    ? 'bg-accent/15 text-accent font-semibold'
-                    : 'text-veyra-muted hover:text-veyra-text'
-                )}
-              >
-                {m.label}
-              </button>
-            ))}
-          </div>
+        <div className="flex items-center justify-between sm:justify-end gap-2 w-full sm:w-auto shrink-0">
+          <h2 className="text-xs font-bold text-veyra-text capitalize truncate sm:hidden">{headerLabel}</h2>
 
-          <button
-            type="button"
-            onClick={() => openNewEventAt(toLocalYmd(cursorDate))}
-            className="hidden sm:flex items-center gap-1 px-2.5 py-1.5 rounded-md bg-accent text-white font-semibold hover:opacity-90 cursor-pointer"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            <span>Evento</span>
-          </button>
+          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0 ml-auto sm:ml-0">
+            {/* View mode switcher (Mes / Semana / Día) */}
+            <div className="flex items-center p-0.5 rounded-lg bg-veyra-elevated border border-veyra-border">
+              {(
+                [
+                  { id: 'month', label: 'Mes' },
+                  { id: 'week', label: 'Semana' },
+                  { id: 'day', label: 'Día' },
+                ] as const
+              ).map((m) => (
+                <button
+                  key={m.id}
+                  type="button"
+                  onClick={() => setViewMode(m.id)}
+                  className={cn(
+                    'px-2 sm:px-2.5 py-1 rounded-md font-medium transition-colors cursor-pointer text-[11px] sm:text-xs',
+                    viewMode === m.id
+                      ? 'bg-accent/15 text-accent font-semibold'
+                      : 'text-veyra-muted hover:text-veyra-text'
+                  )}
+                >
+                  {m.label}
+                </button>
+              ))}
+            </div>
 
-          <button
-            type="button"
-            onClick={() => openNewReminderAt(toLocalYmd(cursorDate))}
-            className="hidden sm:flex items-center gap-1 px-2.5 py-1.5 rounded-md bg-veyra-elevated border border-veyra-border text-veyra-text font-medium hover:border-accent/50 cursor-pointer"
-          >
-            <Plus className="w-3.5 h-3.5 text-accent" />
-            <span>Recordatorio</span>
-          </button>
-
-          {onClose && (
             <button
               type="button"
-              onClick={onClose}
-              title="Cerrar calendario"
-              className="p-1.5 rounded text-veyra-muted hover:text-veyra-text hover:bg-white/5 cursor-pointer"
+              onClick={() => openNewEventAt(toLocalYmd(cursorDate))}
+              title="Nuevo evento"
+              className="flex items-center gap-1 px-2 sm:px-2.5 py-1.5 rounded-md bg-accent text-white font-semibold hover:opacity-90 cursor-pointer"
             >
-              <X className="w-4 h-4" />
+              <Plus className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Evento</span>
             </button>
-          )}
+
+            <button
+              type="button"
+              onClick={() => openNewReminderAt(toLocalYmd(cursorDate))}
+              title="Nuevo recordatorio"
+              className="hidden sm:flex items-center gap-1 px-2.5 py-1.5 rounded-md bg-veyra-elevated border border-veyra-border text-veyra-text font-medium hover:border-accent/50 cursor-pointer"
+            >
+              <Plus className="w-3.5 h-3.5 text-accent" />
+              <span>Recordatorio</span>
+            </button>
+
+            {onClose && (
+              <button
+                type="button"
+                onClick={onClose}
+                title="Cerrar calendario"
+                className="p-1.5 rounded text-veyra-muted hover:text-veyra-text hover:bg-white/5 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            )}
+          </div>
         </div>
       </div>
 
@@ -425,7 +432,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                   key={ymd}
                   onClick={() => openNewEventAt(ymd)}
                   className={cn(
-                    'border-r border-b border-veyra-border/60 p-1.5 flex flex-col gap-1 min-h-[92px] cursor-pointer hover:bg-veyra-elevated/30 transition-colors overflow-hidden',
+                    'border-r border-b border-veyra-border/60 p-1 sm:p-1.5 flex flex-col gap-0.5 sm:gap-1 min-h-[64px] sm:min-h-[92px] cursor-pointer hover:bg-veyra-elevated/30 transition-colors overflow-hidden',
                     !isCurrentMonth && 'opacity-45 bg-veyra-canvas/50'
                   )}
                 >
@@ -492,7 +499,8 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
 
       {/* WEEK VIEW */}
       {viewMode === 'week' && (
-        <div className="flex-1 flex flex-col overflow-hidden">
+        <div className="flex-1 flex flex-col overflow-x-auto overflow-y-hidden">
+          <div className="min-w-[640px] flex-1 flex flex-col overflow-hidden">
           <div className="grid grid-cols-[60px_repeat(7,1fr)] border-b border-veyra-border bg-veyra-card/40 shrink-0">
             <div className="p-2 border-r border-veyra-border/50" />
             {gridDays.map((day) => {
@@ -572,6 +580,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                 })}
               </div>
             ))}
+          </div>
           </div>
         </div>
       )}

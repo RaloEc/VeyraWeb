@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { ACCENT_PALETTES, type AccentTheme, type AccentPalette } from './accentColors';
 
@@ -35,12 +35,12 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     return localStorage.getItem('veyra_web_amoled_enabled') === 'true';
   });
 
-  const setAmoledEnabled = (enabled: boolean) => {
+  const setAmoledEnabled = useCallback((enabled: boolean) => {
     setAmoledEnabledState(enabled);
     if (typeof window !== 'undefined') {
       localStorage.setItem('veyra_web_amoled_enabled', String(Boolean(enabled)));
     }
-  };
+  }, []);
 
   // 1.1 Apariencia de la hoja en Modo Oscuro (auto = oscura como el tema, light = hoja blanca)
   const [notePaperMode, setNotePaperModeState] = useState<NotePaperMode>(() => {
@@ -48,24 +48,24 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     return (localStorage.getItem('veyra_note_paper_mode') as NotePaperMode) || 'auto';
   });
 
-  const setNotePaperMode = (newMode: NotePaperMode) => {
+  const setNotePaperMode = useCallback((newMode: NotePaperMode) => {
     setNotePaperModeState(newMode);
     if (typeof window !== 'undefined') {
       localStorage.setItem('veyra_note_paper_mode', newMode);
       window.dispatchEvent(new CustomEvent('veyra_note_paper_mode_changed', { detail: newMode }));
     }
-  };
+  }, []);
 
   // 2. Color de acento: Sincronizado en tiempo real con el móvil
   const [accentTheme, setAccentThemeState] = useState<AccentTheme>('blue');
   const [userId, setUserId] = useState<string | null>(null);
 
-  const setMode = (newMode: ThemeMode) => {
+  const setMode = useCallback((newMode: ThemeMode) => {
     setModeState(newMode);
     if (typeof window !== 'undefined') {
       localStorage.setItem('veyra_web_theme_mode', newMode);
     }
-  };
+  }, []);
 
   // Carga inicial y escucha de WebSockets en tiempo real
   useEffect(() => {

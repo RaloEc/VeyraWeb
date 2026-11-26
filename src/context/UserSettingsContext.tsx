@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { useTheme } from '../theme/ThemeProvider';
 import type { AccentTheme } from '../theme/accentColors';
@@ -121,6 +121,7 @@ export const UserSettingsProvider: React.FC<{ children: React.ReactNode }> = ({ 
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isSaving, setIsSaving] = useState<boolean>(false);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const isSavingRef = useRef<boolean>(false);
 
   // Guardar en localStorage cada vez que cambien
   useEffect(() => {
@@ -141,6 +142,18 @@ export const UserSettingsProvider: React.FC<{ children: React.ReactNode }> = ({ 
     localStorage.setItem('veyra_note_paper_mode', settings.notePaperMode);
     window.dispatchEvent(new CustomEvent('veyra_note_page_format_changed', { detail: settings.notePageFormat }));
   }, [settings.notePageFormat, settings.explorerSortMode, settings.notePaperMode]);
+
+  // Mantener ThemeProvider siempre sincronizado con el estado de UserSettingsContext
+  useEffect(() => {
+    setAmoledEnabled(Boolean(settings.amoledEnabled));
+    setNotePaperMode(settings.notePaperMode);
+    if (settings.themeMode === 'system') {
+      const prefersDark = typeof window !== 'undefined' && window.matchMedia('(prefers-color-scheme: dark)').matches;
+      setMode(prefersDark ? 'dark' : 'light');
+    } else {
+      setMode(settings.themeMode);
+    }
+  }, [settings.amoledEnabled, settings.notePaperMode, settings.themeMode, setAmoledEnabled, setNotePaperMode, setMode]);
 
   // 2. Cargar ajustes desde Supabase al autenticarse y suscribirse a Realtime
   useEffect(() => {
@@ -176,7 +189,14 @@ export const UserSettingsProvider: React.FC<{ children: React.ReactNode }> = ({ 
 
         setSettings((prev) => {
           const resolvedAmoled = typeof remoteSettings.amoledEnabled === 'boolean' ? remoteSettings.amoledEnabled : prev.amoledEnabled;
-          setAmoledEnabled(Boolean(resolvedAmoled));
+          const resolvedNotePaperMode: 'auto' | 'light' =
+            remoteSettings.notePaperMode === 'light' || remoteSettings.notePaperMode === 'auto'
+              ? remoteSettings.notePaperMode
+              : prev.notePaperMode;
+          const resolvedThemeMode: 'dark' | 'light' | 'system' =
+            remoteSettings.theme === 'dark' || remoteSettings.theme === 'light' || remoteSettings.theme === 'system'
+              ? remoteSettings.theme
+              : prev.themeMode;
           const merged: GlobalUserSettings = {
             ...prev,
             ...remoteSettings,
@@ -185,8 +205,9 @@ export const UserSettingsProvider: React.FC<{ children: React.ReactNode }> = ({ 
               profileRow?.default_control_level || remoteSettings.defaultControlLevel || prev.defaultControlLevel
             ),
             accentTheme: remoteSettings.accentTheme || prev.accentTheme,
-            themeMode: remoteSettings.theme || prev.themeMode,
+            themeMode: resolvedThemeMode,
             amoledEnabled: Boolean(resolvedAmoled),
+            notePaperMode: resolvedNotePaperMode,
           };
           return merged;
         });
@@ -200,12 +221,17 @@ export const UserSettingsProvider: React.FC<{ children: React.ReactNode }> = ({ 
           })
           .on('broadcast', { event: 'SETTINGS_CHANGED' }, ({ payload }) => {
             if (payload?.settings) {
-              if (typeof payload.settings.amoledEnabled === 'boolean') {
-                setAmoledEnabled(payload.settings.amoledEnabled);
-              }
               setSettings((s) => ({
                 ...s,
                 ...payload.settings,
+                ...(payload.settings.theme === 'dark' ||
+                payload.settings.theme === 'light' ||
+                payload.settings.theme === 'system'
+                  ? { themeMode: payload.settings.theme }
+                  : {}),
+                ...(payload.settings.notePaperMode === 'light' || payload.settings.notePaperMode === 'auto'
+                  ? { notePaperMode: payload.settings.notePaperMode }
+                  : {}),
                 ...(payload.settings.defaultControlLevel
                   ? { defaultControlLevel: normalizeControlLevel(payload.settings.defaultControlLevel) }
                   : {}),
@@ -242,7 +268,9 @@ export const UserSettingsProvider: React.FC<{ children: React.ReactNode }> = ({ 
     initSettings();
 
     const { data: authListener } = supabase.auth.onAuthStateChange((event) => {
-      if (event === 'SIGNED_IN' || event === 'USER_UPDATED') {
+      if (event === 'SIGNED_IN') {
+        initSettings();
+      } else if (event === 'USER_UPDATED' && !isSavingRef.current) {
         initSettings();
       } else if (event === 'SIGNED_OUT') {
         setCurrentUserId(null);
@@ -259,11 +287,12 @@ export const UserSettingsProvider: React.FC<{ children: React.ReactNode }> = ({ 
 
   // 3. Persistir ajustes combinando Supabase Auth metadata + Postgres Profiles + Realtime Broadcast
   const saveSettingsToCloud = useCallback(async (newSettings: GlobalUserSettings) => {
-    if (!currentUserId) return;
+    isSavingRef.current = true;
     setIsSaving(true);
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
+      const resolvedUserId = currentUserId || user.id;
 
       const currentRemoteSettings = user.user_metadata?.settings || {};
 
@@ -302,7 +331,7 @@ export const UserSettingsProvider: React.FC<{ children: React.ReactNode }> = ({ 
       // 2. Reflejar en la tabla profiles para consultas relacionales
       await supabase.from('profiles').upsert(
         {
-          id: currentUserId,
+          id: resolvedUserId,
           default_control_level: newSettings.defaultControlLevel,
           updated_at: new Date().toISOString(),
         },
@@ -311,7 +340,7 @@ export const UserSettingsProvider: React.FC<{ children: React.ReactNode }> = ({ 
 
       // 3. Broadcast instantáneo por WebSocket hacia la App Móvil
       supabase
-        .channel(`collab_sync_${currentUserId}`, { config: { private: true } })
+        .channel(`collab_sync_${resolvedUserId}`, { config: { private: true } })
         .send({
           type: 'broadcast',
           event: 'SETTINGS_CHANGED',
@@ -322,7 +351,7 @@ export const UserSettingsProvider: React.FC<{ children: React.ReactNode }> = ({ 
       // Si cambió el color de acento, emitir también el evento THEME_CHANGED que escucha nativamente la app móvil
       if (newSettings.accentTheme) {
         supabase
-          .channel(`collab_sync_${currentUserId}`, { config: { private: true } })
+          .channel(`collab_sync_${resolvedUserId}`, { config: { private: true } })
           .send({
             type: 'broadcast',
             event: 'THEME_CHANGED',
@@ -334,6 +363,7 @@ export const UserSettingsProvider: React.FC<{ children: React.ReactNode }> = ({ 
       console.error('[UserSettings] Error saving settings to cloud:', err);
       toast.error('No se pudieron guardar algunos ajustes en la nube');
     } finally {
+      isSavingRef.current = false;
       setIsSaving(false);
     }
   }, [currentUserId]);

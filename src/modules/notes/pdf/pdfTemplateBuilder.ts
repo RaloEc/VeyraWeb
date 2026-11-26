@@ -128,6 +128,9 @@ export function buildDynamicPdfCss(
     }
 
     html, body {
+      margin: 0;
+      padding: 0;
+      ${!isForPrint ? 'min-height: 100%; overflow: auto; -webkit-overflow-scrolling: touch;' : ''}
       background: ${!isForPrint ? (isDarkCanvas ? '#090A0C' : '#E2E8F0') : '#FFFFFF'};
       color: #1F2937;
       font-family: ${fontStack};
@@ -138,14 +141,13 @@ export function buildDynamicPdfCss(
     ${!isForPrint
       ? `
       #paged-output {
-        padding: 32px 16px;
+        padding: 24px 12px;
         display: flex;
         flex-direction: column;
         align-items: center;
-        gap: 28px;
+        gap: 24px;
         box-sizing: border-box;
-        transform: scale(${zoom});
-        transform-origin: top center;
+        zoom: ${zoom};
       }
 
       .pdf-page-sheet {

@@ -147,11 +147,18 @@ export const NotesModule: React.FC<NotesModuleProps> = ({
     setSidebarSection(section);
   };
 
+  const closeSidebarOnMobile = useCallback(() => {
+    if (typeof window !== 'undefined' && window.innerWidth < 768 && isSidebarOpen && onToggleSidebar) {
+      onToggleSidebar();
+    }
+  }, [isSidebarOpen, onToggleSidebar]);
+
   const handleSelectNote = (id: string | null) => {
     setIsCalendarOpen(false);
     setSelectedEventId(null);
     setSelectedReminderId(null);
     setSelectedNoteId(id);
+    if (id) closeSidebarOnMobile();
     if (typeof window !== 'undefined') {
       if (id) {
         window.history.pushState({ type: 'note', id }, '', `/notes/${id}`);
@@ -164,6 +171,7 @@ export const NotesModule: React.FC<NotesModuleProps> = ({
   const handleSelectEvent = (id: string | null) => {
     setSelectedReminderId(null);
     setSelectedEventId(id);
+    if (id) closeSidebarOnMobile();
     if (typeof window !== 'undefined') {
       if (id) {
         setIsCalendarOpen(false);
@@ -178,6 +186,7 @@ export const NotesModule: React.FC<NotesModuleProps> = ({
   const handleSelectReminder = (id: string | null) => {
     setSelectedEventId(null);
     setSelectedReminderId(id);
+    if (id) closeSidebarOnMobile();
     if (typeof window !== 'undefined') {
       if (id) {
         setIsCalendarOpen(false);
@@ -195,6 +204,7 @@ export const NotesModule: React.FC<NotesModuleProps> = ({
     setSelectedNoteId(null);
     setAgendaViewMode('calendar');
     setIsCalendarOpen(true);
+    closeSidebarOnMobile();
     if (typeof window !== 'undefined') {
       window.history.pushState({ type: 'calendar' }, '', '/calendar');
     }
@@ -206,6 +216,7 @@ export const NotesModule: React.FC<NotesModuleProps> = ({
     setSelectedNoteId(null);
     setAgendaViewMode('dashboard');
     setIsCalendarOpen(false);
+    closeSidebarOnMobile();
     if (typeof window !== 'undefined') {
       window.history.pushState({ type: 'dashboard' }, '', '/');
     }
@@ -409,11 +420,20 @@ export const NotesModule: React.FC<NotesModuleProps> = ({
   );
 
   return (
-    <div className="flex-1 flex h-full overflow-hidden">
-      {/* Super Smooth Animated & Resizable Left Sidebar */}
+    <div className="flex-1 flex h-full overflow-hidden relative">
+      {/* Mobile Sidebar Backdrop */}
+      {isSidebarOpen && onToggleSidebar && (
+        <div
+          className="fixed inset-0 bg-black/60 backdrop-blur-[1px] z-40 md:hidden"
+          onClick={onToggleSidebar}
+          aria-hidden="true"
+        />
+      )}
+
+      {/* Super Smooth Animated & Resizable Left Sidebar (Drawer on mobile, inline on md+) */}
       <div
         className={cn(
-          'h-full shrink-0 relative overflow-hidden',
+          'fixed inset-y-0 left-0 z-50 md:static md:z-auto h-full shrink-0 overflow-hidden max-w-[85vw] md:max-w-none shadow-2xl md:shadow-none',
           isResizing
             ? 'transition-none'
             : 'transition-[width,opacity] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)]',
@@ -421,7 +441,7 @@ export const NotesModule: React.FC<NotesModuleProps> = ({
         )}
         style={{ width: isSidebarOpen ? `${sidebarWidth}px` : 0 }}
       >
-        <div style={{ width: `${sidebarWidth}px` }} className="h-full relative">
+        <div style={{ width: `${sidebarWidth}px` }} className="h-full max-w-[85vw] md:max-w-none relative">
           <NotesSidebar
             folders={folders}
             notes={notes}
@@ -462,12 +482,12 @@ export const NotesModule: React.FC<NotesModuleProps> = ({
             onSignOut={onSignOut}
           />
 
-          {/* Draggable Resizer Edge */}
+          {/* Draggable Resizer Edge (Desktop only) */}
           <div
             onMouseDown={startResizing}
             title="Arrastra para cambiar el ancho"
             className={cn(
-              'absolute top-0 right-0 w-1.5 h-full cursor-col-resize z-30 transition-colors',
+              'hidden md:block absolute top-0 right-0 w-1.5 h-full cursor-col-resize z-30 transition-colors',
               isResizing ? 'bg-accent' : 'hover:bg-accent/50'
             )}
           />

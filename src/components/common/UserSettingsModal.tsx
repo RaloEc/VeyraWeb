@@ -502,10 +502,10 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} title="Ajustes de Veyra" maxWidth="5xl" className="overflow-hidden">
-      <div className="flex flex-col md:flex-row -mx-4 -mb-4 -mt-2 min-h-[520px] md:h-[580px] overflow-hidden">
+      <div className="flex flex-col md:flex-row -mx-4 -mb-4 -mt-2 h-[76dvh] md:h-[580px] min-h-0 overflow-hidden">
         {/* Sidebar de pestañas */}
-        <aside className="w-full md:w-64 shrink-0 border-b md:border-b-0 md:border-r border-veyra-border p-4 space-y-2 bg-veyra-elevated/40 flex flex-col">
-          <div className="px-3 py-2.5 rounded-lg bg-veyra-card/70 border border-veyra-border/60">
+        <aside className="w-full md:w-64 shrink-0 border-b md:border-b-0 md:border-r border-veyra-border p-2.5 md:p-4 space-y-2 bg-veyra-elevated/40 flex flex-col">
+          <div className="hidden md:block px-3 py-2.5 rounded-lg bg-veyra-card/70 border border-veyra-border/60">
             <p className="text-[10px] text-veyra-subtle uppercase tracking-wider font-semibold">Conectado como</p>
             <p className="text-xs font-semibold text-veyra-text truncate mt-0.5">{settings.userName || userEmail || 'Usuario'}</p>
             <div className="flex items-center gap-1.5 mt-1">
@@ -514,7 +514,7 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
             </div>
           </div>
 
-          <nav className="flex md:flex-col gap-1 overflow-x-auto md:overflow-visible pb-1 md:pb-0 scrollbar-none flex-1">
+          <nav className="flex md:flex-col gap-1 overflow-x-auto md:overflow-visible pb-0.5 md:pb-0 scrollbar-none md:flex-1">
             {tabs.map((tab) => {
               const Icon = tab.icon;
               const isActive = activeTab === tab.id;
@@ -523,7 +523,7 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
                   key={tab.id}
                   onClick={() => setActiveTab(tab.id)}
                   className={cn(
-                    'flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-xs font-medium transition-all text-left whitespace-nowrap cursor-pointer w-full',
+                    'flex items-center gap-2 md:gap-2.5 px-3 py-2 md:py-2.5 rounded-lg text-xs font-medium transition-all text-left whitespace-nowrap cursor-pointer w-auto md:w-full shrink-0',
                     isActive
                       ? 'bg-accent/15 text-accent font-semibold shadow-xs'
                       : 'text-veyra-muted hover:text-veyra-text hover:bg-veyra-elevated/80'
@@ -904,27 +904,46 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
 
                 {/* Modo Negro AMOLED (Solo en tema oscuro) */}
                 {settings.themeMode !== 'light' && (
-                  <div className="mt-2.5 flex items-center justify-between p-3 rounded-lg bg-veyra-card/60 border border-veyra-border">
-                    <div>
-                      <span className="font-semibold text-xs text-veyra-text block">Modo Negro AMOLED</span>
-                      <span className="text-[10px] text-veyra-muted">
-                        Usa negro puro (#000000) en la interfaz y en el fondo de las notas en formato infinito
+                  <div
+                    className={cn(
+                      'mt-2.5 flex items-center justify-between gap-4 p-3.5 rounded-xl border transition-colors overflow-hidden',
+                      settings.amoledEnabled
+                        ? 'bg-accent/10 border-accent/40'
+                        : 'bg-veyra-card/60 border-veyra-border'
+                    )}
+                  >
+                    <div className="flex items-start gap-3 min-w-0 flex-1">
+                      <span
+                        aria-hidden="true"
+                        className={cn(
+                          'w-7 h-7 rounded-lg bg-black border shrink-0 mt-0.5 flex items-center justify-center shadow-inner',
+                          settings.amoledEnabled ? 'border-accent/60' : 'border-zinc-700'
+                        )}
+                      >
+                        <span className="w-2.5 h-2.5 rounded-full bg-zinc-900 border border-zinc-700/80" />
                       </span>
+                      <div className="min-w-0 flex-1">
+                        <span className="font-semibold text-xs text-veyra-text block">Modo Negro AMOLED</span>
+                        <span className="text-[10px] text-veyra-muted leading-relaxed block mt-0.5">
+                          Usa negro puro (#000000) en la interfaz y en el fondo de las notas en formato infinito
+                        </span>
+                      </div>
                     </div>
                     <button
                       type="button"
                       role="switch"
+                      aria-label="Activar Modo Negro AMOLED"
                       aria-checked={Boolean(settings.amoledEnabled)}
                       onClick={() => updateSetting('amoledEnabled', !settings.amoledEnabled)}
                       className={cn(
-                        'w-10 h-5.5 rounded-full transition-colors relative shrink-0 cursor-pointer',
+                        'inline-flex items-center w-11 h-6 p-0.5 rounded-full transition-colors shrink-0 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-veyra-card',
                         settings.amoledEnabled ? 'bg-accent' : 'bg-zinc-700'
                       )}
                     >
                       <span
                         className={cn(
-                          'w-4 h-4 rounded-full bg-white absolute top-0.75 transition-transform',
-                          settings.amoledEnabled ? 'translate-x-5' : 'translate-x-1'
+                          'w-5 h-5 rounded-full bg-white shadow-sm transition-transform duration-200',
+                          settings.amoledEnabled ? 'translate-x-5' : 'translate-x-0'
                         )}
                       />
                     </button>

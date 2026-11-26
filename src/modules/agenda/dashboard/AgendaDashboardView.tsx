@@ -5,6 +5,7 @@ import {
   LayoutDashboard,
   Search,
   X,
+  Sparkles,
 } from 'lucide-react';
 import type { useEvents } from '../../../hooks/useEvents';
 import type { useReminders } from '../../../hooks/useReminders';
@@ -21,6 +22,7 @@ import { SharedNotesWidget } from './widgets/SharedNotesWidget';
 import { useSharedNotes } from './useSharedNotes';
 import { EventModal } from '../EventModal';
 import { ReminderModal } from '../../reminders/ReminderModal';
+import { CreateWithVeyraAssistant } from '../../../components/common/CreateWithVeyraAssistant';
 
 export interface AgendaDashboardViewProps {
   eventsHook?: ReturnType<typeof useEvents>;
@@ -73,6 +75,7 @@ export const AgendaDashboardView: React.FC<AgendaDashboardViewProps> = ({
   // Creation modals
   const [isEventModalOpen, setIsEventModalOpen] = useState(false);
   const [isReminderModalOpen, setIsReminderModalOpen] = useState(false);
+  const [isQuickAIModalOpen, setIsQuickAIModalOpen] = useState(false);
 
   const { sharedNotes } = useSharedNotes(currentUserId, allNotes);
   const hasSharedNotes = sharedNotes.length > 0;
@@ -286,8 +289,18 @@ export const AgendaDashboardView: React.FC<AgendaDashboardViewProps> = ({
           </div>
         </div>
 
-        {/* Global Intelligent Search Trigger */}
+        {/* Global Intelligent Search Trigger & Crear con Veyra */}
         <div className="flex items-center gap-2 min-w-0">
+          <button
+            type="button"
+            onClick={() => setIsQuickAIModalOpen(true)}
+            title="Crear con Veyra IA (Texto, Voz o Imagen)"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-accent/15 border border-accent/35 hover:bg-accent/25 text-xs font-semibold text-accent transition-colors cursor-pointer shrink-0"
+          >
+            <Sparkles className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Crear con Veyra</span>
+          </button>
+
           {onOpenGlobalSearch && (
             <button
               type="button"
@@ -434,6 +447,32 @@ export const AgendaDashboardView: React.FC<AgendaDashboardViewProps> = ({
         events={events}
         onSave={handleSaveReminder}
       />
+
+      {isQuickAIModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div
+            className="fixed inset-0 bg-black/70 backdrop-blur-[2px] animate-in fade-in duration-150"
+            onClick={() => setIsQuickAIModalOpen(false)}
+          />
+          <div className="relative z-10 w-full max-w-lg rounded-[28px] bg-veyra-card border border-veyra-border shadow-2xl p-5 animate-in fade-in zoom-in-95 duration-200">
+            <CreateWithVeyraAssistant
+              onClose={() => setIsQuickAIModalOpen(false)}
+              onManualReminder={() => setIsReminderModalOpen(true)}
+              onManualEvent={() => setIsEventModalOpen(true)}
+              onManualNote={handleOpenNewNote}
+              onSaveReminder={async (payload) => await remindersHook?.createReminder(payload)}
+              onSaveEvent={async (payload) => await eventsHook?.createEvent(payload)}
+              onSaveNote={async (title, contentHtml) => {
+                const created = await onCreateNote(null, null, title, contentHtml);
+                if (created && typeof created === 'object' && 'id' in created && created.id) {
+                  onSelectNote(created.id);
+                }
+              }}
+              autoFocus={true}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 };

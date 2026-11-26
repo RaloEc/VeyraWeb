@@ -209,7 +209,7 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
   const [syncStatus, setSyncStatus] = useState<'connecting' | 'connected' | 'disconnected'>('connecting');
   const [saveStatus, setSaveStatus] = useState<'saved' | 'saving' | 'error'>('saved');
   const [, setLastSavedAt] = useState<Date | null>(new Date());
-  const [isPagesSidebarOpen, setIsPagesSidebarOpen] = useState(true);
+  const [isPagesSidebarOpen, setIsPagesSidebarOpen] = useState(false);
   const [pageFormat, setPageFormat] = useState<'infinite' | 'a4'>(() => {
     // 1. Prioridad: Metadato Yjs de esta nota específica
     const metaFmt = ydoc.getMap('meta').get('pageFormat');
@@ -260,6 +260,10 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
   const pageFormatRef = useRef<'infinite' | 'a4'>(pageFormat);
   const docSheetRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const [a4Scale, setA4Scale] = useState(1);
+  const [a4SheetHeight, setA4SheetHeight] = useState(1123);
+  const a4ScaleRef = useRef(1);
+  a4ScaleRef.current = a4Scale;
   const a4StyleRef = useRef<HTMLStyleElement | null>(null);
   const [a4PageBreaks, setA4PageBreaks] = useState<number[]>([]);
   const lastBreaksStrRef = useRef<string>('');
@@ -334,11 +338,13 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
       const container = scrollContainerRef.current;
       const sheet = docSheetRef.current;
       if (!container || !sheet) return;
-      const stride = 1123 + 36;
+      const scale = a4ScaleRef.current || 1;
+      const stride = (1123 + 36) * scale;
       const zoneY =
-        zone === 'header' ? sheetIdx * stride : sheetIdx * stride + 1123 - 180;
+        zone === 'header' ? sheetIdx * stride : sheetIdx * stride + (1123 - 180) * scale;
+      const wrapperTop = (sheet.parentElement?.offsetTop ?? sheet.offsetTop);
       container.scrollTo({
-        top: Math.max(0, sheet.offsetTop + zoneY - 40),
+        top: Math.max(0, wrapperTop + zoneY - 40),
         behavior: 'smooth',
       });
     },
@@ -350,12 +356,49 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
     const container = scrollContainerRef.current;
     const sheet = docSheetRef.current;
     if (!container || !sheet) return;
-    const stride = 1123 + 36;
+    const scale = a4ScaleRef.current || 1;
+    const stride = (1123 + 36) * scale;
+    const wrapperTop = (sheet.parentElement?.offsetTop ?? sheet.offsetTop);
     container.scrollTo({
-      top: Math.max(0, sheet.offsetTop + sheetIdx * stride - 24),
+      top: Math.max(0, wrapperTop + sheetIdx * stride - 24),
       behavior: 'smooth',
     });
   }, []);
+
+  useEffect(() => {
+    if (pageFormat !== 'a4') {
+      setA4Scale(1);
+      return;
+    }
+    const container = scrollContainerRef.current;
+    const sheet = docSheetRef.current;
+    if (!container) return;
+
+    const updateScaleAndHeight = () => {
+      const horizontalPad = window.innerWidth < 640 ? 16 : 64;
+      const availableW = Math.max(240, container.clientWidth - horizontalPad);
+      const nextScale = availableW < 794 ? Math.max(0.25, availableW / 794) : 1;
+      setA4Scale((prev) => (Math.abs(prev - nextScale) < 0.002 ? prev : nextScale));
+      if (sheet) {
+        const h = Math.max(1123, sheet.offsetHeight);
+        setA4SheetHeight((prev) => (prev === h ? prev : h));
+      }
+    };
+
+    updateScaleAndHeight();
+
+    const ro = typeof ResizeObserver !== 'undefined'
+      ? new ResizeObserver(() => updateScaleAndHeight())
+      : null;
+    ro?.observe(container);
+    if (sheet) ro?.observe(sheet);
+    window.addEventListener('resize', updateScaleAndHeight);
+
+    return () => {
+      ro?.disconnect();
+      window.removeEventListener('resize', updateScaleAndHeight);
+    };
+  }, [pageFormat]);
 
   useEffect(() => {
     if (pageFormat !== 'a4') return;
@@ -365,9 +408,11 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
     const handleScroll = () => {
       const sheet = docSheetRef.current;
       if (!sheet) return;
-      const stride = 1123 + 36;
+      const scale = a4ScaleRef.current || 1;
+      const stride = (1123 + 36) * scale;
       const totalSheets = a4PageBreaks.length + 1;
-      const relativeScroll = Math.max(0, container.scrollTop - sheet.offsetTop + 260);
+      const wrapperTop = (sheet.parentElement?.offsetTop ?? sheet.offsetTop);
+      const relativeScroll = Math.max(0, container.scrollTop - wrapperTop + 260 * scale);
       const currentSheet = Math.min(
         totalSheets - 1,
         Math.max(0, Math.floor(relativeScroll / stride))
@@ -501,7 +546,7 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
       .then((role) => {
         if (active) setUserRole(role);
       })
-      .catch(() => {});
+      .catch(() => { });
     return () => {
       active = false;
     };
@@ -940,7 +985,7 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
           targetId: noteRef.current.id,
           action: 'edited',
           itemTitle: currentTitle,
-        }).catch(() => {});
+        }).catch(() => { });
       }
     } catch (err) {
       console.error('[NoteEditor] Auto-save error:', err);
@@ -1743,7 +1788,7 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
                   const nthRow = parentEl
                     ? Array.from(parentEl.children).indexOf(row) + 1
                     : rIdx + 1;
-                  const rowH = row.getBoundingClientRect().height;
+                  const rowH = row.getBoundingClientRect().height / (sheet.offsetWidth > 0 ? (sheet.getBoundingClientRect().width / sheet.offsetWidth) || 1 : 1);
                   const isHeaderRow =
                     row.querySelector('th') !== null ||
                     (rowH < 56 && row.querySelector('strong, b') !== null);
@@ -1794,10 +1839,16 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
             });
           }
 
+          const getVisualScale = () =>
+            sheet.offsetWidth > 0
+              ? sheet.getBoundingClientRect().width / sheet.offsetWidth || 1
+              : 1;
+
           const applyPushToTarget = (target: BreakableItem, desiredTop: number) => {
+            const vScale = getVisualScale();
             const sRect = sheet.getBoundingClientRect();
             const tRect = target.topEl.getBoundingClientRect();
-            const currentTop = tRect.top - sRect.top;
+            const currentTop = (tRect.top - sRect.top) / vScale;
             const cs = window.getComputedStyle(target.targetEl);
             const baseVal =
               parseFloat(target.prop === 'margin-top' ? cs.marginTop : cs.paddingTop) || 0;
@@ -1814,7 +1865,7 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
             // Verificar posición real en el DOM tras aplicar la regla (compensa colapso de márgenes CSS)
             const vSheetRect = sheet.getBoundingClientRect();
             const vTopRect = target.topEl.getBoundingClientRect();
-            const actualTop = vTopRect.top - vSheetRect.top;
+            const actualTop = (vTopRect.top - vSheetRect.top) / vScale;
             const diff = Math.round(desiredTop - actualTop);
             if (Math.abs(diff) > 1) {
               neededVal = Math.max(0, neededVal + diff);
@@ -1826,9 +1877,10 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
 
           for (let k = 0; k < items.length; k++) {
             const item = items[k];
+            const vScale = getVisualScale();
             let sheetRect = sheet.getBoundingClientRect();
-            let itemTop = item.topEl.getBoundingClientRect().top - sheetRect.top;
-            let itemBottom = item.bottomEl.getBoundingClientRect().bottom - sheetRect.top;
+            let itemTop = (item.topEl.getBoundingClientRect().top - sheetRect.top) / vScale;
+            let itemBottom = (item.bottomEl.getBoundingClientRect().bottom - sheetRect.top) / vScale;
 
             const totalVirtualSpacersHeight = enableVirtualPaginationRef.current
               ? virtualBreaks.reduce((sum, b) => sum + b.spacerHeight, 0)
@@ -1843,8 +1895,8 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
             if (currentPage > 0 && renderedItemTop < minPrintableY - 2) {
               applyPushToTarget(item, minPrintableY - totalVirtualSpacersHeight);
               sheetRect = sheet.getBoundingClientRect();
-              itemTop = item.topEl.getBoundingClientRect().top - sheetRect.top;
-              itemBottom = item.bottomEl.getBoundingClientRect().bottom - sheetRect.top;
+              itemTop = (item.topEl.getBoundingClientRect().top - sheetRect.top) / vScale;
+              itemBottom = (item.bottomEl.getBoundingClientRect().bottom - sheetRect.top) / vScale;
             }
 
             if (renderedItemBottom > maxPrintableY) {
@@ -3005,7 +3057,8 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
         <div
           ref={scrollContainerRef}
           className={cn(
-            'flex-1 overflow-y-auto [overflow-anchor:none] px-4 sm:px-8 py-6 sm:py-8 transition-colors duration-150',
+            'flex-1 overflow-y-auto overflow-x-hidden [overflow-anchor:none] transition-colors duration-150',
+            pageFormat === 'a4' ? 'px-2 sm:px-8 py-3 sm:py-8' : 'px-4 sm:px-8 py-6 sm:py-8',
             isDark && isAmoled ? 'bg-black' : 'bg-[#e4e7ec] dark:bg-[#0B0B0C]'
           )}
           onClick={(e) => {
@@ -3014,10 +3067,30 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
             }
           }}
         >
+          {/* Scaled wrapper so A4 sheet (794px) fits proportionally on mobile screens */}
+          <div
+            className={cn(pageFormat === 'a4' && a4Scale < 1 ? 'mx-auto relative shrink-0' : 'w-full')}
+            style={
+              pageFormat === 'a4' && a4Scale < 1
+                ? {
+                    width: `${794 * a4Scale}px`,
+                    height: `${a4SheetHeight * a4Scale}px`,
+                  }
+                : undefined
+            }
+          >
           {/* Note Document Sheet (Documento central: gris carbón oscuro y sobrio / negro AMOLED si activo / Hoja A4) */}
           <div
             ref={docSheetRef}
             data-sheet-theme={isPaperLight ? 'light' : undefined}
+            style={
+              pageFormat === 'a4' && a4Scale < 1
+                ? {
+                    transform: `scale(${a4Scale})`,
+                    transformOrigin: 'top left',
+                  }
+                : undefined
+            }
             className={cn(
               'mx-auto w-full flex flex-col transition-[background-color,border-color,box-shadow] duration-150 ease-[cubic-bezier(0.16,1,0.3,1)] relative',
               animPhase === 'closing'
@@ -3032,7 +3105,7 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
               isPaperLight && 'sheet-light-mode',
               pageFormat === 'a4'
                 ? cn(
-                  'a4-page-mode max-w-[794px] min-h-[1123px] rounded-sm px-6 sm:px-[30mm] pt-8 sm:pt-[25mm] pb-12 sm:pb-[25mm] mb-4',
+                  'a4-page-mode !w-[794px] min-h-[1123px] rounded-sm px-[30mm] pt-[25mm] pb-[25mm] mb-4',
                   isPaperLight
                     ? 'bg-white border border-slate-300 shadow-[0_8px_30px_rgb(0,0,0,0.12)]'
                     : 'bg-white dark:bg-[#161619] border border-slate-300 dark:border-white/10 shadow-[0_8px_30px_rgb(0,0,0,0.12)] dark:shadow-[0_8px_30px_rgb(0,0,0,0.6)]'
@@ -3221,6 +3294,7 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
               </div>
             )}
           </div>
+          </div>
 
           {/* En modo Hoja A4, el contador de palabras va debajo de la última hoja para dejar libre el pie de página de 2.5cm */}
           {pageFormat === 'a4' && (
@@ -3230,11 +3304,20 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
           )}
         </div>
 
-        {/* Docked Right Pages Sidebar: pushes the canvas so note is 100% visible */}
+        {/* Mobile Backdrop for Right Pages Sidebar */}
+        {isPagesSidebarOpen && (
+          <div
+            className="absolute inset-0 bg-black/50 backdrop-blur-[1px] z-20 md:hidden"
+            onClick={() => setIsPagesSidebarOpen(false)}
+            aria-hidden="true"
+          />
+        )}
+
+        {/* Docked Right Pages Sidebar (Overlay drawer on mobile, docked on md+) */}
         <div
           className={cn(
-            'h-full border-l border-veyra-border bg-veyra-card flex flex-col shrink-0 overflow-hidden transition-[width,opacity] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)]',
-            isPagesSidebarOpen ? 'w-80 opacity-100' : 'w-0 opacity-0 pointer-events-none',
+            'absolute inset-y-0 right-0 z-30 md:relative md:z-auto h-full border-l border-veyra-border bg-veyra-card flex flex-col shrink-0 overflow-hidden transition-[width,opacity] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] shadow-2xl md:shadow-none',
+            isPagesSidebarOpen ? 'w-80 max-w-[85vw] opacity-100' : 'w-0 opacity-0 pointer-events-none',
             animPhase === 'closing'
               ? 'veyra-note-pages-closing'
               : entryMode === 'open' && isPagesSidebarOpen
@@ -3244,7 +3327,7 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
                 : undefined
           )}
         >
-          <div style={{ width: '320px' }} className="h-full flex flex-col">
+          <div style={{ width: '320px' }} className="h-full max-w-[85vw] flex flex-col">
             <PagesSidebar
               onClose={() => setIsPagesSidebarOpen(false)}
               pages={pages}

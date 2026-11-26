@@ -255,14 +255,14 @@ export const ReminderDetailView: React.FC<ReminderDetailViewProps> = ({
   return (
     <div className="flex-1 flex flex-col h-full bg-veyra-canvas overflow-hidden select-text font-sans">
       {/* 1. Header Toolbar (Compact & Flat) */}
-      <div className="h-10 border-b border-veyra-border px-3.5 flex items-center justify-between text-xs shrink-0 select-none bg-veyra-card/50">
+      <div className="min-h-10 py-1.5 border-b border-veyra-border px-3 sm:px-3.5 flex flex-wrap items-center justify-between gap-2 text-xs shrink-0 select-none bg-veyra-card/50">
         <div className="flex items-center gap-2 min-w-0">
           {!isSidebarOpen && onToggleSidebar && (
             <button
               type="button"
               onClick={onToggleSidebar}
               title="Mostrar barra lateral (Ctrl+\)"
-              className="p-1 rounded text-veyra-muted hover:text-accent hover:bg-white/5 transition-colors cursor-pointer flex items-center justify-center mr-0.5"
+              className="p-1 rounded text-veyra-muted hover:text-accent hover:bg-white/5 transition-colors cursor-pointer flex items-center justify-center mr-0.5 shrink-0"
             >
               <PanelLeft className="w-3.5 h-3.5 text-accent" />
             </button>
@@ -275,16 +275,16 @@ export const ReminderDetailView: React.FC<ReminderDetailViewProps> = ({
             <CheckSquare className="w-2.5 h-2.5 stroke-[2.2]" />
           </div>
 
-          <span className="text-[11px] font-bold text-veyra-subtle uppercase tracking-wider truncate">
+          <span className="hidden sm:inline text-[11px] font-bold text-veyra-subtle uppercase tracking-wider shrink-0">
             Recordatorio
           </span>
-          <span className="text-veyra-subtle/50 text-[11px]">•</span>
-          <span className="text-xs font-semibold text-veyra-text truncate max-w-[200px] sm:max-w-xs">
+          <span className="hidden sm:inline text-veyra-subtle/50 text-[11px]">•</span>
+          <span className="text-xs font-semibold text-veyra-text truncate max-w-[150px] sm:max-w-xs">
             {reminder.title}
           </span>
         </div>
 
-        <div className="flex items-center gap-1.5 shrink-0">
+        <div className="flex items-center gap-1 sm:gap-1.5 flex-wrap shrink-0">
           {/* Status Badge */}
           {isCompleted ? (
             <span className="px-2 py-0.5 rounded-[4px] text-[9.5px] font-bold tracking-wide uppercase bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 flex items-center gap-1">
