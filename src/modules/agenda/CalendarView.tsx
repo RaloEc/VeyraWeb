@@ -31,6 +31,7 @@ export interface CalendarViewProps {
   onOpenDashboard?: () => void;
   isSidebarOpen?: boolean;
   onToggleSidebar?: () => void;
+  hideViewSwitcher?: boolean;
 }
 
 interface CalendarOccurrenceItem {
@@ -90,6 +91,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
   onOpenDashboard,
   isSidebarOpen,
   onToggleSidebar,
+  hideViewSwitcher = false,
 }) => {
   const { settings } = useUserSettings();
   const [viewMode, setViewMode] = useState<CalendarViewMode>('month');
@@ -286,28 +288,32 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
           )}
 
           {/* View switcher: Dashboard vs Calendario Completo (Consistente en ambas vistas) */}
-          <div className="flex items-center p-0.5 rounded-lg bg-veyra-elevated border border-veyra-border text-xs shrink-0">
-            <button
-              type="button"
-              onClick={onOpenDashboard}
-              title="Volver al Dashboard dinámico"
-              className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1 rounded-md font-medium text-veyra-muted hover:text-veyra-text transition-colors cursor-pointer"
-            >
-              <LayoutDashboard className="w-3.5 h-3.5" />
-              <span className="hidden xs:inline sm:inline">Dashboard</span>
-            </button>
+          {!hideViewSwitcher && (
+            <>
+              <div className="flex items-center p-0.5 rounded-lg bg-veyra-elevated border border-veyra-border text-xs shrink-0">
+                <button
+                  type="button"
+                  onClick={onOpenDashboard}
+                  title="Volver al Dashboard dinámico"
+                  className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1 rounded-md font-medium text-veyra-muted hover:text-veyra-text transition-colors cursor-pointer"
+                >
+                  <LayoutDashboard className="w-3.5 h-3.5" />
+                  <span className="hidden xs:inline sm:inline">Dashboard</span>
+                </button>
 
-            <button
-              type="button"
-              className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1 rounded-md font-semibold bg-accent/15 text-accent shadow-xs cursor-default"
-            >
-              <CalendarIcon className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Calendario Completo</span>
-              <span className="sm:hidden">Calendario</span>
-            </button>
-          </div>
+                <button
+                  type="button"
+                  className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1 rounded-md font-semibold bg-accent/15 text-accent shadow-xs cursor-default"
+                >
+                  <CalendarIcon className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">Calendario Completo</span>
+                  <span className="sm:hidden">Calendario</span>
+                </button>
+              </div>
 
-          <div className="h-4 w-px bg-veyra-border shrink-0 hidden md:block" />
+              <div className="h-4 w-px bg-veyra-border shrink-0 hidden md:block" />
+            </>
+          )}
 
           {/* Date navigation */}
           <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">

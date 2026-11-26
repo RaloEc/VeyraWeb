@@ -51,8 +51,10 @@ export const MobileAppShell: React.FC<MobileAppShellProps> = ({
     selectedNote,
     setSelectedFolderId,
     createFolder,
+    deleteFolder,
     createNote,
     saveNote,
+    deleteNote,
     restoreNote,
   } = notesHook;
 
@@ -442,6 +444,21 @@ export const MobileAppShell: React.FC<MobileAppShellProps> = ({
           onSelectEvent={(id) => handleSelectEvent(id)}
           onCreateNote={(folderId, eventId) => handleCreateNoteAndOpen(folderId, 'Nueva nota', undefined, eventId || null)}
           onCreateFolder={() => setIsFolderModalOpen(true)}
+          onDeleteNote={async (id) => {
+            await deleteNote(id);
+            toast.success('Nota movida a la papelera', {
+              action: {
+                label: 'Deshacer',
+                onClick: () => {
+                  restoreNote(id);
+                },
+              },
+            });
+          }}
+          onDeleteFolder={async (folderId) => {
+            await deleteFolder(folderId);
+            toast.success('Carpeta eliminada');
+          }}
         />
       )}
 

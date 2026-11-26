@@ -109,9 +109,22 @@ export function useNotes(userId?: string, initialNoteId?: string | null) {
       ]);
 
       if (foldersRes.data) {
-        const fList = foldersRes.data as unknown as Folder[];
+        const fList = (foldersRes.data as unknown as Folder[]).filter((f) => !f.deleted);
         setFolders(fList);
-        await localDB.folders.bulkPut(fList);
+        const activeFolderIds = new Set(fList.map((f) => f.id));
+        const staleFolders = await localDB.folders
+          .filter((f) => f.deleted === 0 && !activeFolderIds.has(f.id))
+          .toArray();
+        if (staleFolders.length > 0) {
+          await localDB.folders.bulkDelete(staleFolders.map((f) => f.id));
+        }
+        if (fList.length > 0) {
+          await localDB.folders.bulkPut(fList);
+        }
+      }
+
+      if (notesRes.error) {
+        console.error('[useNotes] Error fetching notes from Supabase:', notesRes.error);
       }
 
       if (notesRes.data) {
@@ -155,6 +168,13 @@ export function useNotes(userId?: string, initialNoteId?: string | null) {
         }
 
         setNotes(fetchedNotes);
+        const activeNoteIds = new Set(fetchedNotes.map((n) => n.id));
+        const staleNotes = await localDB.notes
+          .filter((n) => n.deleted === 0 && !activeNoteIds.has(n.id))
+          .toArray();
+        if (staleNotes.length > 0) {
+          await localDB.notes.bulkDelete(staleNotes.map((n) => n.id));
+        }
         if (fetchedNotes.length > 0) {
           await localDB.notes.bulkPut(fetchedNotes);
         }
@@ -188,13 +208,30 @@ export function useNotes(userId?: string, initialNoteId?: string | null) {
     fetchData();
   }, [fetchData]);
 
+  // Refrescar al volver a la pestaña (sincroniza cambios hechos desde móvil/Android)
+  useEffect(() => {
+    let lastFetch = Date.now();
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible' && Date.now() - lastFetch > 5000) {
+        lastFetch = Date.now();
+        fetchData();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+    window.addEventListener('focus', handleVisibility);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibility);
+      window.removeEventListener('focus', handleVisibility);
+    };
+  }, [fetchData]);
+
   // 3. Realtime subscription for notes and folders
   useEffect(() => {
     if (!userId) return;
 
     const channelName = `notes-folders-${userId}-${Math.random().toString(36).substring(2, 8)}`;
     const channel = supabase
-      .channel(channelName, { config: { private: true } })
+      .channel(channelName)
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'notes' },
@@ -386,10 +423,10 @@ export function useNotes(userId?: string, initialNoteId?: string | null) {
     const hasInitialHtml = Boolean(initialHtmlContent && initialHtmlContent.trim());
     const previewText = hasInitialHtml
       ? initialHtmlContent!
-          .replace(/<[^>]+>/g, ' ')
-          .replace(/\s+/g, ' ')
-          .trim()
-          .slice(0, 180)
+        .replace(/<[^>]+>/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .slice(0, 180)
       : '';
 
     const initialPaginatedContent: NoteContentPaginated = {
@@ -547,7 +584,7 @@ export function useNotes(userId?: string, initialNoteId?: string | null) {
 
     if (updates.title !== undefined) {
       const noteTags = extractHashtags(updates.title);
-      syncItemTags(userId, 'note', id, noteTags).catch(() => {});
+      syncItemTags(userId, 'note', id, noteTags).catch(() => { });
     }
   };
 

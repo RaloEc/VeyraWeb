@@ -1,16 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import { Timer, Play, Pause, RotateCcw, Coffee, Flame } from 'lucide-react';
 import { cn } from '../../../../lib/utils';
-import { toast } from 'sonner';
 import { WidgetCard } from '../WidgetCard';
-
-type PomodoroMode = 'work' | 'shortBreak' | 'longBreak';
-
-const MODE_DURATIONS: Record<PomodoroMode, number> = {
-  work: 25 * 60,
-  shortBreak: 5 * 60,
-  longBreak: 15 * 60,
-};
+import { usePomodoro, type PomodoroMode } from '../../../../context/PomodoroContext';
 
 const MODE_OPTIONS: Array<{ id: PomodoroMode; label: string; tip: string }> = [
   { id: 'work', label: 'Enfoque', tip: 'Sesión de 25 min' },
@@ -25,63 +17,17 @@ interface FocusTimerWidgetProps {
 export const FocusTimerWidget: React.FC<FocusTimerWidgetProps> = ({
   isCompactHeight = false,
 }) => {
-  const [mode, setMode] = useState<PomodoroMode>('work');
-  const [timeLeft, setTimeLeft] = useState<number>(MODE_DURATIONS.work);
-  const [isRunning, setIsRunning] = useState<boolean>(false);
-  const [completedSessions, setCompletedSessions] = useState<number>(() => {
-    if (typeof window === 'undefined') return 0;
-    const stored = localStorage.getItem('veyra_pomodoro_completed');
-    return stored ? parseInt(stored, 10) || 0 : 0;
-  });
+  const {
+    mode,
+    isRunning,
+    completedSessions,
+    formattedTime,
+    progressPercent,
+    toggleRunning,
+    switchMode,
+    reset,
+  } = usePomodoro();
 
-  // Tick down every second without side effects inside state updater
-  useEffect(() => {
-    if (!isRunning) return;
-    const id = window.setInterval(() => {
-      setTimeLeft((prev) => (prev > 0 ? prev - 1 : 0));
-    }, 1000);
-    return () => clearInterval(id);
-  }, [isRunning]);
-
-  // Handle timer completion cleanly in its own effect
-  useEffect(() => {
-    if (!isRunning || timeLeft > 0) return;
-
-    setIsRunning(false);
-    if (mode === 'work') {
-      const nextCount = completedSessions + 1;
-      setCompletedSessions(nextCount);
-      if (typeof window !== 'undefined') {
-        localStorage.setItem('veyra_pomodoro_completed', String(nextCount));
-      }
-      toast.success('¡Sesión de enfoque completada! Tómate un respiro.');
-      const nextMode: PomodoroMode = nextCount % 4 === 0 ? 'longBreak' : 'shortBreak';
-      setMode(nextMode);
-      setTimeLeft(MODE_DURATIONS[nextMode]);
-    } else {
-      toast.info('¡Descanso terminado! Listo para enfocarte.');
-      setMode('work');
-      setTimeLeft(MODE_DURATIONS.work);
-    }
-  }, [isRunning, timeLeft, mode, completedSessions]);
-
-  const handleSwitchMode = (newMode: PomodoroMode) => {
-    setIsRunning(false);
-    setMode(newMode);
-    setTimeLeft(MODE_DURATIONS[newMode]);
-  };
-
-  const handleReset = () => {
-    setIsRunning(false);
-    setTimeLeft(MODE_DURATIONS[mode]);
-  };
-
-  const minutes = Math.floor(timeLeft / 60);
-  const seconds = timeLeft % 60;
-  const formattedTime = `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
-
-  const totalDuration = MODE_DURATIONS[mode];
-  const progressPercent = Math.round(((totalDuration - timeLeft) / totalDuration) * 100);
   const isWork = mode === 'work';
 
   const modePills = (
@@ -92,7 +38,7 @@ export const FocusTimerWidget: React.FC<FocusTimerWidgetProps> = ({
           <button
             key={opt.id}
             type="button"
-            onClick={() => handleSwitchMode(opt.id)}
+            onClick={() => switchMode(opt.id)}
             className={cn(
               'px-2 py-0.5 rounded-md font-medium transition-colors cursor-pointer',
               active
@@ -113,7 +59,7 @@ export const FocusTimerWidget: React.FC<FocusTimerWidgetProps> = ({
     <div className="flex items-center gap-1.5 shrink-0">
       <button
         type="button"
-        onClick={() => setIsRunning((prev) => !prev)}
+        onClick={toggleRunning}
         className={cn(
           'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer',
           isRunning
@@ -138,7 +84,7 @@ export const FocusTimerWidget: React.FC<FocusTimerWidgetProps> = ({
 
       <button
         type="button"
-        onClick={handleReset}
+        onClick={reset}
         title="Reiniciar temporizador"
         className="p-1.5 rounded-lg text-veyra-muted hover:text-veyra-text hover:bg-veyra-elevated/60 transition-colors cursor-pointer"
       >

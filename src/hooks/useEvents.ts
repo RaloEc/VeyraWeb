@@ -96,7 +96,7 @@ export function useEvents(userId?: string) {
 
     const channelName = `events-changes-${userId}-${Math.random().toString(36).substring(2, 8)}`;
     const channel = supabase
-      .channel(channelName, { config: { private: true } })
+      .channel(channelName)
       .on(
         'postgres_changes',
         {

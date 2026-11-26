@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef, useEffect } from 'react';
+import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import {
   Plus,
@@ -30,6 +30,7 @@ import {
   Share2,
   Pin,
   CheckSquare,
+  LayoutDashboard,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { MorphIcon } from 'morphicons/react';
@@ -86,6 +87,8 @@ export interface NotesSidebarProps {
   onSelectReminder?: (reminderId: string) => void;
   onOpenCalendar?: () => void;
   isCalendarOpen?: boolean;
+  onOpenDashboard?: () => void;
+  isDashboardActive?: boolean;
   sidebarSection?: 'notes' | 'agenda';
   onSectionChange?: (section: 'notes' | 'agenda') => void;
   userId?: string;
@@ -179,6 +182,8 @@ export const NotesSidebar: React.FC<NotesSidebarProps> = ({
   onSelectReminder,
   onOpenCalendar,
   isCalendarOpen,
+  onOpenDashboard,
+  isDashboardActive,
   sidebarSection: controlledSidebarSection,
   onSectionChange,
   userId,
@@ -229,6 +234,62 @@ export const NotesSidebar: React.FC<NotesSidebarProps> = ({
   const [isColorPickerOpen, setIsColorPickerOpen] = useState(false);
   const [isSavingInlineSubfolder, setIsSavingInlineSubfolder] = useState(false);
   const colorPickerRef = useRef<HTMLDivElement>(null);
+
+  // Smooth exit animation state for deleting notes and folders
+  const [exitingNoteIds, setExitingNoteIds] = useState<Set<string>>(() => new Set());
+  const [exitingFolderIds, setExitingFolderIds] = useState<Set<string>>(() => new Set());
+
+  const animateDeleteNote = useCallback(
+    (noteId: string, permanent = false) => {
+      setExitingNoteIds((prev) => {
+        if (prev.has(noteId)) return prev;
+        const next = new Set(prev);
+        next.add(noteId);
+        return next;
+      });
+      window.setTimeout(async () => {
+        try {
+          if (permanent) {
+            await onDeleteForever?.(noteId);
+          } else {
+            await onDeleteNote?.(noteId);
+          }
+        } finally {
+          setExitingNoteIds((prev) => {
+            if (!prev.has(noteId)) return prev;
+            const next = new Set(prev);
+            next.delete(noteId);
+            return next;
+          });
+        }
+      }, 250);
+    },
+    [onDeleteForever, onDeleteNote]
+  );
+
+  const animateDeleteFolder = useCallback(
+    (folderId: string) => {
+      setExitingFolderIds((prev) => {
+        if (prev.has(folderId)) return prev;
+        const next = new Set(prev);
+        next.add(folderId);
+        return next;
+      });
+      window.setTimeout(async () => {
+        try {
+          await onDeleteFolder?.(folderId);
+        } finally {
+          setExitingFolderIds((prev) => {
+            if (!prev.has(folderId)) return prev;
+            const next = new Set(prev);
+            next.delete(folderId);
+            return next;
+          });
+        }
+      }, 250);
+    },
+    [onDeleteFolder]
+  );
 
   useEffect(() => {
     if (!isColorPickerOpen) return;
@@ -680,7 +741,9 @@ export const NotesSidebar: React.FC<NotesSidebarProps> = ({
 
   // Hierarchical Folders (sorted in real-time by sortMode)
   const topLevelFolders = useMemo(() => {
-    return sortFolders(folders.filter((f) => !f.parent_id));
+    return sortFolders(
+      folders.filter((f) => !f.parent_id || !existingFolderIds.has(f.parent_id))
+    );
   }, [folders, sortMode, customFolderOrder]);
 
   const subfoldersByParentId = useMemo(() => {
@@ -1074,15 +1137,24 @@ export const NotesSidebar: React.FC<NotesSidebarProps> = ({
   const handleBatchDelete = async () => {
     if (totalSelectedCount === 0 || isBatchBusy) return;
     setIsBatchBusy(true);
+    const noteIdsToDelete = [...selectedNoteIds];
+    const folderIdsToDelete = [...selectedFolderIds];
+    if (noteIdsToDelete.length > 0) {
+      setExitingNoteIds((prev) => new Set([...prev, ...noteIdsToDelete]));
+    }
+    if (folderIdsToDelete.length > 0) {
+      setExitingFolderIds((prev) => new Set([...prev, ...folderIdsToDelete]));
+    }
     try {
-      for (const noteId of selectedNoteIds) {
+      await new Promise((resolve) => window.setTimeout(resolve, 250));
+      for (const noteId of noteIdsToDelete) {
         if (activeView === 'trash') {
           await onDeleteForever?.(noteId);
         } else {
           await onDeleteNote?.(noteId);
         }
       }
-      for (const folderId of selectedFolderIds) {
+      for (const folderId of folderIdsToDelete) {
         await onDeleteFolder?.(folderId);
       }
       toast.success(
@@ -1095,6 +1167,16 @@ export const NotesSidebar: React.FC<NotesSidebarProps> = ({
       console.error('[NotesSidebar] Error deleting batch selection:', err);
       toast.error('No se pudieron eliminar algunos elementos');
     } finally {
+      setExitingNoteIds((prev) => {
+        const next = new Set(prev);
+        noteIdsToDelete.forEach((id) => next.delete(id));
+        return next;
+      });
+      setExitingFolderIds((prev) => {
+        const next = new Set(prev);
+        folderIdsToDelete.forEach((id) => next.delete(id));
+        return next;
+      });
       setIsBatchBusy(false);
     }
   };
@@ -1128,9 +1210,18 @@ export const NotesSidebar: React.FC<NotesSidebarProps> = ({
       (draggedItem?.type === 'note' && draggedItem.id === note.id) ||
       (draggedItem?.type === 'batch' && draggedItem.noteIds.includes(note.id));
 
+    const isExitingNote = exitingNoteIds.has(note.id);
+
     return (
       <div
         key={note.id}
+        className={cn(
+          'veyra-delete-collapse',
+          isExitingNote && 'veyra-delete-collapse-exiting'
+        )}
+      >
+        <div className="veyra-delete-collapse-inner">
+      <div
         draggable={activeView !== 'trash'}
         onDragStart={(e) => {
           e.stopPropagation();
@@ -1282,7 +1373,7 @@ export const NotesSidebar: React.FC<NotesSidebarProps> = ({
                 onClick={(e) => {
                   e.stopPropagation();
                   if (window.confirm('¿Eliminar permanentemente esta nota?')) {
-                    onDeleteForever?.(note.id);
+                    animateDeleteNote(note.id, true);
                   }
                 }}
                 title="Eliminar permanentemente"
@@ -1321,7 +1412,7 @@ export const NotesSidebar: React.FC<NotesSidebarProps> = ({
                   type="button"
                   onClick={(e) => {
                     e.stopPropagation();
-                    onDeleteNote(note.id);
+                    animateDeleteNote(note.id, false);
                   }}
                   title="Mover a papelera"
                   className="p-1 rounded text-veyra-subtle hover:text-red-400 hover:bg-white/10 transition-colors cursor-pointer"
@@ -1335,6 +1426,8 @@ export const NotesSidebar: React.FC<NotesSidebarProps> = ({
           <span className="text-[10px] font-mono text-veyra-subtle shrink-0">
             {formatNoteDate(note.updated_at_ms || note.created_at_ms)}
           </span>
+        </div>
+      </div>
         </div>
       </div>
     );
@@ -1439,8 +1532,17 @@ export const NotesSidebar: React.FC<NotesSidebarProps> = ({
     const isDragOver = dragOverTarget === folder.id;
     const isFolderChecked = selectedFolderSet.has(folder.id);
 
+    const isExitingFolder = exitingFolderIds.has(folder.id);
+
     return (
-      <div key={folder.id} className="space-y-0.5">
+      <div
+        key={folder.id}
+        className={cn(
+          'veyra-delete-collapse',
+          isExitingFolder && 'veyra-delete-collapse-exiting'
+        )}
+      >
+        <div className="veyra-delete-collapse-inner space-y-0.5">
         {/* Folder row */}
         <div
           draggable={activeView !== 'trash'}
@@ -1700,7 +1802,7 @@ export const NotesSidebar: React.FC<NotesSidebarProps> = ({
                     title="¿Eliminar carpeta?"
                     description={`"${folder.name}". Sus notas se conservarán y se moverán a la raíz.`}
                     confirmText="Eliminar"
-                    onConfirm={() => onDeleteFolder(folder.id)}
+                    onConfirm={() => animateDeleteFolder(folder.id)}
                   >
                     <button
                       type="button"
@@ -1735,6 +1837,7 @@ export const NotesSidebar: React.FC<NotesSidebarProps> = ({
             )}
           </div>
         )}
+        </div>
       </div>
     );
   };
@@ -1744,21 +1847,53 @@ export const NotesSidebar: React.FC<NotesSidebarProps> = ({
       onContextMenu={(e) => e.preventDefault()}
       className="w-full bg-veyra-card/90 border-r border-veyra-border flex flex-col h-full shrink-0 select-none overflow-hidden text-xs relative"
     >
-      {/* 1. Header: Branding + Collapse Toggle */}
-      <div className="h-14 px-4 flex items-center justify-between border-b border-veyra-border shrink-0">
-        <div className="flex items-center gap-2.5">
-          <div className="w-6 h-6 rounded-md bg-accent flex items-center justify-center font-bold text-white text-xs shadow-sm">
+      {/* 1. Header: Branding + Compact Nav + Settings + Collapse Toggle */}
+      <div className="h-12 px-3 flex items-center justify-between gap-2 border-b border-veyra-border shrink-0">
+        <div className="flex items-center gap-2 min-w-0">
+          <div className="w-6 h-6 rounded-md bg-accent flex items-center justify-center font-bold text-white text-xs shadow-sm shrink-0">
             V
           </div>
-          <span className="font-bold text-sm tracking-wider text-veyra-text">
+          <span className="font-bold text-sm tracking-wider text-veyra-text truncate">
             VEYRA
-          </span>
-          <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-white/10 text-veyra-muted border border-white/10">
-            WEB
           </span>
         </div>
 
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-1 shrink-0">
+          {(onOpenDashboard || onOpenCalendar) && (
+            <div className="flex items-center p-0.5 rounded-md bg-veyra-elevated/70 border border-veyra-border/80">
+              {onOpenDashboard && (
+                <button
+                  type="button"
+                  onClick={onOpenDashboard}
+                  title="Dashboard"
+                  className={cn(
+                    'p-1 rounded transition-colors cursor-pointer',
+                    isDashboardActive
+                      ? 'bg-accent/15 text-accent'
+                      : 'text-veyra-subtle hover:text-veyra-text hover:bg-white/5'
+                  )}
+                >
+                  <LayoutDashboard className="w-3.5 h-3.5" />
+                </button>
+              )}
+              {onOpenCalendar && (
+                <button
+                  type="button"
+                  onClick={onOpenCalendar}
+                  title="Calendario Completo"
+                  className={cn(
+                    'p-1 rounded transition-colors cursor-pointer',
+                    isCalendarOpen && !isDashboardActive
+                      ? 'bg-accent/15 text-accent'
+                      : 'text-veyra-subtle hover:text-veyra-text hover:bg-white/5'
+                  )}
+                >
+                  <Calendar className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+          )}
+
           <button
             type="button"
             onClick={() => setIsSettingsOpen(true)}
@@ -2760,7 +2895,7 @@ export const NotesSidebar: React.FC<NotesSidebarProps> = ({
                           contextMenu.target?.type === 'folder' ? contextMenu.target.folder : null;
                         closeContextMenu();
                         if (targetFolder) {
-                          onDeleteFolder?.(targetFolder.id);
+                          animateDeleteFolder(targetFolder.id);
                         }
                       }}
                       className="px-2.5 py-1 rounded text-[11px] font-semibold bg-rose-600 hover:bg-rose-700 text-white transition-colors cursor-pointer"
@@ -2900,7 +3035,7 @@ export const NotesSidebar: React.FC<NotesSidebarProps> = ({
                       const targetNote = contextMenu.target?.type === 'note' ? contextMenu.target.note : null;
                       closeContextMenu();
                       if (targetNote && window.confirm('¿Eliminar permanentemente esta nota?')) {
-                        onDeleteForever?.(targetNote.id);
+                        animateDeleteNote(targetNote.id, true);
                       }
                     }}
                     className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded hover:bg-red-500/10 text-red-400 text-left transition-colors cursor-pointer"
@@ -2915,7 +3050,7 @@ export const NotesSidebar: React.FC<NotesSidebarProps> = ({
                   onClick={() => {
                     const targetNote = contextMenu.target?.type === 'note' ? contextMenu.target.note : null;
                     closeContextMenu();
-                    if (targetNote) onDeleteNote?.(targetNote.id);
+                    if (targetNote) animateDeleteNote(targetNote.id, false);
                   }}
                   className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded hover:bg-red-500/10 text-red-400 text-left transition-colors cursor-pointer"
                 >

@@ -1,12 +1,4 @@
 import React, { useState, useRef, useEffect } from 'react';
-import {
-  PanelLeft,
-  Calendar as CalendarIcon,
-  LayoutDashboard,
-  Search,
-  X,
-  Sparkles,
-} from 'lucide-react';
 import type { useEvents } from '../../../hooks/useEvents';
 import type { useReminders } from '../../../hooks/useReminders';
 import type { Note, Folder } from '../../../types/notes';
@@ -62,12 +54,8 @@ export const AgendaDashboardView: React.FC<AgendaDashboardViewProps> = ({
   onSelectNote,
   onSelectFolder,
   onCreateFromTemplate,
-  onOpenGlobalSearch,
   onCreateNote,
   onOpenFullCalendar,
-  onClose,
-  isSidebarOpen,
-  onToggleSidebar,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const [layoutMode, setLayoutMode] = useState<LayoutMode>('wide');
@@ -76,6 +64,7 @@ export const AgendaDashboardView: React.FC<AgendaDashboardViewProps> = ({
   const [isEventModalOpen, setIsEventModalOpen] = useState(false);
   const [isReminderModalOpen, setIsReminderModalOpen] = useState(false);
   const [isQuickAIModalOpen, setIsQuickAIModalOpen] = useState(false);
+  const [isQuickAIExpanded, setIsQuickAIExpanded] = useState(false);
 
   const { sharedNotes } = useSharedNotes(currentUserId, allNotes);
   const hasSharedNotes = sharedNotes.length > 0;
@@ -189,9 +178,6 @@ export const AgendaDashboardView: React.FC<AgendaDashboardViewProps> = ({
       userEmail={userEmail}
       todayEvents={todayEvents}
       todayReminders={todayReminders}
-      onOpenNewEvent={() => setIsEventModalOpen(true)}
-      onOpenNewReminder={() => setIsReminderModalOpen(true)}
-      onOpenNewNote={handleOpenNewNote}
       isCompact={isCompact}
       rowSpan={rowSpan}
     />
@@ -253,84 +239,6 @@ export const AgendaDashboardView: React.FC<AgendaDashboardViewProps> = ({
 
   return (
     <div className="flex-1 flex flex-col h-full bg-veyra-canvas overflow-hidden">
-      {/* Top Header Bar */}
-      <header className="h-12 border-b border-veyra-border px-4 md:px-6 flex items-center justify-between gap-3 shrink-0 bg-veyra-canvas/90 backdrop-blur-md z-20">
-        <div className="flex items-center gap-3 shrink-0">
-          {onToggleSidebar && !isSidebarOpen && (
-            <button
-              type="button"
-              onClick={onToggleSidebar}
-              title="Mostrar barra lateral"
-              className="p-1.5 rounded-lg text-veyra-muted hover:text-veyra-text hover:bg-veyra-elevated transition-colors cursor-pointer"
-            >
-              <PanelLeft className="w-4 h-4 text-accent" />
-            </button>
-          )}
-
-          {/* View switcher: Dashboard vs Full Calendar */}
-          <div className="flex items-center p-0.5 rounded-lg bg-veyra-elevated/60 border border-veyra-border/70 text-xs">
-            <button
-              type="button"
-              className="flex items-center gap-1.5 px-3 py-1 rounded-md font-semibold bg-accent/15 text-accent cursor-default"
-            >
-              <LayoutDashboard className="w-3.5 h-3.5" />
-              <span>Dashboard</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={onOpenFullCalendar}
-              className="flex items-center gap-1.5 px-3 py-1 rounded-md font-medium text-veyra-muted hover:text-veyra-text transition-colors cursor-pointer"
-            >
-              <CalendarIcon className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Calendario Completo</span>
-              <span className="sm:hidden">Calendario</span>
-            </button>
-          </div>
-        </div>
-
-        {/* Global Intelligent Search Trigger & Crear con Veyra */}
-        <div className="flex items-center gap-2 min-w-0">
-          <button
-            type="button"
-            onClick={() => setIsQuickAIModalOpen(true)}
-            title="Crear con Veyra IA (Texto, Voz o Imagen)"
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-accent/15 border border-accent/35 hover:bg-accent/25 text-xs font-semibold text-accent transition-colors cursor-pointer shrink-0"
-          >
-            <Sparkles className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">Crear con Veyra</span>
-          </button>
-
-          {onOpenGlobalSearch && (
-            <button
-              type="button"
-              onClick={onOpenGlobalSearch}
-              title="Buscar en todo Veyra (Ctrl+K)"
-              className="flex items-center justify-between gap-3 px-3 py-1.5 rounded-lg bg-veyra-elevated/50 border border-veyra-border/80 hover:bg-veyra-elevated hover:border-accent/40 text-xs text-veyra-muted hover:text-veyra-text transition-colors cursor-pointer sm:w-56 md:w-64"
-            >
-              <span className="flex items-center gap-2 min-w-0 truncate">
-                <Search className="w-3.5 h-3.5 text-accent shrink-0" />
-                <span className="truncate hidden sm:inline">Buscar en Veyra...</span>
-              </span>
-              <kbd className="hidden md:inline-flex items-center px-1.5 py-0.2 rounded bg-veyra-canvas border border-veyra-border text-[10px] font-mono text-veyra-subtle shrink-0">
-                Ctrl K
-              </kbd>
-            </button>
-          )}
-
-          {onClose && (
-            <button
-              type="button"
-              onClick={onClose}
-              title="Cerrar"
-              className="p-1.5 rounded-lg text-veyra-muted hover:text-veyra-text hover:bg-veyra-hover cursor-pointer shrink-0"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          )}
-        </div>
-      </header>
-
       {/* Main Flat Editorial Workspace */}
       <main className="flex-1 overflow-y-auto px-5 py-5 md:px-8 md:py-6 custom-scrollbar">
         <div ref={containerRef} className="max-w-[1360px] mx-auto flex flex-col">
@@ -449,29 +357,33 @@ export const AgendaDashboardView: React.FC<AgendaDashboardViewProps> = ({
       />
 
       {isQuickAIModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div
-            className="fixed inset-0 bg-black/70 backdrop-blur-[2px] animate-in fade-in duration-150"
-            onClick={() => setIsQuickAIModalOpen(false)}
+        <aside
+          aria-label="Crear con Veyra"
+          className={`fixed bottom-4 right-4 left-4 sm:left-auto z-50 sm:w-full max-h-[calc(100vh-2rem)] rounded-[24px] bg-veyra-card border border-veyra-border shadow-2xl p-5 flex flex-col animate-in fade-in slide-in-from-bottom-4 duration-200 transition-[max-width] ease-[cubic-bezier(0.16,1,0.3,1)] ${
+            isQuickAIExpanded ? 'sm:max-w-[560px]' : 'sm:max-w-[440px]'
+          }`}
+        >
+          <CreateWithVeyraAssistant
+            variant="sidebar"
+            onClose={() => {
+              setIsQuickAIModalOpen(false);
+              setIsQuickAIExpanded(false);
+            }}
+            onHasProposalChange={setIsQuickAIExpanded}
+            onManualReminder={() => setIsReminderModalOpen(true)}
+            onManualEvent={() => setIsEventModalOpen(true)}
+            onManualNote={handleOpenNewNote}
+            onSaveReminder={async (payload) => await remindersHook?.createReminder(payload)}
+            onSaveEvent={async (payload) => await eventsHook?.createEvent(payload)}
+            onSaveNote={async (title, contentHtml) => {
+              const created = await onCreateNote(null, null, title, contentHtml);
+              if (created && typeof created === 'object' && 'id' in created && created.id) {
+                onSelectNote(created.id);
+              }
+            }}
+            autoFocus={true}
           />
-          <div className="relative z-10 w-full max-w-lg rounded-[28px] bg-veyra-card border border-veyra-border shadow-2xl p-5 animate-in fade-in zoom-in-95 duration-200">
-            <CreateWithVeyraAssistant
-              onClose={() => setIsQuickAIModalOpen(false)}
-              onManualReminder={() => setIsReminderModalOpen(true)}
-              onManualEvent={() => setIsEventModalOpen(true)}
-              onManualNote={handleOpenNewNote}
-              onSaveReminder={async (payload) => await remindersHook?.createReminder(payload)}
-              onSaveEvent={async (payload) => await eventsHook?.createEvent(payload)}
-              onSaveNote={async (title, contentHtml) => {
-                const created = await onCreateNote(null, null, title, contentHtml);
-                if (created && typeof created === 'object' && 'id' in created && created.id) {
-                  onSelectNote(created.id);
-                }
-              }}
-              autoFocus={true}
-            />
-          </div>
-        </div>
+        </aside>
       )}
     </div>
   );

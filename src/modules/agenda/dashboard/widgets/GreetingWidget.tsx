@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { FileText, CheckCircle2, Clock, Plus, Sparkles, AlertCircle } from 'lucide-react';
+import { CheckCircle2, Clock, Sparkles, AlertCircle } from 'lucide-react';
 import { cn } from '../../../../lib/utils';
 import type { CalendarEvent } from '../../../../hooks/useEvents';
 import type { Reminder } from '../../../../types/reminders';
@@ -9,9 +9,6 @@ interface GreetingWidgetProps {
   userEmail?: string;
   todayEvents: CalendarEvent[];
   todayReminders: Reminder[];
-  onOpenNewEvent: () => void;
-  onOpenNewReminder: () => void;
-  onOpenNewNote?: () => void;
   isCompact?: boolean;
   rowSpan?: number;
 }
@@ -21,9 +18,6 @@ export const GreetingWidget: React.FC<GreetingWidgetProps> = ({
   userEmail,
   todayEvents,
   todayReminders,
-  onOpenNewEvent,
-  onOpenNewReminder,
-  onOpenNewNote,
   isCompact = false,
   rowSpan = 3,
 }) => {
@@ -111,41 +105,6 @@ export const GreetingWidget: React.FC<GreetingWidgetProps> = ({
               </>
             )}
           </div>
-        </div>
-
-        {/* Flat quick actions */}
-        <div className="flex items-center gap-1.5 shrink-0 flex-wrap">
-          <button
-            type="button"
-            onClick={onOpenNewEvent}
-            title="Programar nuevo evento"
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-accent text-white text-xs font-semibold hover:bg-accent/90 transition-colors cursor-pointer shrink-0"
-          >
-            <Plus className="w-3.5 h-3.5 shrink-0" />
-            <span>Evento</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={onOpenNewReminder}
-            title="Crear nuevo recordatorio"
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-veyra-elevated/60 hover:bg-veyra-elevated border border-transparent hover:border-veyra-border text-veyra-text text-xs font-medium transition-colors cursor-pointer shrink-0"
-          >
-            <Plus className="w-3.5 h-3.5 text-accent shrink-0" />
-            <span>Recordatorio</span>
-          </button>
-
-          {onOpenNewNote && (
-            <button
-              type="button"
-              onClick={onOpenNewNote}
-              title="Crear nueva nota rápida"
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-veyra-elevated/60 hover:bg-veyra-elevated border border-transparent hover:border-veyra-border text-veyra-muted hover:text-veyra-text text-xs font-medium transition-colors cursor-pointer shrink-0"
-            >
-              <FileText className="w-3.5 h-3.5 shrink-0" />
-              {!isCompact && <span>Nota</span>}
-            </button>
-          )}
         </div>
       </div>
     </section>

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { useEditor, EditorContent } from '@tiptap/react';
 import { findParentNode } from '@tiptap/core';
@@ -262,6 +262,12 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const [a4Scale, setA4Scale] = useState(1);
   const [a4SheetHeight, setA4SheetHeight] = useState(1123);
+  const [isNarrowSheetViewport, setIsNarrowSheetViewport] = useState<boolean>(() =>
+    typeof window !== 'undefined' ? window.innerWidth < 860 : false
+  );
+  const [formatSwitchSeq, setFormatSwitchSeq] = useState(0);
+  const [isFormatSwitching, setIsFormatSwitching] = useState(false);
+  const prevPageFormatRef = useRef(pageFormat);
   const a4ScaleRef = useRef(1);
   a4ScaleRef.current = a4Scale;
   const a4StyleRef = useRef<HTMLStyleElement | null>(null);
@@ -366,10 +372,17 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
   }, []);
 
   useEffect(() => {
-    if (pageFormat !== 'a4') {
-      setA4Scale(1);
-      return;
-    }
+    if (prevPageFormatRef.current === pageFormat) return;
+    prevPageFormatRef.current = pageFormat;
+    setIsFormatSwitching(true);
+    setFormatSwitchSeq((s) => s + 1);
+    const timer = window.setTimeout(() => {
+      setIsFormatSwitching(false);
+    }, 340);
+    return () => window.clearTimeout(timer);
+  }, [pageFormat]);
+
+  useLayoutEffect(() => {
     const container = scrollContainerRef.current;
     const sheet = docSheetRef.current;
     if (!container) return;
@@ -377,7 +390,15 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
     const updateScaleAndHeight = () => {
       const horizontalPad = window.innerWidth < 640 ? 16 : 64;
       const availableW = Math.max(240, container.clientWidth - horizontalPad);
-      const nextScale = availableW < 794 ? Math.max(0.25, availableW / 794) : 1;
+      const narrow = availableW < 794;
+      setIsNarrowSheetViewport((prev) => (prev === narrow ? prev : narrow));
+
+      if (pageFormat !== 'a4') {
+        setA4Scale((prev) => (prev === 1 ? prev : 1));
+        return;
+      }
+
+      const nextScale = narrow ? Math.max(0.25, availableW / 794) : 1;
       setA4Scale((prev) => (Math.abs(prev - nextScale) < 0.002 ? prev : nextScale));
       if (sheet) {
         const h = Math.max(1123, sheet.offsetHeight);
@@ -3057,7 +3078,7 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
         <div
           ref={scrollContainerRef}
           className={cn(
-            'flex-1 overflow-y-auto overflow-x-hidden [overflow-anchor:none] transition-colors duration-150',
+            'flex-1 overflow-y-auto overflow-x-hidden [overflow-anchor:none] transition-[background-color,padding] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)]',
             pageFormat === 'a4' ? 'px-2 sm:px-8 py-3 sm:py-8' : 'px-4 sm:px-8 py-6 sm:py-8',
             isDark && isAmoled ? 'bg-black' : 'bg-[#e4e7ec] dark:bg-[#0B0B0C]'
           )}
@@ -3069,7 +3090,11 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
         >
           {/* Scaled wrapper so A4 sheet (794px) fits proportionally on mobile screens */}
           <div
-            className={cn(pageFormat === 'a4' && a4Scale < 1 ? 'mx-auto relative shrink-0' : 'w-full')}
+            data-format-switch={formatSwitchSeq}
+            className={cn(
+              pageFormat === 'a4' && a4Scale < 1 ? 'mx-auto relative shrink-0' : 'w-full',
+              isFormatSwitching && isNarrowSheetViewport && 'veyra-note-format-switch-mobile'
+            )}
             style={
               pageFormat === 'a4' && a4Scale < 1
                 ? {
@@ -3092,7 +3117,7 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
                 : undefined
             }
             className={cn(
-              'mx-auto w-full flex flex-col transition-[background-color,border-color,box-shadow] duration-150 ease-[cubic-bezier(0.16,1,0.3,1)] relative',
+              'mx-auto w-full flex flex-col transition-[max-width,min-height,padding,border-radius,background-color,border-color,box-shadow] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] relative',
               animPhase === 'closing'
                 ? 'veyra-note-sheet-closing'
                 : entryMode === 'open'
@@ -3102,10 +3127,12 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
                       ? 'veyra-note-sheet-a4-entering'
                       : 'veyra-note-sheet-entering'
                   : undefined,
+              isNarrowSheetViewport && isFormatSwitching && 'veyra-note-sheet-scaled',
               isPaperLight && 'sheet-light-mode',
               pageFormat === 'a4'
                 ? cn(
-                  'a4-page-mode !w-[794px] min-h-[1123px] rounded-sm px-[30mm] pt-[25mm] pb-[25mm] mb-4',
+                  'a4-page-mode min-h-[1123px] rounded-sm px-[30mm] pt-[25mm] pb-[25mm] mb-4',
+                  a4Scale < 1 ? '!w-[794px] max-w-none' : 'max-w-[794px]',
                   isPaperLight
                     ? 'bg-white border border-slate-300 shadow-[0_8px_30px_rgb(0,0,0,0.12)]'
                     : 'bg-white dark:bg-[#161619] border border-slate-300 dark:border-white/10 shadow-[0_8px_30px_rgb(0,0,0,0.12)] dark:shadow-[0_8px_30px_rgb(0,0,0,0.6)]'

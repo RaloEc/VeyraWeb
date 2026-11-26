@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { Loader2 } from 'lucide-react';
+import { Loader2, PanelLeft, Search, Sparkles, Timer, Play, Pause, RotateCcw } from 'lucide-react';
 import { toast } from 'sonner';
 import { NotesSidebar } from './NotesSidebar';
 import { NoteEditor } from './NoteEditor';
@@ -8,11 +8,15 @@ import { ReminderDetailView } from '../agenda/ReminderDetailView';
 import { CalendarView } from '../agenda/CalendarView';
 import { AgendaDashboardView } from '../agenda/dashboard/AgendaDashboardView';
 import { GlobalSearchModal } from '../agenda/dashboard/GlobalSearchModal';
+import { CreateWithVeyraAssistant } from '../../components/common/CreateWithVeyraAssistant';
+import { EventModal } from '../agenda/EventModal';
+import { ReminderModal } from '../reminders/ReminderModal';
 import { useTemplates } from './templates/useTemplates';
 import type { NoteTemplate } from './templates/templatesData';
 import { useNotes } from '../../hooks/useNotes';
 import { useReminders } from '../../hooks/useReminders';
 import { useEvents } from '../../hooks/useEvents';
+import { usePomodoro } from '../../context/PomodoroContext';
 import { cn } from '../../lib/utils';
 
 export interface NotesModuleProps {
@@ -46,8 +50,13 @@ export const NotesModule: React.FC<NotesModuleProps> = ({
 }) => {
   const localHook = useNotes(notesHook ? undefined : userId);
   const eventsHook = useEvents(userId);
+  const pomodoro = usePomodoro();
   const { allTemplates } = useTemplates(userId);
   const [isGlobalSearchOpen, setIsGlobalSearchOpen] = useState(false);
+  const [isQuickAIModalOpen, setIsQuickAIModalOpen] = useState(false);
+  const [isQuickAIExpanded, setIsQuickAIExpanded] = useState(false);
+  const [isQuickEventModalOpen, setIsQuickEventModalOpen] = useState(false);
+  const [isQuickReminderModalOpen, setIsQuickReminderModalOpen] = useState(false);
   const {
     folders,
     notes,
@@ -456,7 +465,9 @@ export const NotesModule: React.FC<NotesModuleProps> = ({
             selectedReminderId={selectedReminderId}
             onSelectReminder={handleSelectReminder}
             onOpenCalendar={handleOpenCalendar}
-            isCalendarOpen={isCalendarActive}
+            isCalendarOpen={isCalendarActive && !selectedNote && !selectedEvent && !selectedReminder}
+            onOpenDashboard={handleOpenDashboard}
+            isDashboardActive={!isCalendarActive && !selectedNote && !selectedEvent && !selectedReminder}
             sidebarSection={sidebarSection}
             onSectionChange={handleSectionChange}
             onCreateNote={handleCreateNoteInFolder}
@@ -494,117 +505,251 @@ export const NotesModule: React.FC<NotesModuleProps> = ({
         </div>
       </div>
 
-      {/* Main Center Stage: CalendarView, EventDetailView, ReminderDetailView, or NoteEditor */}
-      {selectedEventId && eventsHook.loading ? (
-        <div className="flex-1 flex flex-col items-center justify-center p-8 text-center text-veyra-muted bg-veyra-canvas">
-          <Loader2 className="w-6 h-6 text-accent animate-spin mb-3" />
-          <h3 className="text-sm font-medium text-veyra-text">Cargando evento...</h3>
+      {/* Main Center Stage with Permanent Clean Top Header */}
+      <div className="flex-1 min-w-0 flex flex-col h-full overflow-hidden bg-veyra-canvas">
+        <header className="h-12 border-b border-veyra-border px-4 md:px-6 flex items-center justify-between gap-3 shrink-0 bg-veyra-canvas/90 backdrop-blur-md z-20">
+          <div className="flex items-center gap-2 min-w-0">
+            {!isSidebarOpen && onToggleSidebar && (
+              <button
+                type="button"
+                onClick={onToggleSidebar}
+                title="Mostrar barra lateral (Ctrl+\)"
+                className="p-1.5 rounded-lg text-veyra-muted hover:text-veyra-text hover:bg-veyra-elevated transition-colors cursor-pointer"
+              >
+                <PanelLeft className="w-4 h-4 text-accent" />
+              </button>
+            )}
+          </div>
+
+          <div className="flex items-center gap-2 min-w-0 ml-auto">
+            {pomodoro.isActive && (selectedNoteId || selectedReminderId || selectedEventId || isCalendarActive) && (
+              <div
+                title={
+                  pomodoro.mode === 'work'
+                    ? 'Sesión de enfoque en curso'
+                    : 'Descanso Pomodoro en curso'
+                }
+                className={cn(
+                  'flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-xs animate-veyra-inline-reveal shrink-0',
+                  pomodoro.mode === 'work'
+                    ? 'bg-rose-500/10 border-rose-500/30 text-rose-400'
+                    : 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
+                )}
+              >
+                <Timer className={cn('w-3.5 h-3.5 shrink-0', pomodoro.isRunning && 'animate-pulse')} />
+                <span className="font-mono font-bold tabular-nums text-veyra-text">
+                  {pomodoro.formattedTime}
+                </span>
+                <button
+                  type="button"
+                  onClick={pomodoro.toggleRunning}
+                  title={pomodoro.isRunning ? 'Pausar Pomodoro' : 'Reanudar Pomodoro'}
+                  className="p-0.5 rounded-full hover:bg-white/10 transition-colors cursor-pointer"
+                >
+                  {pomodoro.isRunning ? (
+                    <Pause className="w-3 h-3 fill-current" />
+                  ) : (
+                    <Play className="w-3 h-3 fill-current" />
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={pomodoro.reset}
+                  title="Reiniciar Pomodoro"
+                  className="p-0.5 rounded-full text-veyra-muted hover:text-veyra-text hover:bg-white/10 transition-colors cursor-pointer"
+                >
+                  <RotateCcw className="w-3 h-3" />
+                </button>
+              </div>
+            )}
+
+            <button
+              type="button"
+              onClick={() => setIsQuickAIModalOpen(true)}
+              title="Crear con Veyra IA (Texto, Voz o Imagen)"
+              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-accent text-white hover:brightness-110 active:scale-[0.98] text-xs font-semibold shadow-[0_4px_14px_-2px_color-mix(in_srgb,var(--accent-primary)_50%,transparent),inset_0_1px_0_rgba(255,255,255,0.22)] ring-1 ring-white/15 transition-all duration-200 cursor-pointer shrink-0"
+            >
+              <Sparkles className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Crear con Veyra</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setIsGlobalSearchOpen(true)}
+              title="Buscar en todo Veyra (Ctrl+K)"
+              className="flex items-center justify-between gap-3 px-3 py-1.5 rounded-lg bg-veyra-elevated/50 border border-veyra-border/80 hover:bg-veyra-elevated hover:border-accent/40 text-xs text-veyra-muted hover:text-veyra-text transition-colors cursor-pointer sm:w-56 md:w-64"
+            >
+              <span className="flex items-center gap-2 min-w-0 truncate">
+                <Search className="w-3.5 h-3.5 text-accent shrink-0" />
+                <span className="truncate hidden sm:inline">Buscar en Veyra...</span>
+              </span>
+              <kbd className="hidden md:inline-flex items-center px-1.5 py-0.2 rounded bg-veyra-canvas border border-veyra-border text-[10px] font-mono text-veyra-subtle shrink-0">
+                Ctrl K
+              </kbd>
+            </button>
+          </div>
+        </header>
+
+        <div className="flex-1 min-h-0 flex overflow-hidden">
+          {selectedEventId && eventsHook.loading ? (
+            <div className="flex-1 flex flex-col items-center justify-center p-8 text-center text-veyra-muted bg-veyra-canvas">
+              <Loader2 className="w-6 h-6 text-accent animate-spin mb-3" />
+              <h3 className="text-sm font-medium text-veyra-text">Cargando evento...</h3>
+            </div>
+          ) : selectedEvent ? (
+            <div
+              key={`event-stage-${selectedEvent.id}`}
+              className="flex-1 min-w-0 flex h-full overflow-hidden veyra-stage-enter"
+            >
+              <EventDetailView
+                event={selectedEvent}
+                allNotes={allNotes}
+                folders={folders}
+                remindersHook={remindersHook}
+                eventsHook={eventsHook}
+                onSelectNote={handleSelectNote}
+                onCreateNoteForEvent={async (folderId, title) => {
+                  const newNote = await createNote(folderId || null, selectedEvent.id, title);
+                  if (newNote) {
+                    handleSelectNote(newNote.id);
+                  }
+                }}
+                onDeleteNote={handleDeleteNote}
+                onSelectReminder={handleSelectReminder}
+                onClose={() => handleSelectEvent(null)}
+                isSidebarOpen={true}
+                onToggleSidebar={onToggleSidebar}
+                currentUserId={userId}
+              />
+            </div>
+          ) : selectedReminderId && remindersHook?.loading ? (
+            <div className="flex-1 flex flex-col items-center justify-center p-8 text-center text-veyra-muted bg-veyra-canvas">
+              <Loader2 className="w-6 h-6 text-accent animate-spin mb-3" />
+              <h3 className="text-sm font-medium text-veyra-text">Cargando recordatorio...</h3>
+            </div>
+          ) : selectedReminder ? (
+            <div
+              key={`reminder-stage-${selectedReminder.id}`}
+              className="flex-1 min-w-0 flex h-full overflow-hidden veyra-stage-enter"
+            >
+              <ReminderDetailView
+                reminder={selectedReminder}
+                allNotes={allNotes}
+                eventsHook={eventsHook}
+                remindersHook={remindersHook}
+                onSelectNote={handleSelectNote}
+                onSelectEvent={handleSelectEvent}
+                onClose={() => handleSelectReminder(null)}
+                isSidebarOpen={true}
+                onToggleSidebar={onToggleSidebar}
+                currentUserId={userId}
+              />
+            </div>
+          ) : selectedNote ? (
+            <NoteEditor
+              note={selectedNote}
+              currentUserId={userId}
+              userEmail={userEmail}
+              userName={userName}
+              onSaveNote={saveNote}
+              onRestoreNote={restoreNote}
+              onCloseNote={() => handleSelectNote(null)}
+              isSidebarOpen={true}
+              onToggleSidebar={onToggleSidebar}
+              folders={folders}
+              events={eventsHook.events}
+              onSelectFolder={setSelectedFolderId}
+              onSelectEvent={handleSelectEvent}
+            />
+          ) : isCalendarActive ? (
+            <div key="calendar-stage" className="flex-1 min-w-0 flex h-full overflow-hidden veyra-stage-enter">
+              <CalendarView
+                eventsHook={eventsHook}
+                remindersHook={remindersHook}
+                allNotes={allNotes}
+                onSelectEvent={handleSelectEvent}
+                onSelectReminder={handleSelectReminder}
+                onClose={handleCloseCalendar}
+                onOpenDashboard={handleOpenDashboard}
+                isSidebarOpen={true}
+                onToggleSidebar={onToggleSidebar}
+                hideViewSwitcher={true}
+              />
+            </div>
+          ) : (
+            <div key="dashboard-stage" className="flex-1 min-w-0 flex h-full overflow-hidden veyra-stage-enter">
+              <AgendaDashboardView
+                eventsHook={eventsHook}
+                remindersHook={remindersHook}
+                allNotes={allNotes}
+                folders={folders}
+                userName={userName}
+                userEmail={userEmail}
+                currentUserId={userId}
+                templates={allTemplates}
+                onSelectEvent={handleSelectEvent}
+                onSelectReminder={handleSelectReminder}
+                onSelectNote={handleSelectNote}
+                onSelectFolder={handleSelectFolderFromDashboard}
+                onCreateFromTemplate={handleCreateNoteFromTemplate}
+                onOpenGlobalSearch={() => setIsGlobalSearchOpen(true)}
+                onCreateNote={async (folderId, eventId, title, contentHtml) => {
+                  const newNote = await createNote(folderId || null, eventId || null, title, contentHtml);
+                  return newNote || null;
+                }}
+                onOpenFullCalendar={handleOpenCalendar}
+                isSidebarOpen={isSidebarOpen}
+                onToggleSidebar={onToggleSidebar}
+              />
+            </div>
+          )}
         </div>
-      ) : selectedEvent ? (
-        <div
-          key={`event-stage-${selectedEvent.id}`}
-          className="flex-1 min-w-0 flex h-full overflow-hidden veyra-stage-enter"
+      </div>
+
+      <EventModal
+        isOpen={isQuickEventModalOpen}
+        onClose={() => setIsQuickEventModalOpen(false)}
+        onSave={async (payload) => await eventsHook?.createEvent(payload)}
+      />
+
+      <ReminderModal
+        isOpen={isQuickReminderModalOpen}
+        onClose={() => setIsQuickReminderModalOpen(false)}
+        events={eventsHook.events}
+        onSave={async (payload) => await remindersHook?.createReminder(payload)}
+      />
+
+      {isQuickAIModalOpen && (
+        <aside
+          aria-label="Crear con Veyra"
+          className={`fixed bottom-4 right-4 left-4 sm:left-auto z-50 sm:w-full max-h-[calc(100vh-2rem)] rounded-[24px] bg-veyra-card border border-veyra-border shadow-2xl p-5 flex flex-col animate-in fade-in slide-in-from-bottom-4 duration-200 transition-[max-width] ease-[cubic-bezier(0.16,1,0.3,1)] ${
+            isQuickAIExpanded ? 'sm:max-w-[560px]' : 'sm:max-w-[440px]'
+          }`}
         >
-          <EventDetailView
-            event={selectedEvent}
-            allNotes={allNotes}
-            folders={folders}
-            remindersHook={remindersHook}
-            eventsHook={eventsHook}
-            onSelectNote={handleSelectNote}
-            onCreateNoteForEvent={async (folderId, title) => {
-              const newNote = await createNote(folderId || null, selectedEvent.id, title);
-              if (newNote) {
-                handleSelectNote(newNote.id);
+          <CreateWithVeyraAssistant
+            variant="sidebar"
+            onClose={() => {
+              setIsQuickAIModalOpen(false);
+              setIsQuickAIExpanded(false);
+            }}
+            onHasProposalChange={setIsQuickAIExpanded}
+            onManualReminder={() => setIsQuickReminderModalOpen(true)}
+            onManualEvent={() => setIsQuickEventModalOpen(true)}
+            onManualNote={async () => {
+              const newNote = await createNote(null, null, 'Nota rápida');
+              if (newNote) handleSelectNote(newNote.id);
+            }}
+            onSaveReminder={async (payload) => await remindersHook?.createReminder(payload)}
+            onSaveEvent={async (payload) => await eventsHook?.createEvent(payload)}
+            onSaveNote={async (title, contentHtml) => {
+              const created = await createNote(null, null, title, contentHtml);
+              if (created && created.id) {
+                handleSelectNote(created.id);
               }
             }}
-            onDeleteNote={handleDeleteNote}
-            onSelectReminder={handleSelectReminder}
-            onClose={() => handleSelectEvent(null)}
-            isSidebarOpen={isSidebarOpen}
-            onToggleSidebar={onToggleSidebar}
-            currentUserId={userId}
+            autoFocus={true}
           />
-        </div>
-      ) : selectedReminderId && remindersHook?.loading ? (
-        <div className="flex-1 flex flex-col items-center justify-center p-8 text-center text-veyra-muted bg-veyra-canvas">
-          <Loader2 className="w-6 h-6 text-accent animate-spin mb-3" />
-          <h3 className="text-sm font-medium text-veyra-text">Cargando recordatorio...</h3>
-        </div>
-      ) : selectedReminder ? (
-        <div
-          key={`reminder-stage-${selectedReminder.id}`}
-          className="flex-1 min-w-0 flex h-full overflow-hidden veyra-stage-enter"
-        >
-          <ReminderDetailView
-            reminder={selectedReminder}
-            allNotes={allNotes}
-            eventsHook={eventsHook}
-            remindersHook={remindersHook}
-            onSelectNote={handleSelectNote}
-            onSelectEvent={handleSelectEvent}
-            onClose={() => handleSelectReminder(null)}
-            isSidebarOpen={isSidebarOpen}
-            onToggleSidebar={onToggleSidebar}
-            currentUserId={userId}
-          />
-        </div>
-      ) : selectedNote ? (
-        <NoteEditor
-          note={selectedNote}
-          currentUserId={userId}
-          userEmail={userEmail}
-          userName={userName}
-          onSaveNote={saveNote}
-          onRestoreNote={restoreNote}
-          onCloseNote={() => handleSelectNote(null)}
-          isSidebarOpen={isSidebarOpen}
-          onToggleSidebar={onToggleSidebar}
-          folders={folders}
-          events={eventsHook.events}
-          onSelectFolder={setSelectedFolderId}
-          onSelectEvent={handleSelectEvent}
-        />
-      ) : isCalendarActive ? (
-        <div key="calendar-stage" className="flex-1 min-w-0 flex h-full overflow-hidden veyra-stage-enter">
-          <CalendarView
-            eventsHook={eventsHook}
-            remindersHook={remindersHook}
-            allNotes={allNotes}
-            onSelectEvent={handleSelectEvent}
-            onSelectReminder={handleSelectReminder}
-            onClose={handleCloseCalendar}
-            onOpenDashboard={handleOpenDashboard}
-            isSidebarOpen={isSidebarOpen}
-            onToggleSidebar={onToggleSidebar}
-          />
-        </div>
-      ) : (
-        <div key="dashboard-stage" className="flex-1 min-w-0 flex h-full overflow-hidden veyra-stage-enter">
-          <AgendaDashboardView
-            eventsHook={eventsHook}
-            remindersHook={remindersHook}
-            allNotes={allNotes}
-            folders={folders}
-            userName={userName}
-            userEmail={userEmail}
-            currentUserId={userId}
-            templates={allTemplates}
-            onSelectEvent={handleSelectEvent}
-            onSelectReminder={handleSelectReminder}
-            onSelectNote={handleSelectNote}
-            onSelectFolder={handleSelectFolderFromDashboard}
-            onCreateFromTemplate={handleCreateNoteFromTemplate}
-            onOpenGlobalSearch={() => setIsGlobalSearchOpen(true)}
-            onCreateNote={async (folderId, eventId, title, contentHtml) => {
-              const newNote = await createNote(folderId || null, eventId || null, title, contentHtml);
-              return newNote || null;
-            }}
-            onOpenFullCalendar={handleOpenCalendar}
-            isSidebarOpen={isSidebarOpen}
-            onToggleSidebar={onToggleSidebar}
-          />
-        </div>
+        </aside>
       )}
 
       <GlobalSearchModal
@@ -626,6 +771,4 @@ export const NotesModule: React.FC<NotesModuleProps> = ({
         }}
         onOpenCalendar={handleOpenCalendar}
       />
-    </div>
-  );
-};
+    </di

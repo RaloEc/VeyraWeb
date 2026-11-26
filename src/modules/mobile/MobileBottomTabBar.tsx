@@ -278,16 +278,16 @@ export const MobileBottomTabBar: React.FC<MobileBottomTabBarProps> = ({
               </button>
 
               {/* 3. Crear (Center Hero) */}
-              <div className="flex flex-col items-center justify-center -mt-4">
+              <div className="flex flex-col items-center justify-center -mt-5">
                 <button
                   type="button"
                   onClick={() => onChangeMorph('create')}
                   aria-label="Crear con Veyra"
-                  className="w-12 h-12 rounded-full bg-accent text-white flex items-center justify-center shadow-lg hover:scale-105 active:scale-95 transition-transform duration-200 cursor-pointer"
+                  className="w-[54px] h-[54px] rounded-full bg-accent text-white flex items-center justify-center ring-4 ring-veyra-card shadow-[0_8px_22px_-4px_color-mix(in_srgb,var(--accent-primary)_65%,transparent),inset_0_1px_0_rgba(255,255,255,0.28)] hover:brightness-110 hover:scale-105 active:scale-95 transition-all duration-200 cursor-pointer"
                 >
-                  <Plus className="w-6 h-6" />
+                  <Plus className="w-6 h-6 stroke-[2.5]" />
                 </button>
-                <span className="text-[10px] leading-none font-medium text-veyra-muted mt-1">
+                <span className="text-[10.5px] leading-none font-semibold text-veyra-text mt-1">
                   Crear
                 </span>
               </div>

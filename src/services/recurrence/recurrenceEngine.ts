@@ -1,10 +1,10 @@
 export type RecurrenceRule =
   | { type: 'none' }
-  | { type: 'daily'; interval?: number }
-  | { type: 'weekly'; interval?: number; by_weekday?: number[] } // 0=Dom ... 6=Sáb
-  | { type: 'monthly'; interval?: number; by_monthday?: number[] }
-  | { type: 'yearly'; interval?: number; by_month?: number; by_monthday?: number; feb29_policy?: 'feb28' | 'mar01' | 'skip' }
-  | { type: 'weekdays' }; // lunes a viernes
+  | { type: 'daily'; interval?: number; until?: string }
+  | { type: 'weekly'; interval?: number; by_weekday?: number[]; until?: string } // 0=Dom ... 6=Sáb
+  | { type: 'monthly'; interval?: number; by_monthday?: number[]; until?: string }
+  | { type: 'yearly'; interval?: number; by_month?: number; by_monthday?: number; feb29_policy?: 'feb28' | 'mar01' | 'skip'; until?: string }
+  | { type: 'weekdays'; until?: string }; // lunes a viernes
 
 export interface Occurrence {
   eventId: string;
@@ -199,12 +199,18 @@ export function parseRecurrenceRule(raw: unknown): RecurrenceRule {
 
   if (!parsed || typeof parsed !== 'object') return { type: 'none' };
 
+  const until =
+    typeof parsed.until === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(parsed.until.trim())
+      ? parsed.until.trim()
+      : undefined;
+
   const type = parsed.type;
   switch (type) {
     case 'daily':
       return {
         type: 'daily',
         interval: Math.max(1, Number(parsed.interval) || 1),
+        ...(until ? { until } : {}),
       };
 
     case 'weekly': {
@@ -216,6 +222,7 @@ export function parseRecurrenceRule(raw: unknown): RecurrenceRule {
         type: 'weekly',
         interval: Math.max(1, Number(parsed.interval) || 1),
         by_weekday: by_weekday && by_weekday.length > 0 ? Array.from(new Set(by_weekday)).sort() : undefined,
+        ...(until ? { until } : {}),
       };
     }
 
@@ -228,6 +235,7 @@ export function parseRecurrenceRule(raw: unknown): RecurrenceRule {
         type: 'monthly',
         interval: Math.max(1, Number(parsed.interval) || 1),
         by_monthday: by_monthday && by_monthday.length > 0 ? Array.from(new Set(by_monthday)).sort() : undefined,
+        ...(until ? { until } : {}),
       };
     }
 
@@ -246,11 +254,12 @@ export function parseRecurrenceRule(raw: unknown): RecurrenceRule {
         by_month,
         by_monthday,
         feb29_policy,
+        ...(until ? { until } : {}),
       };
     }
 
     case 'weekdays':
-      return { type: 'weekdays' };
+      return { type: 'weekdays', ...(until ? { until } : {}) };
 
     default:
       return { type: 'none' };
@@ -306,8 +315,12 @@ export function expandOccurrences(
   const toLimitMs = toDate.getTime();
 
   // Función auxiliar para emitir una ocurrencia dado un año, mes y día
+  const untilDate = 'until' in rule ? rule.until : undefined;
   const tryEmitOccurrence = (year: number, month: number, day: number) => {
     const occDateStr = formatYmd(year, month, day);
+    if (untilDate && occDateStr > untilDate) {
+      return;
+    }
     let startMs: number;
     let endMs: number;
 

@@ -11,6 +11,7 @@ import { OnboardingModal } from './components/common/OnboardingModal';
 import { ErrorBoundary } from './components/common/ErrorBoundary';
 import { ThemeProvider } from './theme/ThemeProvider';
 import { UserSettingsProvider } from './context/UserSettingsContext';
+import { PomodoroProvider } from './context/PomodoroContext';
 import { Toaster } from 'sonner';
 
 function AppContent() {
@@ -146,7 +147,9 @@ export function App() {
   return (
     <ThemeProvider>
       <UserSettingsProvider>
-        <AppContent />
+        <PomodoroProvider>
+          <AppContent />
+        </PomodoroProvider>
         <Toaster
           richColors={false}
           closeButton

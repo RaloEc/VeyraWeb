@@ -851,7 +851,7 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
               <div>
                 <h4 className="text-sm font-semibold text-veyra-text">Estilo e Interfaz</h4>
                 <p className="text-[11px] text-veyra-muted mt-0.5">
-                  El color de acento se sincroniza en tiempo real en todos tus dispositivos conectados (Web y Móvil).
+                  El tema claro/oscuro es independiente en este navegador; el color de acento se sincroniza en tiempo real entre Web y Móvil.
                 </p>
               </div>
 

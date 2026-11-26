@@ -104,6 +104,7 @@ export const UserSettingsProvider: React.FC<{ children: React.ReactNode }> = ({ 
       const legacyNoteFormat = localStorage.getItem('veyra_note_page_format') as NotePageFormat | null;
       const legacySort = localStorage.getItem('veyra_explorer_sort_mode') as ExplorerSortMode | null;
       const legacyPaper = localStorage.getItem('veyra_note_paper_mode') as 'auto' | 'light' | null;
+      const webThemeMode = localStorage.getItem('veyra_web_theme_mode') as 'dark' | 'light' | 'system' | null;
 
       return {
         ...DEFAULT_USER_SETTINGS,
@@ -111,6 +112,9 @@ export const UserSettingsProvider: React.FC<{ children: React.ReactNode }> = ({ 
         ...(legacySort ? { explorerSortMode: legacySort } : {}),
         ...(legacyPaper ? { notePaperMode: legacyPaper } : {}),
         ...parsed,
+        ...(webThemeMode === 'dark' || webThemeMode === 'light' || webThemeMode === 'system'
+          ? { themeMode: webThemeMode }
+          : {}),
         defaultControlLevel: normalizeControlLevel(parsed.defaultControlLevel),
       };
     } catch {
@@ -147,12 +151,7 @@ export const UserSettingsProvider: React.FC<{ children: React.ReactNode }> = ({ 
   useEffect(() => {
     setAmoledEnabled(Boolean(settings.amoledEnabled));
     setNotePaperMode(settings.notePaperMode);
-    if (settings.themeMode === 'system') {
-      const prefersDark = typeof window !== 'undefined' && window.matchMedia('(prefers-color-scheme: dark)').matches;
-      setMode(prefersDark ? 'dark' : 'light');
-    } else {
-      setMode(settings.themeMode);
-    }
+    setMode(settings.themeMode);
   }, [settings.amoledEnabled, settings.notePaperMode, settings.themeMode, setAmoledEnabled, setNotePaperMode, setMode]);
 
   // 2. Cargar ajustes desde Supabase al autenticarse y suscribirse a Realtime
@@ -193,10 +192,6 @@ export const UserSettingsProvider: React.FC<{ children: React.ReactNode }> = ({ 
             remoteSettings.notePaperMode === 'light' || remoteSettings.notePaperMode === 'auto'
               ? remoteSettings.notePaperMode
               : prev.notePaperMode;
-          const resolvedThemeMode: 'dark' | 'light' | 'system' =
-            remoteSettings.theme === 'dark' || remoteSettings.theme === 'light' || remoteSettings.theme === 'system'
-              ? remoteSettings.theme
-              : prev.themeMode;
           const merged: GlobalUserSettings = {
             ...prev,
             ...remoteSettings,
@@ -205,7 +200,8 @@ export const UserSettingsProvider: React.FC<{ children: React.ReactNode }> = ({ 
               profileRow?.default_control_level || remoteSettings.defaultControlLevel || prev.defaultControlLevel
             ),
             accentTheme: remoteSettings.accentTheme || prev.accentTheme,
-            themeMode: resolvedThemeMode,
+            // themeMode es independiente por dispositivo (Web vs Móvil)
+            themeMode: prev.themeMode,
             amoledEnabled: Boolean(resolvedAmoled),
             notePaperMode: resolvedNotePaperMode,
           };
@@ -221,14 +217,10 @@ export const UserSettingsProvider: React.FC<{ children: React.ReactNode }> = ({ 
           })
           .on('broadcast', { event: 'SETTINGS_CHANGED' }, ({ payload }) => {
             if (payload?.settings) {
+              const { theme: _ignoredMobileTheme, ...otherRemoteSettings } = payload.settings;
               setSettings((s) => ({
                 ...s,
-                ...payload.settings,
-                ...(payload.settings.theme === 'dark' ||
-                payload.settings.theme === 'light' ||
-                payload.settings.theme === 'system'
-                  ? { themeMode: payload.settings.theme }
-                  : {}),
+                ...otherRemoteSettings,
                 ...(payload.settings.notePaperMode === 'light' || payload.settings.notePaperMode === 'auto'
                   ? { notePaperMode: payload.settings.notePaperMode }
                   : {}),
@@ -301,7 +293,7 @@ export const UserSettingsProvider: React.FC<{ children: React.ReactNode }> = ({ 
         userName: newSettings.userName,
         defaultControlLevel: newSettings.defaultControlLevel,
         accentTheme: newSettings.accentTheme,
-        theme: newSettings.themeMode,
+        // No sobrescribir `theme` para mantener el modo claro/oscuro independiente entre Web y Móvil
         amoledEnabled: newSettings.amoledEnabled,
         soundSettings: newSettings.soundSettings,
         soundAlertsEnabled: newSettings.soundAlertsEnabled,
@@ -328,15 +320,14 @@ export const UserSettingsProvider: React.FC<{ children: React.ReactNode }> = ({ 
         },
       });
 
-      // 2. Reflejar en la tabla profiles para consultas relacionales
-      await supabase.from('profiles').upsert(
-        {
-          id: resolvedUserId,
+      // 2. Reflejar en la tabla profiles usando UPDATE por id (evita 403 en INSERT/upsert)
+      await supabase
+        .from('profiles')
+        .update({
           default_control_level: newSettings.defaultControlLevel,
           updated_at: new Date().toISOString(),
-        },
-        { onConflict: 'id' }
-      );
+        })
+        .eq('id', user.id);
 
       // 3. Broadcast instantáneo por WebSocket hacia la App Móvil
       supabase
@@ -378,12 +369,9 @@ export const UserSettingsProvider: React.FC<{ children: React.ReactNode }> = ({ 
       if (key === 'accentTheme') {
         setAccentTheme(value as AccentTheme);
       } else if (key === 'themeMode') {
-        if (value === 'system') {
-          const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-          setMode(prefersDark ? 'dark' : 'light');
-        } else {
-          setMode(value as 'dark' | 'light');
-        }
+        setMode(value as 'dark' | 'light' | 'system');
+        // El tema claro/oscuro es local a la Web y no se sincroniza con Android
+        return;
       } else if (key === 'amoledEnabled') {
         setAmoledEnabled(Boolean(value));
       } else if (key === 'notePaperMode') {
@@ -404,12 +392,7 @@ export const UserSettingsProvider: React.FC<{ children: React.ReactNode }> = ({ 
         setAccentTheme(partial.accentTheme);
       }
       if (partial.themeMode) {
-        if (partial.themeMode === 'system') {
-          const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-          setMode(prefersDark ? 'dark' : 'light');
-        } else {
-          setMode(partial.themeMode);
-        }
+        setMode(partial.themeMode);
       }
       if (typeof partial.amoledEnabled === 'boolean') {
         setAmoledEnabled(partial.amoledEnabled);
@@ -418,7 +401,10 @@ export const UserSettingsProvider: React.FC<{ children: React.ReactNode }> = ({ 
         setNotePaperMode(partial.notePaperMode);
       }
 
-      await saveSettingsToCloud(next);
+      const hasCloudKeys = Object.keys(partial).some((k) => k !== 'themeMode');
+      if (hasCloudKeys) {
+        await saveSettingsToCloud(next);
+      }
     },
     [settings, saveSettingsToCloud, setAccentTheme, setMode, setAmoledEnabled, setNotePaperMode]
   );
