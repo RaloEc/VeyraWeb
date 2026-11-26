@@ -771,4 +771,6 @@ export const NotesModule: React.FC<NotesModuleProps> = ({
         }}
         onOpenCalendar={handleOpenCalendar}
       />
-    </di
+    </div>
+  );
+};
