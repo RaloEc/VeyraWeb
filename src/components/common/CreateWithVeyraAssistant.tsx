@@ -20,7 +20,6 @@ import {
   parseQuickAddWithAI,
   fileToBase64Attachment,
   type QuickAddAttachment,
-  type QuickAddProposal,
   type QuickAddProposalItem,
 } from '../../lib/ai/ai-quick-add-service';
 import { cn } from '../../lib/utils';
@@ -124,8 +123,8 @@ function buildEventRecurrenceRuleJson(
     recurrence === 'weekly'
       ? { type: 'weekly', interval: 1, by_weekday: byWeekday }
       : recurrence === 'weekdays'
-      ? { type: 'weekdays' }
-      : { type: recurrence, interval: 1 };
+        ? { type: 'weekdays' }
+        : { type: recurrence, interval: 1 };
 
   if (cleanUntil) {
     ruleObj.until = cleanUntil;
@@ -411,12 +410,12 @@ export const CreateWithVeyraAssistant: React.FC<CreateWithVeyraAssistantProps> =
       const endMs = item.data.isAllDay
         ? parseLocalDateTimeMs(item.data.endDate || item.data.startDate, '23:59')
         : Math.max(
-            startMs + 30 * 60000,
-            parseLocalDateTimeMs(
-              item.data.endDate || item.data.startDate,
-              item.data.endTime || '10:00'
-            )
-          );
+          startMs + 30 * 60000,
+          parseLocalDateTimeMs(
+            item.data.endDate || item.data.startDate,
+            item.data.endTime || '10:00'
+          )
+        );
       const recurrenceRule = buildEventRecurrenceRuleJson(
         item.data.recurrence,
         startMs,
@@ -474,10 +473,10 @@ export const CreateWithVeyraAssistant: React.FC<CreateWithVeyraAssistantProps> =
       prev.map((entry) =>
         entry.id === id
           ? {
-              ...entry,
-              item: updater(entry.item),
-              ...(notePlainText !== undefined ? { notePlainText } : {}),
-            }
+            ...entry,
+            item: updater(entry.item),
+            ...(notePlainText !== undefined ? { notePlainText } : {}),
+          }
           : entry
       )
     );
@@ -591,8 +590,8 @@ export const CreateWithVeyraAssistant: React.FC<CreateWithVeyraAssistantProps> =
           only.action === 'create_reminder'
             ? 'Recordatorio creado'
             : only.action === 'create_event'
-            ? 'Evento creado'
-            : 'Nota creada';
+              ? 'Evento creado'
+              : 'Nota creada';
         toast.success(label);
       }
       onClose();
@@ -760,10 +759,10 @@ export const CreateWithVeyraAssistant: React.FC<CreateWithVeyraAssistantProps> =
               {proposalEntries.length > 1
                 ? `${selectedEntries.length} de ${proposalEntries.length} seleccionados`
                 : proposalEntries[0].item.action === 'create_reminder'
-                ? 'Recordatorio detectado'
-                : proposalEntries[0].item.action === 'create_event'
-                ? 'Evento detectado'
-                : 'Nota detectada'}
+                  ? 'Recordatorio detectado'
+                  : proposalEntries[0].item.action === 'create_event'
+                    ? 'Evento detectado'
+                    : 'Nota detectada'}
             </span>
             {proposalEntries.length > 1 && (
               <button
@@ -796,20 +795,20 @@ export const CreateWithVeyraAssistant: React.FC<CreateWithVeyraAssistantProps> =
                   item.action === 'create_event'
                     ? { label: 'Evento', cls: 'bg-blue-500/15 text-blue-300 border-blue-500/30' }
                     : item.action === 'create_reminder'
-                    ? { label: 'Recordatorio', cls: 'bg-rose-500/15 text-rose-300 border-rose-500/30' }
-                    : { label: 'Nota', cls: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30' };
+                      ? { label: 'Recordatorio', cls: 'bg-rose-500/15 text-rose-300 border-rose-500/30' }
+                      : { label: 'Nota', cls: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30' };
 
                 const recurrenceLabel =
                   item.action === 'create_event' && item.data.recurrence && item.data.recurrence !== 'none'
                     ? item.data.recurrence === 'weekly'
                       ? 'Semanal'
                       : item.data.recurrence === 'weekdays'
-                      ? 'Lun-Vie'
-                      : item.data.recurrence === 'daily'
-                      ? 'Diario'
-                      : item.data.recurrence === 'monthly'
-                      ? 'Mensual'
-                      : 'Anual'
+                        ? 'Lun-Vie'
+                        : item.data.recurrence === 'daily'
+                          ? 'Diario'
+                          : item.data.recurrence === 'monthly'
+                            ? 'Mensual'
+                            : 'Anual'
                     : null;
 
                 const weekdayShort =
@@ -819,12 +818,11 @@ export const CreateWithVeyraAssistant: React.FC<CreateWithVeyraAssistantProps> =
                   item.action === 'create_reminder'
                     ? `${item.data.date} • ${item.data.time || '09:00'}`
                     : item.action === 'create_event'
-                    ? `${item.data.startDate} • ${
-                        item.data.isAllDay
-                          ? 'Todo el día'
-                          : `${item.data.startTime || '09:00'} - ${item.data.endTime || '10:00'}`
+                      ? `${item.data.startDate} • ${item.data.isAllDay
+                        ? 'Todo el día'
+                        : `${item.data.startTime || '09:00'} - ${item.data.endTime || '10:00'}`
                       }${recurrenceLabel ? ` • ${recurrenceLabel}` : ''}`
-                    : 'Nota';
+                      : 'Nota';
 
                 return (
                   <div
@@ -838,8 +836,8 @@ export const CreateWithVeyraAssistant: React.FC<CreateWithVeyraAssistantProps> =
                           ? 'bg-veyra-canvas/55 border-veyra-border/70 hover:border-accent/40'
                           : 'bg-veyra-canvas/25 border-veyra-border/40 opacity-55'
                         : selected
-                        ? 'bg-veyra-card border-veyra-border hover:border-accent/40'
-                        : 'bg-veyra-card/40 border-veyra-border/50 opacity-55'
+                          ? 'bg-veyra-card border-veyra-border hover:border-accent/40'
+                          : 'bg-veyra-card/40 border-veyra-border/50 opacity-55'
                     )}
                   >
                     {/* Item Row Header */}
@@ -921,94 +919,94 @@ export const CreateWithVeyraAssistant: React.FC<CreateWithVeyraAssistantProps> =
                       </button>
                     </div>
 
-                  {/* Smooth Collapsible Inline Editor */}
-                  <div
-                    className={cn(
-                      'grid transition-[grid-template-rows,opacity] duration-200 ease-out',
-                      isExpanded ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'
-                    )}
-                  >
-                    <div className="overflow-hidden">
-                      <div className="px-2.5 pb-2.5 pt-1.5 border-t border-veyra-border/60 space-y-2 text-xs">
-                        <div>
-                          <label className="block text-[10px] text-veyra-muted mb-0.5">
-                            Título
-                          </label>
-                          <input
-                            type="text"
-                            value={item.data.title}
-                            onChange={(e) => {
-                              const val = e.target.value;
-                              updateEntryItem(id, (curr) => ({
-                                ...curr,
-                                data: { ...curr.data, title: val },
-                              } as QuickAddProposalItem));
-                            }}
-                            className="w-full px-2.5 py-1.5 rounded-lg bg-veyra-canvas/80 border border-veyra-border text-xs text-veyra-text focus:outline-none focus:border-accent/60"
-                          />
-                        </div>
+                    {/* Smooth Collapsible Inline Editor */}
+                    <div
+                      className={cn(
+                        'grid transition-[grid-template-rows,opacity] duration-200 ease-out',
+                        isExpanded ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'
+                      )}
+                    >
+                      <div className="overflow-hidden">
+                        <div className="px-2.5 pb-2.5 pt-1.5 border-t border-veyra-border/60 space-y-2 text-xs">
+                          <div>
+                            <label className="block text-[10px] text-veyra-muted mb-0.5">
+                              Título
+                            </label>
+                            <input
+                              type="text"
+                              value={item.data.title}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                updateEntryItem(id, (curr) => ({
+                                  ...curr,
+                                  data: { ...curr.data, title: val },
+                                } as QuickAddProposalItem));
+                              }}
+                              className="w-full px-2.5 py-1.5 rounded-lg bg-veyra-canvas/80 border border-veyra-border text-xs text-veyra-text focus:outline-none focus:border-accent/60"
+                            />
+                          </div>
 
-                        {item.action === 'create_reminder' && (
-                          <>
-                            <div className="grid grid-cols-2 gap-2">
-                              <div>
-                                <label className="block text-[10px] text-veyra-muted mb-0.5">
-                                  Fecha
-                                </label>
+                          {item.action === 'create_reminder' && (
+                            <>
+                              <div className="grid grid-cols-2 gap-2">
+                                <div>
+                                  <label className="block text-[10px] text-veyra-muted mb-0.5">
+                                    Fecha
+                                  </label>
+                                  <input
+                                    type="date"
+                                    value={item.data.date}
+                                    onChange={(e) => {
+                                      const val = e.target.value;
+                                      updateEntryItem(id, (curr) =>
+                                        curr.action === 'create_reminder'
+                                          ? { ...curr, data: { ...curr.data, date: val } }
+                                          : curr
+                                      );
+                                    }}
+                                    className="w-full px-2 py-1.5 rounded-lg bg-veyra-canvas/80 border border-veyra-border text-xs text-veyra-text focus:outline-none focus:border-accent/60"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="block text-[10px] text-veyra-muted mb-0.5">
+                                    Hora
+                                  </label>
+                                  <input
+                                    type="time"
+                                    value={item.data.time || '09:00'}
+                                    onChange={(e) => {
+                                      const val = e.target.value;
+                                      updateEntryItem(id, (curr) =>
+                                        curr.action === 'create_reminder'
+                                          ? { ...curr, data: { ...curr.data, time: val } }
+                                          : curr
+                                      );
+                                    }}
+                                    className="w-full px-2 py-1.5 rounded-lg bg-veyra-canvas/80 border border-veyra-border text-xs text-veyra-text focus:outline-none focus:border-accent/60"
+                                  />
+                                </div>
+                              </div>
+                              <div className="flex items-center justify-between gap-2">
                                 <input
-                                  type="date"
-                                  value={item.data.date}
+                                  type="text"
+                                  placeholder="Descripción (opcional)"
+                                  value={item.data.description || ''}
                                   onChange={(e) => {
                                     const val = e.target.value;
                                     updateEntryItem(id, (curr) =>
                                       curr.action === 'create_reminder'
-                                        ? { ...curr, data: { ...curr.data, date: val } }
+                                        ? { ...curr, data: { ...curr.data, description: val } }
                                         : curr
                                     );
                                   }}
-                                  className="w-full px-2 py-1.5 rounded-lg bg-veyra-canvas/80 border border-veyra-border text-xs text-veyra-text focus:outline-none focus:border-accent/60"
+                                  className="flex-1 px-2.5 py-1.5 rounded-lg bg-veyra-canvas/80 border border-veyra-border text-xs text-veyra-text placeholder:text-veyra-subtle focus:outline-none focus:border-accent/60"
                                 />
-                              </div>
-                              <div>
-                                <label className="block text-[10px] text-veyra-muted mb-0.5">
-                                  Hora
-                                </label>
-                                <input
-                                  type="time"
-                                  value={item.data.time || '09:00'}
-                                  onChange={(e) => {
-                                    const val = e.target.value;
+                                <button
+                                  type="button"
+                                  onClick={() =>
                                     updateEntryItem(id, (curr) =>
                                       curr.action === 'create_reminder'
-                                        ? { ...curr, data: { ...curr.data, time: val } }
-                                        : curr
-                                    );
-                                  }}
-                                  className="w-full px-2 py-1.5 rounded-lg bg-veyra-canvas/80 border border-veyra-border text-xs text-veyra-text focus:outline-none focus:border-accent/60"
-                                />
-                              </div>
-                            </div>
-                            <div className="flex items-center justify-between gap-2">
-                              <input
-                                type="text"
-                                placeholder="Descripción (opcional)"
-                                value={item.data.description || ''}
-                                onChange={(e) => {
-                                  const val = e.target.value;
-                                  updateEntryItem(id, (curr) =>
-                                    curr.action === 'create_reminder'
-                                      ? { ...curr, data: { ...curr.data, description: val } }
-                                      : curr
-                                  );
-                                }}
-                                className="flex-1 px-2.5 py-1.5 rounded-lg bg-veyra-canvas/80 border border-veyra-border text-xs text-veyra-text placeholder:text-veyra-subtle focus:outline-none focus:border-accent/60"
-                              />
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  updateEntryItem(id, (curr) =>
-                                    curr.action === 'create_reminder'
-                                      ? {
+                                        ? {
                                           ...curr,
                                           data: {
                                             ...curr.data,
@@ -1018,37 +1016,37 @@ export const CreateWithVeyraAssistant: React.FC<CreateWithVeyraAssistantProps> =
                                                 : 'critical',
                                           },
                                         }
-                                      : curr
-                                  )
-                                }
-                                className={cn(
-                                  'px-2.5 py-1.5 rounded-lg border text-[11px] font-semibold cursor-pointer transition-colors shrink-0',
-                                  item.data.priority === 'critical'
-                                    ? 'bg-rose-500/20 border-rose-500/40 text-rose-300'
-                                    : 'bg-veyra-canvas/80 border-veyra-border text-veyra-muted hover:text-veyra-text'
-                                )}
-                              >
-                                {item.data.priority === 'critical' ? 'Crítico' : 'Normal'}
-                              </button>
-                            </div>
-                          </>
-                        )}
+                                        : curr
+                                    )
+                                  }
+                                  className={cn(
+                                    'px-2.5 py-1.5 rounded-lg border text-[11px] font-semibold cursor-pointer transition-colors shrink-0',
+                                    item.data.priority === 'critical'
+                                      ? 'bg-rose-500/20 border-rose-500/40 text-rose-300'
+                                      : 'bg-veyra-canvas/80 border-veyra-border text-veyra-muted hover:text-veyra-text'
+                                  )}
+                                >
+                                  {item.data.priority === 'critical' ? 'Crítico' : 'Normal'}
+                                </button>
+                              </div>
+                            </>
+                          )}
 
-                        {item.action === 'create_event' && (
-                          <>
-                            <div className="grid grid-cols-2 gap-2">
-                              <div>
-                                <label className="block text-[10px] text-veyra-muted mb-0.5">
-                                  Fecha inicio
-                                </label>
-                                <input
-                                  type="date"
-                                  value={item.data.startDate}
-                                  onChange={(e) => {
-                                    const val = e.target.value;
-                                    updateEntryItem(id, (curr) =>
-                                      curr.action === 'create_event'
-                                        ? {
+                          {item.action === 'create_event' && (
+                            <>
+                              <div className="grid grid-cols-2 gap-2">
+                                <div>
+                                  <label className="block text-[10px] text-veyra-muted mb-0.5">
+                                    Fecha inicio
+                                  </label>
+                                  <input
+                                    type="date"
+                                    value={item.data.startDate}
+                                    onChange={(e) => {
+                                      const val = e.target.value;
+                                      updateEntryItem(id, (curr) =>
+                                        curr.action === 'create_event'
+                                          ? {
                                             ...curr,
                                             data: {
                                               ...curr.data,
@@ -1056,65 +1054,6 @@ export const CreateWithVeyraAssistant: React.FC<CreateWithVeyraAssistantProps> =
                                               endDate: curr.data.endDate || val,
                                             },
                                           }
-                                        : curr
-                                    );
-                                  }}
-                                  className="w-full px-2 py-1.5 rounded-lg bg-veyra-canvas/80 border border-veyra-border text-xs text-veyra-text focus:outline-none focus:border-accent/60"
-                                />
-                              </div>
-                              <div>
-                                <label className="block text-[10px] text-veyra-muted mb-0.5">
-                                  Fecha fin
-                                </label>
-                                <input
-                                  type="date"
-                                  value={item.data.endDate || item.data.startDate}
-                                  onChange={(e) => {
-                                    const val = e.target.value;
-                                    updateEntryItem(id, (curr) =>
-                                      curr.action === 'create_event'
-                                        ? { ...curr, data: { ...curr.data, endDate: val } }
-                                        : curr
-                                    );
-                                  }}
-                                  className="w-full px-2 py-1.5 rounded-lg bg-veyra-canvas/80 border border-veyra-border text-xs text-veyra-text focus:outline-none focus:border-accent/60"
-                                />
-                              </div>
-                            </div>
-
-                            <div className="flex items-center justify-between gap-2">
-                              <label className="inline-flex items-center gap-1.5 text-[11px] text-veyra-muted cursor-pointer select-none">
-                                <input
-                                  type="checkbox"
-                                  checked={Boolean(item.data.isAllDay)}
-                                  onChange={(e) => {
-                                    const checked = e.target.checked;
-                                    updateEntryItem(id, (curr) =>
-                                      curr.action === 'create_event'
-                                        ? { ...curr, data: { ...curr.data, isAllDay: checked } }
-                                        : curr
-                                    );
-                                  }}
-                                  className="rounded border-veyra-border accent-[var(--accent-primary)]"
-                                />
-                                <span>Todo el día</span>
-                              </label>
-                            </div>
-
-                            {!item.data.isAllDay && (
-                              <div className="grid grid-cols-2 gap-2">
-                                <div>
-                                  <label className="block text-[10px] text-veyra-muted mb-0.5">
-                                    Hora inicio
-                                  </label>
-                                  <input
-                                    type="time"
-                                    value={item.data.startTime || '09:00'}
-                                    onChange={(e) => {
-                                      const val = e.target.value;
-                                      updateEntryItem(id, (curr) =>
-                                        curr.action === 'create_event'
-                                          ? { ...curr, data: { ...curr.data, startTime: val } }
                                           : curr
                                       );
                                     }}
@@ -1123,16 +1062,16 @@ export const CreateWithVeyraAssistant: React.FC<CreateWithVeyraAssistantProps> =
                                 </div>
                                 <div>
                                   <label className="block text-[10px] text-veyra-muted mb-0.5">
-                                    Hora fin
+                                    Fecha fin
                                   </label>
                                   <input
-                                    type="time"
-                                    value={item.data.endTime || '10:00'}
+                                    type="date"
+                                    value={item.data.endDate || item.data.startDate}
                                     onChange={(e) => {
                                       const val = e.target.value;
                                       updateEntryItem(id, (curr) =>
                                         curr.action === 'create_event'
-                                          ? { ...curr, data: { ...curr.data, endTime: val } }
+                                          ? { ...curr, data: { ...curr.data, endDate: val } }
                                           : curr
                                       );
                                     }}
@@ -1140,26 +1079,85 @@ export const CreateWithVeyraAssistant: React.FC<CreateWithVeyraAssistantProps> =
                                   />
                                 </div>
                               </div>
-                            )}
 
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                              <div>
-                                <label className="block text-[10px] text-veyra-muted mb-0.5">
-                                  Repetición
+                              <div className="flex items-center justify-between gap-2">
+                                <label className="inline-flex items-center gap-1.5 text-[11px] text-veyra-muted cursor-pointer select-none">
+                                  <input
+                                    type="checkbox"
+                                    checked={Boolean(item.data.isAllDay)}
+                                    onChange={(e) => {
+                                      const checked = e.target.checked;
+                                      updateEntryItem(id, (curr) =>
+                                        curr.action === 'create_event'
+                                          ? { ...curr, data: { ...curr.data, isAllDay: checked } }
+                                          : curr
+                                      );
+                                    }}
+                                    className="rounded border-veyra-border accent-[var(--accent-primary)]"
+                                  />
+                                  <span>Todo el día</span>
                                 </label>
-                                <select
-                                  value={item.data.recurrence || 'none'}
-                                  onChange={(e) => {
-                                    const val = e.target.value as
-                                      | 'none'
-                                      | 'daily'
-                                      | 'weekly'
-                                      | 'weekdays'
-                                      | 'monthly'
-                                      | 'yearly';
-                                    updateEntryItem(id, (curr) =>
-                                      curr.action === 'create_event'
-                                        ? {
+                              </div>
+
+                              {!item.data.isAllDay && (
+                                <div className="grid grid-cols-2 gap-2">
+                                  <div>
+                                    <label className="block text-[10px] text-veyra-muted mb-0.5">
+                                      Hora inicio
+                                    </label>
+                                    <input
+                                      type="time"
+                                      value={item.data.startTime || '09:00'}
+                                      onChange={(e) => {
+                                        const val = e.target.value;
+                                        updateEntryItem(id, (curr) =>
+                                          curr.action === 'create_event'
+                                            ? { ...curr, data: { ...curr.data, startTime: val } }
+                                            : curr
+                                        );
+                                      }}
+                                      className="w-full px-2 py-1.5 rounded-lg bg-veyra-canvas/80 border border-veyra-border text-xs text-veyra-text focus:outline-none focus:border-accent/60"
+                                    />
+                                  </div>
+                                  <div>
+                                    <label className="block text-[10px] text-veyra-muted mb-0.5">
+                                      Hora fin
+                                    </label>
+                                    <input
+                                      type="time"
+                                      value={item.data.endTime || '10:00'}
+                                      onChange={(e) => {
+                                        const val = e.target.value;
+                                        updateEntryItem(id, (curr) =>
+                                          curr.action === 'create_event'
+                                            ? { ...curr, data: { ...curr.data, endTime: val } }
+                                            : curr
+                                        );
+                                      }}
+                                      className="w-full px-2 py-1.5 rounded-lg bg-veyra-canvas/80 border border-veyra-border text-xs text-veyra-text focus:outline-none focus:border-accent/60"
+                                    />
+                                  </div>
+                                </div>
+                              )}
+
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                <div>
+                                  <label className="block text-[10px] text-veyra-muted mb-0.5">
+                                    Repetición
+                                  </label>
+                                  <select
+                                    value={item.data.recurrence || 'none'}
+                                    onChange={(e) => {
+                                      const val = e.target.value as
+                                        | 'none'
+                                        | 'daily'
+                                        | 'weekly'
+                                        | 'weekdays'
+                                        | 'monthly'
+                                        | 'yearly';
+                                      updateEntryItem(id, (curr) =>
+                                        curr.action === 'create_event'
+                                          ? {
                                             ...curr,
                                             data: {
                                               ...curr.data,
@@ -1167,118 +1165,118 @@ export const CreateWithVeyraAssistant: React.FC<CreateWithVeyraAssistantProps> =
                                               recurrenceEndDate:
                                                 val !== 'none'
                                                   ? curr.data.recurrenceEndDate ||
-                                                    addWeeksToYmd(curr.data.startDate, 16)
+                                                  addWeeksToYmd(curr.data.startDate, 16)
                                                   : undefined,
                                             },
                                           }
-                                        : curr
-                                    );
-                                  }}
-                                  className="w-full px-2 py-1.5 rounded-lg bg-veyra-canvas/80 border border-veyra-border text-xs text-veyra-text focus:outline-none focus:border-accent/60"
-                                >
-                                  <option value="none">Sin repetición</option>
-                                  <option value="weekly">Cada semana</option>
-                                  <option value="weekdays">Lunes a viernes</option>
-                                  <option value="daily">Cada día</option>
-                                  <option value="monthly">Cada mes</option>
-                                  <option value="yearly">Cada año</option>
-                                </select>
-                              </div>
-                              {item.data.recurrence && item.data.recurrence !== 'none' && (
-                                <div>
-                                  <label className="block text-[10px] text-veyra-muted mb-0.5">
-                                    Repetir hasta
-                                  </label>
-                                  <input
-                                    type="date"
-                                    value={item.data.recurrenceEndDate || ''}
-                                    onChange={(e) => {
-                                      const val = e.target.value;
-                                      updateEntryItem(id, (curr) =>
-                                        curr.action === 'create_event'
-                                          ? {
+                                          : curr
+                                      );
+                                    }}
+                                    className="w-full px-2 py-1.5 rounded-lg bg-veyra-canvas/80 border border-veyra-border text-xs text-veyra-text focus:outline-none focus:border-accent/60"
+                                  >
+                                    <option value="none">Sin repetición</option>
+                                    <option value="weekly">Cada semana</option>
+                                    <option value="weekdays">Lunes a viernes</option>
+                                    <option value="daily">Cada día</option>
+                                    <option value="monthly">Cada mes</option>
+                                    <option value="yearly">Cada año</option>
+                                  </select>
+                                </div>
+                                {item.data.recurrence && item.data.recurrence !== 'none' && (
+                                  <div>
+                                    <label className="block text-[10px] text-veyra-muted mb-0.5">
+                                      Repetir hasta
+                                    </label>
+                                    <input
+                                      type="date"
+                                      value={item.data.recurrenceEndDate || ''}
+                                      onChange={(e) => {
+                                        const val = e.target.value;
+                                        updateEntryItem(id, (curr) =>
+                                          curr.action === 'create_event'
+                                            ? {
                                               ...curr,
                                               data: {
                                                 ...curr.data,
                                                 recurrenceEndDate: val || undefined,
                                               },
                                             }
-                                          : curr
-                                      );
-                                    }}
-                                    className="w-full px-2 py-1.5 rounded-lg bg-veyra-canvas/80 border border-veyra-border text-xs text-veyra-text focus:outline-none focus:border-accent/60"
-                                  />
-                                </div>
-                              )}
-                            </div>
+                                            : curr
+                                        );
+                                      }}
+                                      className="w-full px-2 py-1.5 rounded-lg bg-veyra-canvas/80 border border-veyra-border text-xs text-veyra-text focus:outline-none focus:border-accent/60"
+                                    />
+                                  </div>
+                                )}
+                              </div>
 
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                              <input
-                                type="text"
-                                placeholder="Ubicación (opcional)"
-                                value={item.data.location || ''}
-                                onChange={(e) => {
-                                  const val = e.target.value;
-                                  updateEntryItem(id, (curr) =>
-                                    curr.action === 'create_event'
-                                      ? { ...curr, data: { ...curr.data, location: val } }
-                                      : curr
-                                  );
-                                }}
-                                className="w-full px-2.5 py-1.5 rounded-lg bg-veyra-canvas/80 border border-veyra-border text-xs text-veyra-text placeholder:text-veyra-subtle focus:outline-none focus:border-accent/60"
-                              />
-                              <input
-                                type="text"
-                                placeholder="Descripción (opcional)"
-                                value={item.data.description || ''}
-                                onChange={(e) => {
-                                  const val = e.target.value;
-                                  updateEntryItem(id, (curr) =>
-                                    curr.action === 'create_event'
-                                      ? { ...curr, data: { ...curr.data, description: val } }
-                                      : curr
-                                  );
-                                }}
-                                className="w-full px-2.5 py-1.5 rounded-lg bg-veyra-canvas/80 border border-veyra-border text-xs text-veyra-text placeholder:text-veyra-subtle focus:outline-none focus:border-accent/60"
-                              />
-                            </div>
-                          </>
-                        )}
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                <input
+                                  type="text"
+                                  placeholder="Ubicación (opcional)"
+                                  value={item.data.location || ''}
+                                  onChange={(e) => {
+                                    const val = e.target.value;
+                                    updateEntryItem(id, (curr) =>
+                                      curr.action === 'create_event'
+                                        ? { ...curr, data: { ...curr.data, location: val } }
+                                        : curr
+                                    );
+                                  }}
+                                  className="w-full px-2.5 py-1.5 rounded-lg bg-veyra-canvas/80 border border-veyra-border text-xs text-veyra-text placeholder:text-veyra-subtle focus:outline-none focus:border-accent/60"
+                                />
+                                <input
+                                  type="text"
+                                  placeholder="Descripción (opcional)"
+                                  value={item.data.description || ''}
+                                  onChange={(e) => {
+                                    const val = e.target.value;
+                                    updateEntryItem(id, (curr) =>
+                                      curr.action === 'create_event'
+                                        ? { ...curr, data: { ...curr.data, description: val } }
+                                        : curr
+                                    );
+                                  }}
+                                  className="w-full px-2.5 py-1.5 rounded-lg bg-veyra-canvas/80 border border-veyra-border text-xs text-veyra-text placeholder:text-veyra-subtle focus:outline-none focus:border-accent/60"
+                                />
+                              </div>
+                            </>
+                          )}
 
-                        {item.action === 'create_note' && (
-                          <div>
-                            <label className="block text-[10px] text-veyra-muted mb-0.5">
-                              Contenido
-                            </label>
-                            <textarea
-                              rows={3}
-                              value={entry.notePlainText ?? htmlToPlainText(item.data.contentHtml)}
-                              onChange={(e) => {
-                                const plain = e.target.value;
-                                updateEntryItem(
-                                  id,
-                                  (curr) =>
-                                    curr.action === 'create_note'
-                                      ? {
+                          {item.action === 'create_note' && (
+                            <div>
+                              <label className="block text-[10px] text-veyra-muted mb-0.5">
+                                Contenido
+                              </label>
+                              <textarea
+                                rows={3}
+                                value={entry.notePlainText ?? htmlToPlainText(item.data.contentHtml)}
+                                onChange={(e) => {
+                                  const plain = e.target.value;
+                                  updateEntryItem(
+                                    id,
+                                    (curr) =>
+                                      curr.action === 'create_note'
+                                        ? {
                                           ...curr,
                                           data: {
                                             ...curr.data,
                                             contentHtml: plainTextToHtml(plain),
                                           },
                                         }
-                                      : curr,
-                                  plain
-                                );
-                              }}
-                              className="w-full px-2.5 py-1.5 rounded-lg bg-veyra-canvas/80 border border-veyra-border text-xs text-veyra-text focus:outline-none focus:border-accent/60 resize-y"
-                            />
-                          </div>
-                        )}
+                                        : curr,
+                                    plain
+                                  );
+                                }}
+                                className="w-full px-2.5 py-1.5 rounded-lg bg-veyra-canvas/80 border border-veyra-border text-xs text-veyra-text focus:outline-none focus:border-accent/60 resize-y"
+                              />
+                            </div>
+                          )}
+                        </div>
                       </div>
                     </div>
                   </div>
-                </div>
-              );
+                );
               };
 
               return groupedProposals.map((block, blockIdx) => {
@@ -1327,8 +1325,8 @@ export const CreateWithVeyraAssistant: React.FC<CreateWithVeyraAssistantProps> =
                           allGroupSelected
                             ? 'bg-accent border-accent text-white'
                             : someGroupSelected
-                            ? 'bg-accent/25 border-accent text-accent'
-                            : 'border-veyra-border bg-veyra-canvas/60 hover:border-veyra-muted'
+                              ? 'bg-accent/25 border-accent text-accent'
+                              : 'border-veyra-border bg-veyra-canvas/60 hover:border-veyra-muted'
                         )}
                       >
                         {(allGroupSelected || someGroupSelected) && (
