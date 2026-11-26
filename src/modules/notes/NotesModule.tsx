@@ -722,9 +722,8 @@ export const NotesModule: React.FC<NotesModuleProps> = ({
       {isQuickAIModalOpen && (
         <aside
           aria-label="Crear con Veyra"
-          className={`fixed bottom-4 right-4 left-4 sm:left-auto z-50 sm:w-full max-h-[calc(100vh-2rem)] rounded-[24px] bg-veyra-card border border-veyra-border shadow-2xl p-5 flex flex-col animate-in fade-in slide-in-from-bottom-4 duration-200 transition-[max-width] ease-[cubic-bezier(0.16,1,0.3,1)] ${
-            isQuickAIExpanded ? 'sm:max-w-[560px]' : 'sm:max-w-[440px]'
-          }`}
+          className={`fixed bottom-4 right-4 left-4 sm:left-auto z-50 sm:w-full max-h-[calc(100vh-2rem)] rounded-[24px] bg-veyra-card border border-veyra-border shadow-2xl p-5 flex flex-col animate-in fade-in slide-in-from-bottom-4 duration-200 transition-[max-width] ease-[cubic-bezier(0.16,1,0.3,1)] ${isQuickAIExpanded ? 'sm:max-w-[560px]' : 'sm:max-w-[440px]'
+            }`}
         >
           <CreateWithVeyraAssistant
             variant="sidebar"
