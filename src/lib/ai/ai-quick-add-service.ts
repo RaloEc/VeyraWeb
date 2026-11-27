@@ -1,4 +1,4 @@
-import { supabase } from '../supabase';
+import { supabase, supabaseUrl, supabaseAnonKey } from '../supabase';
 
 export interface QuickAddReminderData {
   title: string;
@@ -177,12 +177,6 @@ export async function parseQuickAddWithAI(params: {
   text?: string;
   attachments?: QuickAddAttachment[];
 }): Promise<QuickAddProposal> {
-  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
-  const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
-  if (!supabaseUrl || !supabaseAnonKey) {
-    throw new Error('Falta configuración de Supabase para el asistente.');
-  }
-
   const { data: sessionData } = await supabase.auth.getSession();
   const authToken = sessionData.session?.access_token || supabaseAnonKey;
 
