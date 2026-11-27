@@ -22,6 +22,7 @@ import {
   Paperclip,
   Loader2,
   Share2,
+  Bell,
 } from 'lucide-react';
 import type { CalendarEvent } from '../../hooks/useEvents';
 import type { Note, Folder } from '../../types/notes';
@@ -103,12 +104,34 @@ export const EventDetailView: React.FC<EventDetailViewProps> = ({
   const [newReminderPriority, setNewReminderPriority] = useState<1 | 3>(1);
   const [isSavingReminder, setIsSavingReminder] = useState(false);
 
+  const [customAlarmValue, setCustomAlarmValue] = useState<string>('3');
+  const [customAlarmUnit, setCustomAlarmUnit] = useState<'minutes' | 'hours' | 'days'>('hours');
+  const [isSavingAlarms, setIsSavingAlarms] = useState(false);
+
+  const getEventStartTimeForDate = (ymd?: string): string => {
+    let targetEvent = event;
+    if (ymd && siblingEvents.length > 1) {
+      const [y, m, d] = ymd.split('-').map(Number);
+      if (y && m && d) {
+        const targetWeekday = new Date(y, m - 1, d).getDay();
+        const matchingSib = siblingEvents.find((sib) =>
+          getEventWeekdays(sib).includes(targetWeekday)
+        );
+        if (matchingSib) targetEvent = matchingSib;
+      }
+    }
+    if (targetEvent.is_all_day) return '09:00';
+    const ms = Number(targetEvent.start_time_ms) || Date.now();
+    return new Date(ms).toTimeString().substring(0, 5);
+  };
+
   const handleOpenAddReminder = () => {
     const s = Number(event.start_time_ms) || Date.now();
     const d = new Date(s);
-    setDateVal(toLocalYmd(d));
-    setNewReminderDueDate(toLocalYmd(d));
-    setNewReminderDueTime(d.toTimeString().substring(0, 5));
+    const ymd = toLocalYmd(d);
+    setDateVal(ymd);
+    setNewReminderDueDate(ymd);
+    setNewReminderDueTime(getEventStartTimeForDate(ymd));
     setNewReminderPriority(1);
     setShowAddReminderForm(true);
   };
@@ -317,13 +340,76 @@ export const EventDetailView: React.FC<EventDetailViewProps> = ({
     return parseAttachments((event as any).attachments);
   }, [(event as any).attachments]);
 
-  // 1. Linked Notes: Primary note + any note with note.event_id === event.id
+const WEEKDAY_SHORT_MAP: Record<number, string> = {
+  0: 'Dom',
+  1: 'Lun',
+  2: 'Mar',
+  3: 'Mié',
+  4: 'Jue',
+  5: 'Vie',
+  6: 'Sáb',
+};
+
+function getEventWeekdays(ev: CalendarEvent): number[] {
+  const raw = ev.recurrence_rule || ev.repeat_rule;
+  if (raw) {
+    try {
+      const parsed = JSON.parse(raw);
+      if (parsed?.type === 'weekly') {
+        const arr = Array.isArray(parsed.by_weekday)
+          ? parsed.by_weekday
+          : Array.isArray(parsed.days)
+            ? parsed.days
+            : [];
+        const valid = Array.from(
+          new Set<number>(
+            (arr as unknown[]).map(Number).filter((d) => Number.isInteger(d) && d >= 0 && d <= 6)
+          )
+        ).sort((a, b) => ((a + 6) % 7) - ((b + 6) % 7));
+        if (valid.length > 0) return valid;
+      }
+      if (parsed?.type === 'weekdays') return [1, 2, 3, 4, 5];
+    } catch {
+      // ignore non-JSON
+    }
+  }
+  const start = Number(ev.start_time_ms);
+  return Number.isFinite(start) ? [new Date(start).getDay()] : [];
+}
+
+  // Detect same event across multiple days of the week (e.g. Tue & Thu class sessions)
+  const siblingEvents = useMemo(() => {
+    const normalizedTitle = (event.title || '').trim().toLowerCase();
+    const all = eventsHook?.events || [];
+    if (!normalizedTitle || all.length === 0) return [event];
+
+    const matches = all.filter(
+      (ev) => ev.deleted !== 1 && (ev.title || '').trim().toLowerCase() === normalizedTitle
+    );
+    if (matches.length <= 1) return [event];
+
+    return [...matches].sort((a, b) => {
+      const aDay = getEventWeekdays(a)[0] ?? new Date(Number(a.start_time_ms) || 0).getDay();
+      const bDay = getEventWeekdays(b)[0] ?? new Date(Number(b.start_time_ms) || 0).getDay();
+      const aOrder = (aDay + 6) % 7;
+      const bOrder = (bDay + 6) % 7;
+      if (aOrder !== bOrder) return aOrder - bOrder;
+      return Number(a.start_time_ms || 0) - Number(b.start_time_ms || 0);
+    });
+  }, [eventsHook?.events, event]);
+
+  const siblingEventIds = useMemo(() => new Set(siblingEvents.map((e) => e.id)), [siblingEvents]);
+
+  // 1. Linked Notes: Primary note + any note linked to this event or its weekly sibling sessions
   const linkedNotes = useMemo(() => {
+    const primaryNoteIds = new Set(
+      siblingEvents.map((ev) => ev.note_id).filter((id): id is string => Boolean(id))
+    );
     return allNotes.filter((n) => {
       if (n.deleted === 1) return false;
-      return n.event_id === event.id || (event.note_id && n.id === event.note_id);
+      return (n.event_id && siblingEventIds.has(n.event_id)) || primaryNoteIds.has(n.id);
     });
-  }, [allNotes, event.id, event.note_id]);
+  }, [allNotes, siblingEvents, siblingEventIds]);
 
   const hasNotes = linkedNotes.length > 0;
 
@@ -426,11 +512,93 @@ export const EventDetailView: React.FC<EventDetailViewProps> = ({
     return '';
   };
 
-  // 3. Linked Reminders
+  // 3. Linked Reminders (including sibling weekly sessions)
   const linkedReminders = useMemo(() => {
     if (!remindersHook?.reminders) return [];
-    return remindersHook.reminders.filter((r) => r.event_id === event.id && r.deleted !== 1);
-  }, [remindersHook?.reminders, event.id]);
+    return remindersHook.reminders.filter(
+      (r) => r.event_id && siblingEventIds.has(r.event_id) && r.deleted !== 1
+    );
+  }, [remindersHook?.reminders, siblingEventIds]);
+
+  // 4. Event Alarms / Notification Offsets
+  const eventOffsets = useMemo(() => {
+    const rawOffsets = (event as unknown as { notification_offsets?: string | null }).notification_offsets;
+    const primaryOffset = (event as unknown as { notification_offset_min?: number | null }).notification_offset_min;
+    let list: number[] = [];
+
+    if (rawOffsets) {
+      try {
+        const parsed = JSON.parse(rawOffsets);
+        if (Array.isArray(parsed)) {
+          list = parsed.map(Number).filter((n) => Number.isFinite(n) && n >= 0);
+        }
+      } catch {
+        // ignore invalid JSON
+      }
+    }
+    if (list.length === 0 && primaryOffset !== undefined && primaryOffset !== null && Number.isFinite(Number(primaryOffset))) {
+      list = [Number(primaryOffset)];
+    }
+    return Array.from(new Set(list)).sort((a, b) => a - b);
+  }, [event]);
+
+  const formatAlarmOffset = (minutes: number): string => {
+    if (minutes === 0) return 'A la hora del evento';
+    if (minutes % 1440 === 0) {
+      const days = minutes / 1440;
+      return days === 1 ? '1 día antes' : `${days} días antes`;
+    }
+    if (minutes % 60 === 0) {
+      const hours = minutes / 60;
+      return hours === 1 ? '1 hora antes' : `${hours} horas antes`;
+    }
+    return `${minutes} min antes`;
+  };
+
+  const handleSaveAlarms = async (nextOffsets: number[]) => {
+    if (!eventsHook?.updateEvent || isSavingAlarms) return;
+    const clean = Array.from(new Set(nextOffsets.filter((n) => Number.isFinite(n) && n >= 0))).sort(
+      (a, b) => a - b
+    );
+    const json = clean.length > 0 ? JSON.stringify(clean) : null;
+    const primary = clean.length > 0 ? clean[0] : null;
+
+    setIsSavingAlarms(true);
+    try {
+      const targets = siblingEvents.length > 1 ? siblingEvents : [event];
+      await Promise.all(
+        targets.map((ev) =>
+          eventsHook.updateEvent(ev.id, {
+            notification_offsets: json,
+            notification_offset_min: primary,
+          })
+        )
+      );
+    } catch (err) {
+      console.error('[EventDetailView] Error updating event alarms:', err);
+    } finally {
+      setIsSavingAlarms(false);
+    }
+  };
+
+  const handleToggleAlarmOffset = (offsetMin: number) => {
+    if (eventOffsets.includes(offsetMin)) {
+      handleSaveAlarms(eventOffsets.filter((o) => o !== offsetMin));
+    } else {
+      handleSaveAlarms([...eventOffsets, offsetMin]);
+    }
+  };
+
+  const handleAddCustomAlarm = (e: React.FormEvent) => {
+    e.preventDefault();
+    const num = Math.max(1, Math.floor(Number(customAlarmValue) || 0));
+    if (!num) return;
+    const multiplier = customAlarmUnit === 'days' ? 1440 : customAlarmUnit === 'hours' ? 60 : 1;
+    const totalMinutes = num * multiplier;
+    if (!eventOffsets.includes(totalMinutes)) {
+      handleSaveAlarms([...eventOffsets, totalMinutes]);
+    }
+  };
 
   const handleCreateNote = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -484,6 +652,10 @@ export const EventDetailView: React.FC<EventDetailViewProps> = ({
   }, [startTimeMs, endTimeMs]);
 
   const recurrenceText = useMemo(() => {
+    if (siblingEvents.length > 1) {
+      return `Semanal (${siblingEvents.length} días)`;
+    }
+
     const rawRecurrence =
       event.repeat_rule ||
       (event as unknown as { recurrence_rule?: string }).recurrence_rule;
@@ -491,18 +663,15 @@ export const EventDetailView: React.FC<EventDetailViewProps> = ({
     try {
       const parsed = JSON.parse(rawRecurrence);
       if (parsed.type === 'weekly') {
-        const daysMap: Record<number, string> = {
-          0: 'Dom',
-          1: 'Lun',
-          2: 'Mar',
-          3: 'Mié',
-          4: 'Jue',
-          5: 'Vie',
-          6: 'Sáb',
-        };
-        const days = Array.isArray(parsed.days)
-          ? parsed.days.map((d: number) => daysMap[d] || d).join(', ')
-          : '';
+        const rawDays = Array.isArray(parsed.by_weekday)
+          ? parsed.by_weekday
+          : Array.isArray(parsed.days)
+            ? parsed.days
+            : [];
+        const daysList = rawDays.length > 0 ? rawDays : getEventWeekdays(event);
+        const days = daysList
+          .map((d: number) => WEEKDAY_SHORT_MAP[d] ?? d)
+          .join(', ');
         return `Semanal (${days || 'Días'})`;
       }
       if (parsed.type === 'daily') return 'Diario';
@@ -511,7 +680,7 @@ export const EventDetailView: React.FC<EventDetailViewProps> = ({
       // not JSON
     }
     return String(rawRecurrence);
-  }, [event]);
+  }, [event, siblingEvents]);
 
   return (
     <div className="flex-1 flex flex-col h-full bg-veyra-canvas overflow-hidden select-text font-sans">
@@ -784,6 +953,39 @@ export const EventDetailView: React.FC<EventDetailViewProps> = ({
                     </>
                   )}
                 </div>
+              ) : siblingEvents.length > 1 ? (
+                <div className="flex flex-wrap items-center gap-1.5 min-w-0">
+                  {siblingEvents.map((sib) => {
+                    const daysLabel = getEventWeekdays(sib)
+                      .map((d) => WEEKDAY_SHORT_MAP[d] ?? d)
+                      .join(', ');
+                    const sibStart = Number(sib.start_time_ms);
+                    const sibEnd = Number(sib.end_time_ms);
+                    const sibTime = sib.is_all_day
+                      ? 'Todo el día'
+                      : sibStart && sibEnd
+                        ? `${new Date(sibStart).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} – ${new Date(sibEnd).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
+                        : '';
+                    const hasDifferentLocation =
+                      sib.location &&
+                      sib.location.trim().toLowerCase() !== (event.location || '').trim().toLowerCase();
+
+                    return (
+                      <span
+                        key={sib.id}
+                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-veyra-card/70 border border-veyra-border/80 text-[11.5px]"
+                      >
+                        <span className="font-semibold text-veyra-text">{daysLabel}</span>
+                        {sibTime && <span className="text-veyra-subtle">{sibTime}</span>}
+                        {hasDifferentLocation && (
+                          <span className="text-[10.5px] text-veyra-subtle/80 truncate max-w-[110px]">
+                            · {sib.location}
+                          </span>
+                        )}
+                      </span>
+                    );
+                  })}
+                </div>
               ) : (
                 <div className="truncate">
                   <span className="font-semibold text-veyra-text">{formattedDate}</span>
@@ -990,6 +1192,107 @@ export const EventDetailView: React.FC<EventDetailViewProps> = ({
             </div>
           )}
 
+          {/* Alarmas y Avisos del Evento */}
+          <div className="space-y-2.5 pt-1">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-veyra-subtle">
+                <Bell className="w-3.5 h-3.5 text-amber-400" />
+                <span>Alarmas del evento ({eventOffsets.length})</span>
+              </div>
+              {isSavingAlarms && <Loader2 className="w-3.5 h-3.5 text-accent animate-spin" />}
+            </div>
+
+            <div className="p-3.5 rounded-lg bg-veyra-card/35 border border-veyra-border/70 space-y-3">
+              {/* Presets rápidos */}
+              <div className="flex flex-wrap gap-1.5">
+                {[
+                  { label: 'A la hora', value: 0 },
+                  { label: '15 min', value: 15 },
+                  { label: '30 min', value: 30 },
+                  { label: '1 hora', value: 60 },
+                  { label: '2 horas', value: 120 },
+                  { label: '1 día', value: 1440 },
+                  { label: '2 días', value: 2880 },
+                ].map((preset) => {
+                  const active = eventOffsets.includes(preset.value);
+                  return (
+                    <button
+                      key={preset.value}
+                      type="button"
+                      disabled={isSavingAlarms || !eventsHook?.updateEvent}
+                      onClick={() => handleToggleAlarmOffset(preset.value)}
+                      className={cn(
+                        'px-2.5 py-1 rounded-md text-[11px] border transition-all cursor-pointer select-none',
+                        active
+                          ? 'bg-accent/20 border-accent text-accent font-semibold shadow-xs'
+                          : 'bg-veyra-card border-veyra-border text-veyra-muted hover:text-veyra-text hover:border-accent/40'
+                      )}
+                    >
+                      {preset.label}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Alarmas personalizadas activas (ej. 3 horas antes, 5 días antes) */}
+              {eventOffsets.some((o) => ![0, 15, 30, 60, 120, 1440, 2880].includes(o)) && (
+                <div className="flex flex-wrap gap-1.5">
+                  {eventOffsets
+                    .filter((o) => ![0, 15, 30, 60, 120, 1440, 2880].includes(o))
+                    .map((customMin) => (
+                      <span
+                        key={customMin}
+                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-500/15 border border-amber-500/40 text-amber-300 text-[11px] font-medium"
+                      >
+                        <Bell className="w-2.5 h-2.5" />
+                        <span>{formatAlarmOffset(customMin)}</span>
+                        <button
+                          type="button"
+                          onClick={() => handleToggleAlarmOffset(customMin)}
+                          title="Quitar alarma"
+                          className="hover:text-red-400 transition-colors cursor-pointer"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </span>
+                    ))}
+                </div>
+              )}
+
+              {/* Añadir alarma personalizada (X minutos / horas / días antes) */}
+              {eventsHook?.updateEvent && (
+                <form onSubmit={handleAddCustomAlarm} className="flex flex-wrap items-center gap-1.5 pt-0.5">
+                  <span className="text-[11px] text-veyra-subtle">Personalizada:</span>
+                  <input
+                    type="number"
+                    min={1}
+                    max={365}
+                    value={customAlarmValue}
+                    onChange={(e) => setCustomAlarmValue(e.target.value)}
+                    className="w-16 px-2 py-1 rounded bg-veyra-canvas border border-veyra-border text-xs text-veyra-text focus:outline-none focus:border-accent"
+                  />
+                  <select
+                    value={customAlarmUnit}
+                    onChange={(e) => setCustomAlarmUnit(e.target.value as 'minutes' | 'hours' | 'days')}
+                    className="px-2 py-1 rounded bg-veyra-canvas border border-veyra-border text-xs text-veyra-text focus:outline-none focus:border-accent cursor-pointer"
+                  >
+                    <option value="minutes">minutos antes</option>
+                    <option value="hours">horas antes</option>
+                    <option value="days">días antes</option>
+                  </select>
+                  <button
+                    type="submit"
+                    disabled={isSavingAlarms}
+                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-veyra-card border border-veyra-border hover:border-accent/50 text-[11px] font-medium text-veyra-text transition-colors cursor-pointer"
+                  >
+                    <Plus className="w-3 h-3 text-accent" />
+                    <span>Agregar alarma</span>
+                  </button>
+                </form>
+              )}
+            </div>
+          </div>
+
           {/* Tareas y Recordatorios del Evento */}
           <div className="space-y-2.5 pt-2">
             <div className="flex items-center justify-between">
@@ -1051,16 +1354,32 @@ export const EventDetailView: React.FC<EventDetailViewProps> = ({
                     <input
                       type="date"
                       value={newReminderDueDate}
-                      onChange={(e) => setNewReminderDueDate(e.target.value)}
+                      onChange={(e) => {
+                        const nextDate = e.target.value;
+                        const prevEventTime = getEventStartTimeForDate(newReminderDueDate);
+                        setNewReminderDueDate(nextDate);
+                        if (newReminderDueTime === prevEventTime) {
+                          setNewReminderDueTime(getEventStartTimeForDate(nextDate));
+                        }
+                      }}
                       className="w-full px-2 py-1.5 rounded-md bg-veyra-canvas border border-veyra-border text-xs text-veyra-text focus:outline-none focus:border-accent"
                     />
                   </div>
 
                   <div className="space-y-1">
-                    <label className="text-[10px] text-veyra-subtle flex items-center gap-1">
-                      <Clock className="w-3 h-3 text-accent" />
-                      <span>Hora</span>
-                    </label>
+                    <div className="flex items-center justify-between gap-2">
+                      <label className="text-[10px] text-veyra-subtle flex items-center gap-1">
+                        <Clock className="w-3 h-3 text-accent" />
+                        <span>Hora</span>
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => setNewReminderDueTime(getEventStartTimeForDate(newReminderDueDate))}
+                        className="text-[10px] font-medium text-accent hover:underline cursor-pointer"
+                      >
+                        Misma hora del evento ({getEventStartTimeForDate(newReminderDueDate)})
+                      </button>
+                    </div>
                     <input
                       type="time"
                       value={newReminderDueTime}

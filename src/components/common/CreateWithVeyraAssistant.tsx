@@ -540,12 +540,13 @@ export const CreateWithVeyraAssistant: React.FC<CreateWithVeyraAssistantProps> =
           entry.item.data.recurrence === 'weekly'
         ) {
           const d = entry.item.data;
+          // No incluir recurrenceEndDate en la clave porque normalizeQuickAddProposalItem
+          // calcula +16 semanas desde cada startDate (ej. Mar vs Jue difieren por 2 días)
           const mergeKey = [
             d.title.trim().toLowerCase(),
             d.isAllDay ? 'allday' : `${d.startTime || '09:00'}-${d.endTime || '10:00'}`,
             (d.location || '').trim().toLowerCase(),
             (d.description || '').trim().toLowerCase(),
-            d.recurrenceEndDate || '',
           ].join('|');
           const list = weeklyMergeBuckets.get(mergeKey) || [];
           list.push(entry);
@@ -572,7 +573,22 @@ export const CreateWithVeyraAssistant: React.FC<CreateWithVeyraAssistantProps> =
             const ms = parseLocalDateTimeMs(dStr, '12:00');
             return new Date(ms).getDay();
           });
-          await executeItem(sorted[0].item, weekdays);
+          const maxEndDate = sorted.reduce<string | undefined>((acc, e) => {
+            const end = e.item.action === 'create_event' ? e.item.data.recurrenceEndDate : undefined;
+            if (!end) return acc;
+            return !acc || end > acc ? end : acc;
+          }, undefined);
+          const mergedItem: QuickAddProposalItem =
+            sorted[0].item.action === 'create_event'
+              ? {
+                  ...sorted[0].item,
+                  data: {
+                    ...sorted[0].item.data,
+                    ...(maxEndDate ? { recurrenceEndDate: maxEndDate } : {}),
+                  },
+                }
+              : sorted[0].item;
+          await executeItem(mergedItem, weekdays);
           savedCount++;
         }
       }

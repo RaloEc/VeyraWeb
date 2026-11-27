@@ -598,7 +598,7 @@ export const NotesModule: React.FC<NotesModuleProps> = ({
             </div>
           ) : selectedEvent ? (
             <div
-              key={`event-stage-${selectedEvent.id}`}
+              key={`event-stage-${(selectedEvent.title || '').trim().toLowerCase() || selectedEvent.id}`}
               className="flex-1 min-w-0 flex h-full overflow-hidden veyra-stage-enter"
             >
               <EventDetailView

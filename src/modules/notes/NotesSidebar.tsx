@@ -602,19 +602,23 @@ export const NotesSidebar: React.FC<NotesSidebarProps> = ({
   }, [folders, existingFolderIds, allNotes]);
 
   // Group events into smart containers (Option B)
+  // Events with the same normalized title in the same category (e.g. a class on Tue & Thu)
+  // are grouped into a single smart notebook so they don't appear duplicated.
   const eventCategories = useMemo(() => {
     const rawEvents = eventsHook?.events || [];
     if (rawEvents.length === 0) return [];
 
-    const categoryMap = new Map<
-      string,
-      Array<{
-        event: CalendarEvent;
-        notes: Note[];
-      }>
-    >();
+    type EventNotebookGroup = {
+      event: CalendarEvent;
+      events: CalendarEvent[];
+      notes: Note[];
+    };
+
+    const categoryMap = new Map<string, Map<string, EventNotebookGroup>>();
 
     for (const ev of rawEvents) {
+      if (ev.deleted === 1) continue;
+
       const evNotes = allNotes.filter(
         (n) => n.event_id === ev.id || (ev.note_id && n.id === ev.note_id)
       );
@@ -631,15 +635,47 @@ export const NotesSidebar: React.FC<NotesSidebarProps> = ({
       if (evNotes.length > 0 || hasTags) {
         const cat = getEventCategoryTag(ev);
         if (!categoryMap.has(cat)) {
-          categoryMap.set(cat, []);
+          categoryMap.set(cat, new Map());
         }
-        categoryMap.get(cat)!.push({ event: ev, notes: evNotes });
+        const titleKey = (ev.title || '').trim().toLowerCase() || ev.id;
+        const catGroups = categoryMap.get(cat)!;
+        const existing = catGroups.get(titleKey);
+
+        if (!existing) {
+          catGroups.set(titleKey, {
+            event: ev,
+            events: [ev],
+            notes: [...evNotes],
+          });
+        } else {
+          existing.events.push(ev);
+          const seenNoteIds = new Set(existing.notes.map((n) => n.id));
+          for (const n of evNotes) {
+            if (!seenNoteIds.has(n.id)) {
+              existing.notes.push(n);
+              seenNoteIds.add(n.id);
+            }
+          }
+          // Prefer the event with more direct notes (or earlier start time) as the primary representative
+          const currentPrimaryNotesCount = allNotes.filter(
+            (n) => n.event_id === existing.event.id || (existing.event.note_id && n.id === existing.event.note_id)
+          ).length;
+          if (
+            evNotes.length > currentPrimaryNotesCount ||
+            (evNotes.length === currentPrimaryNotesCount &&
+              Number(ev.start_time_ms || 0) < Number(existing.event.start_time_ms || 0))
+          ) {
+            existing.event = ev;
+          }
+        }
       }
     }
 
-    return Array.from(categoryMap.entries()).map(([name, items]) => ({
+    return Array.from(categoryMap.entries()).map(([name, groupsMap]) => ({
       name,
-      items: items.sort((a, b) => a.event.title.localeCompare(b.event.title)),
+      items: Array.from(groupsMap.values()).sort((a, b) =>
+        a.event.title.localeCompare(b.event.title)
+      ),
     }));
   }, [eventsHook?.events, allNotes]);
 
@@ -2341,8 +2377,9 @@ export const NotesSidebar: React.FC<NotesSidebarProps> = ({
                         {/* Events inside category */}
                         {isCategoryExpanded && (
                           <div className="ml-3 pl-2 border-l border-veyra-border/60 space-y-0.5 py-0.5">
-                            {category.items.map(({ event, notes }) => {
-                              const isEventExpanded = !!expandedEvents[event.id];
+                            {category.items.map(({ event, events: groupEvents, notes }) => {
+                              const groupEventIds = new Set(groupEvents.map((g) => g.id));
+                              const isEventExpanded = groupEvents.some((g) => !!expandedEvents[g.id]);
                               const eventColor = event.color || '#3B82F6';
                               const isEventDragOver = dragOverTarget === `event-${event.id}`;
 
@@ -2357,7 +2394,8 @@ export const NotesSidebar: React.FC<NotesSidebarProps> = ({
                                         draggedItem.folderIds.length === 0 &&
                                         draggedItem.noteIds.length > 0;
                                       const canDropSingleNote =
-                                        draggedItem.type === 'note' && draggedItem.eventId !== event.id;
+                                        draggedItem.type === 'note' &&
+                                        !groupEventIds.has(draggedItem.eventId || '');
                                       if (canDropBatchNotes || canDropSingleNote) {
                                         e.preventDefault();
                                         e.stopPropagation();
@@ -2394,17 +2432,25 @@ export const NotesSidebar: React.FC<NotesSidebarProps> = ({
                                         handleBatchMoveNotesToEvent(event.id, event.title, noteIds);
                                         return;
                                       }
-                                      if (draggedItem?.type === 'note' && draggedItem.eventId !== event.id) {
+                                      if (
+                                        draggedItem?.type === 'note' &&
+                                        !groupEventIds.has(draggedItem.eventId || '')
+                                      ) {
                                         onMoveNoteToEvent?.(draggedItem.id, event.id);
                                         setExpandedEvents((prev) => ({ ...prev, [event.id]: true }));
                                       }
                                       setDraggedItem(null);
                                     }}
                                     onClick={() =>
-                                      setExpandedEvents((prev) => ({
-                                        ...prev,
-                                        [event.id]: !isEventExpanded,
-                                      }))
+                                      setExpandedEvents((prev) => {
+                                        const next = { ...prev };
+                                        if (isEventExpanded) {
+                                          for (const g of groupEvents) next[g.id] = false;
+                                        } else {
+                                          next[event.id] = true;
+                                        }
+                                        return next;
+                                      })
                                     }
                                     onContextMenu={(e) => {
                                       e.preventDefault();
