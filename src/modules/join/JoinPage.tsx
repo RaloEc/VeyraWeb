@@ -16,7 +16,6 @@ import {
   User as UserIcon,
   Home,
 } from 'lucide-react';
-import confetti from 'canvas-confetti';
 import { supabase } from '../../lib/supabase';
 import { navigateTo } from '../../lib/navigation';
 import { Button } from '../../components/common/Button';
@@ -164,17 +163,6 @@ export const JoinPage: React.FC<JoinPageProps> = ({ currentUser: initialUser }) 
         setAcceptError(error.message || 'Error al unirse a la invitación');
         setIsAccepting(false);
         return;
-      }
-
-      // Celebración visual
-      try {
-        confetti({
-          particleCount: 80,
-          spread: 70,
-          origin: { y: 0.6 },
-        });
-      } catch {
-        // ignore
       }
 
       // 3. Redirección según tipo de recurso

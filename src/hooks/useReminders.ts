@@ -7,7 +7,7 @@ import { localDB } from '../lib/db/local-db';
 import { syncEngine } from '../lib/sync/syncEngine';
 import { extractHashtags, syncItemTags } from '../lib/tagUtils';
 import { CollaborationService } from '../lib/collaborationService';
-import confetti from 'canvas-confetti';
+import { triggerReminderCompletionCelebration } from '../lib/celebrationEffects';
 
 export function useReminders(userId?: string) {
   const [reminders, setReminders] = useState<Reminder[]>([]);
@@ -268,15 +268,20 @@ export function useReminders(userId?: string) {
 
       const targetReminder = reminders.find((r) => r.id === id);
 
-      // Microinteraction celebratory confetti when completing
+      // Microinteraction celebratory confetti, emoji & sound when completing
       if (nextStatus === 'completed') {
-        confetti({
-          particleCount: 45,
-          spread: 65,
-          origin: { y: 0.75 },
-          colors: ['#3ab0b0', '#5ce1e6', '#2b8f8f'],
-          disableForReducedMotion: true,
+        const todayEnd = new Date();
+        todayEnd.setHours(23, 59, 59, 999);
+        const todayEndMs = todayEnd.getTime();
+        const pendingToday = reminders.filter((r) => {
+          if (r.status === 'completed') return false;
+          const effectiveDue =
+            r.snooze_until_ms && r.snooze_until_ms > nowMs ? r.snooze_until_ms : r.due_date_ms;
+          return effectiveDue <= todayEndMs || isDateToday(effectiveDue);
         });
+        const allTodayCompleted =
+          pendingToday.length === 1 && pendingToday[0].id === id;
+        triggerReminderCompletionCelebration({ allTodayCompleted });
       }
 
       // 1. Optimistic in-memory update

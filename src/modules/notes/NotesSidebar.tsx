@@ -2247,6 +2247,23 @@ export const NotesSidebar: React.FC<NotesSidebarProps> = ({
                     <button
                       type="button"
                       onClick={() => {
+                        if (selectedFolderId) {
+                          setExpandedFolders((prev) => ({ ...prev, [selectedFolderId]: true }));
+                        }
+                        onCreateNote();
+                      }}
+                      className="p-1 rounded text-veyra-subtle hover:text-veyra-text hover:bg-white/5 transition-colors cursor-pointer"
+                      title={
+                        selectedFolderId
+                          ? 'Nueva nota en la carpeta seleccionada'
+                          : 'Nueva nota'
+                      }
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
                         setInlineSubfolderParentId(ROOT_INLINE_FOLDER);
                         setInlineSubfolderName('');
                         setInlineSubfolderColor('#60A5FA');
@@ -2715,22 +2732,45 @@ export const NotesSidebar: React.FC<NotesSidebarProps> = ({
             )}
           </div>
 
-          {/* 4. Footer */}
-          <div className="h-9 px-4 flex items-center justify-between border-t border-veyra-border bg-veyra-card/50 text-[11px] text-veyra-subtle shrink-0 font-mono">
-            <div className="flex items-center gap-1.5">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
-              <span>{allNotes.length} notas</span>
-            </div>
-
-            <div className="flex items-center gap-2">
+          {/* 4. Bottom Create Note Action + Footer */}
+          <div className="border-t border-veyra-border bg-veyra-card/50 shrink-0">
+            <div className="px-3 pt-2.5 pb-1">
               <button
                 type="button"
-                onClick={() => setIsSettingsOpen(true)}
-                title="Preferencias y cuenta"
-                className="p-1 rounded text-veyra-subtle hover:text-veyra-text hover:bg-white/5 transition-colors cursor-pointer"
+                onClick={() => {
+                  if (selectedFolderId) {
+                    setExpandedFolders((prev) => ({ ...prev, [selectedFolderId]: true }));
+                  }
+                  onCreateNote();
+                }}
+                title={
+                  selectedFolderId
+                    ? 'Crear nota en la carpeta seleccionada'
+                    : 'Crear nueva nota'
+                }
+                className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-xl bg-accent text-white hover:brightness-110 active:scale-[0.98] text-xs font-semibold shadow-[0_4px_14px_-2px_color-mix(in_srgb,var(--accent-primary)_45%,transparent),inset_0_1px_0_rgba(255,255,255,0.2)] ring-1 ring-white/15 transition-all duration-150 cursor-pointer"
               >
-                <Settings className="w-3.5 h-3.5" />
+                <Plus className="w-4 h-4 shrink-0" />
+                <span className="truncate">Crear nota</span>
               </button>
+            </div>
+
+            <div className="h-8 px-4 flex items-center justify-between text-[11px] text-veyra-subtle font-mono">
+              <div className="flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
+                <span>{allNotes.length} notas</span>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsSettingsOpen(true)}
+                  title="Preferencias y cuenta"
+                  className="p-1 rounded text-veyra-subtle hover:text-veyra-text hover:bg-white/5 transition-colors cursor-pointer"
+                >
+                  <Settings className="w-3.5 h-3.5" />
+                </button>
+              </div>
             </div>
           </div>
         </>

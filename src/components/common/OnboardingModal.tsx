@@ -12,7 +12,6 @@ import { PushService } from '../../lib/pushService';
 import { toast } from 'sonner';
 import { cn } from '../../lib/utils';
 import { useUserSettings } from '../../context/UserSettingsContext';
-import confetti from 'canvas-confetti';
 
 export interface OnboardingModalProps {
   userId: string;
@@ -101,13 +100,6 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
       }
 
       await updateSetting('defaultControlLevel', selectedControlLevel);
-
-      confetti({
-        particleCount: 60,
-        spread: 80,
-        origin: { y: 0.6 },
-        colors: ['#3ab0b0', '#5ce1e6', '#2b8f8f'],
-      });
 
       onComplete();
     } catch (err) {

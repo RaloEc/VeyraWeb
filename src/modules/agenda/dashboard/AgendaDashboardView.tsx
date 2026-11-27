@@ -254,40 +254,40 @@ export const AgendaDashboardView: React.FC<AgendaDashboardViewProps> = ({
                 </div>
               </div>
 
-              {/* Band 2: Folders & Templates (7) + Quick Scratchpad (5) */}
+              {/* Band 2: Folders & Templates + Pinned Notes (+ Shared Notes if present) */}
               <div className="py-6 border-b border-veyra-border grid grid-cols-12">
-                <div className="col-span-7 pr-6 h-[310px] min-w-0">
-                  {foldersTemplatesNode}
-                </div>
-                <div className="col-span-5 pl-6 border-l border-veyra-border h-[310px] min-w-0">
-                  {scratchpadNode}
-                </div>
-              </div>
-
-              {/* Band 3: Mini Calendar + Pinned Notes (+ Shared Notes if present) */}
-              <div className="pt-6 grid grid-cols-12">
                 {hasSharedNotes ? (
                   <>
-                    <div className="col-span-4 pr-5 h-[295px] min-w-0">
-                      {miniCalendarNode}
+                    <div className="col-span-6 pr-5 h-[310px] min-w-0">
+                      {foldersTemplatesNode}
                     </div>
-                    <div className="col-span-4 px-5 border-l border-veyra-border h-[295px] min-w-0">
+                    <div className="col-span-3 px-5 border-l border-veyra-border h-[310px] min-w-0">
                       {pinnedNotesNode}
                     </div>
-                    <div className="col-span-4 pl-5 border-l border-veyra-border h-[295px] min-w-0">
+                    <div className="col-span-3 pl-5 border-l border-veyra-border h-[310px] min-w-0">
                       {sharedNotesNode}
                     </div>
                   </>
                 ) : (
                   <>
-                    <div className="col-span-5 pr-6 h-[295px] min-w-0">
-                      {miniCalendarNode}
+                    <div className="col-span-7 pr-6 h-[310px] min-w-0">
+                      {foldersTemplatesNode}
                     </div>
-                    <div className="col-span-7 pl-6 border-l border-veyra-border h-[295px] min-w-0">
+                    <div className="col-span-5 pl-6 border-l border-veyra-border h-[310px] min-w-0">
                       {pinnedNotesNode}
                     </div>
                   </>
                 )}
+              </div>
+
+              {/* Band 3: Mini Calendar (5) + Quick Scratchpad (7) */}
+              <div className="pt-6 grid grid-cols-12">
+                <div className="col-span-5 pr-6 h-[295px] min-w-0">
+                  {miniCalendarNode}
+                </div>
+                <div className="col-span-7 pl-6 border-l border-veyra-border h-[295px] min-w-0">
+                  {scratchpadNode}
+                </div>
               </div>
             </>
           )}

@@ -367,7 +367,10 @@ export const NotesModule: React.FC<NotesModuleProps> = ({
   }, [isResizing]);
 
   const handleCreateNoteInFolder = async () => {
-    await createNote(selectedFolderId);
+    const newNote = await createNote(selectedFolderId);
+    if (newNote) {
+      handleSelectNote(newNote.id);
+    }
   };
 
   const handleCreateNoteForEvent = async (eventId: string, folderId?: string | null) => {

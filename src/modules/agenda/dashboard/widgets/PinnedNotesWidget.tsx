@@ -47,7 +47,7 @@ export const PinnedNotesWidget: React.FC<PinnedNotesWidgetProps> = ({
 
   return (
     <WidgetCard
-      title={isShowingRecent ? 'Notas Recientes' : 'Notas Clave'}
+      title={isShowingRecent ? 'Notas Recientes' : 'Notas Favoritas'}
       subtitle={`${displayedNotes.length} ${displayedNotes.length === 1 ? 'nota' : 'notas'}`}
       icon={<Pin className="w-4 h-4" />}
       iconClassName="text-purple-400"
