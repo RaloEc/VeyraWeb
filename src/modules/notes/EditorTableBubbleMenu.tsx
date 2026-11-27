@@ -163,8 +163,24 @@ export const EditorTableBubbleMenu: React.FC<EditorTableBubbleMenuProps> = ({
       return;
     }
 
+    const isSubmenuOpen =
+      isColorMenuOpenRef.current || isStyleMenuOpenRef.current || isMergeMenuOpenRef.current;
+    const activeEl = typeof document !== 'undefined' ? document.activeElement : null;
+    const isFocusInsideTableMenu = Boolean(
+      activeEl &&
+        (menuRef.current?.contains(activeEl) ||
+          colorMenuRef.current?.contains(activeEl) ||
+          styleMenuRef.current?.contains(activeEl) ||
+          mergeMenuRef.current?.contains(activeEl))
+    );
+
+    if (!editor.isFocused && !isSubmenuOpen && !isFocusInsideTableMenu) {
+      setMenuPos(null);
+      return;
+    }
+
     const isTableActive = editor.isActive('table');
-    if (!isTableActive && !isColorMenuOpenRef.current && !isStyleMenuOpenRef.current && !isMergeMenuOpenRef.current) {
+    if (!isTableActive && !isSubmenuOpen) {
       setMenuPos(null);
       return;
     }

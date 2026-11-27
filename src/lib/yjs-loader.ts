@@ -156,9 +156,386 @@ function populateElementWithInlines(parentElement: Y.XmlElement, domContainer: N
   }
 }
 
+const BLOCK_TAG_NAMES = new Set([
+  'p',
+  'div',
+  'h1',
+  'h2',
+  'h3',
+  'h4',
+  'h5',
+  'h6',
+  'ul',
+  'ol',
+  'blockquote',
+  'pre',
+  'table',
+  'hr',
+  'iframe',
+  'img',
+]);
+
+function appendInlineParagraph(container: Y.XmlFragment | Y.XmlElement, inlineNodes: Node[]) {
+  if (inlineNodes.length === 0) return;
+  const hasMeaningfulContent = inlineNodes.some((n) =>
+    n.nodeType === Node.TEXT_NODE ? Boolean(n.textContent && n.textContent.trim()) : true
+  );
+  if (!hasMeaningfulContent) return;
+
+  const p = new Y.XmlElement('paragraph');
+  container.push([p]);
+  const yText = new Y.XmlText();
+  p.push([yText]);
+  const deltas: Array<{ insert: string; attributes?: Record<string, any> }> = [];
+  for (const inlineNode of inlineNodes) {
+    if (inlineNode.nodeType === Node.TEXT_NODE) {
+      const text = inlineNode.textContent || '';
+      if (text) deltas.push({ insert: text });
+    } else if (inlineNode.nodeType === Node.ELEMENT_NODE) {
+      const wrapper = document.createElement('span');
+      wrapper.appendChild(inlineNode.cloneNode(true));
+      deltas.push(...parseInlineNodesToDelta(wrapper));
+    }
+  }
+  if (deltas.length > 0) {
+    yText.applyDelta(deltas);
+  }
+}
+
+function appendTableElement(container: Y.XmlFragment | Y.XmlElement, tableEl: HTMLElement) {
+  const rowElements: HTMLTableRowElement[] = [];
+  for (const child of Array.from(tableEl.children)) {
+    const childTag = child.tagName.toLowerCase();
+    if (childTag === 'tr') {
+      rowElements.push(child as HTMLTableRowElement);
+    } else if (childTag === 'thead' || childTag === 'tbody' || childTag === 'tfoot') {
+      for (const tr of Array.from(child.children)) {
+        if (tr.tagName.toLowerCase() === 'tr') {
+          rowElements.push(tr as HTMLTableRowElement);
+        }
+      }
+    }
+  }
+
+  if (rowElements.length === 0) return;
+
+  const yTable = new Y.XmlElement('table');
+  const tableStyle = tableEl.getAttribute('data-table-style');
+  if (tableStyle && tableStyle !== 'default') {
+    yTable.setAttribute('tableStyle', tableStyle);
+  }
+  const borderColor = tableEl.getAttribute('data-border-color');
+  if (borderColor) {
+    yTable.setAttribute('borderColor', borderColor);
+  }
+  const tableAlign = tableEl.getAttribute('data-table-align') || tableEl.getAttribute('align');
+  if (tableAlign && tableAlign !== 'left') {
+    yTable.setAttribute('tableAlign', tableAlign);
+  }
+
+  let hasAnyCell = false;
+  for (const trEl of rowElements) {
+    const cellElements = Array.from(trEl.children).filter((c) => {
+      const t = c.tagName.toLowerCase();
+      return t === 'td' || t === 'th';
+    }) as HTMLTableCellElement[];
+
+    if (cellElements.length === 0) continue;
+    hasAnyCell = true;
+
+    const yRow = new Y.XmlElement('tableRow');
+    const rowHeight = trEl.style?.height || trEl.getAttribute('data-row-height');
+    if (rowHeight) {
+      yRow.setAttribute('height', rowHeight);
+    }
+    yTable.push([yRow]);
+
+    for (const cellEl of cellElements) {
+      const cellType = cellEl.tagName.toLowerCase() === 'th' ? 'tableHeader' : 'tableCell';
+      const yCell = new Y.XmlElement(cellType);
+
+      const colspan = parseInt(cellEl.getAttribute('colspan') || '1', 10);
+      if (!isNaN(colspan) && colspan > 1) {
+        yCell.setAttribute('colspan', colspan);
+      }
+
+      const rowspan = parseInt(cellEl.getAttribute('rowspan') || '1', 10);
+      if (!isNaN(rowspan) && rowspan > 1) {
+        yCell.setAttribute('rowspan', rowspan);
+      }
+
+      const colwidthAttr = cellEl.getAttribute('data-colwidth') || cellEl.getAttribute('colwidth');
+      if (colwidthAttr) {
+        const widths = colwidthAttr
+          .split(',')
+          .map((w) => parseInt(w.trim(), 10))
+          .filter((w) => !isNaN(w) && w > 0);
+        if (widths.length > 0) {
+          yCell.setAttribute('colwidth', widths);
+        }
+      }
+
+      const bgColor = cellEl.style?.backgroundColor || cellEl.getAttribute('data-background-color');
+      if (bgColor) {
+        yCell.setAttribute('backgroundColor', bgColor);
+      }
+
+      yRow.push([yCell]);
+      insertDomNodesIntoContainer(yCell, Array.from(cellEl.childNodes));
+
+      // ProseMirror tableCell/tableHeader requires at least one block node (block+)
+      if (yCell.length === 0) {
+        yCell.push([new Y.XmlElement('paragraph')]);
+      }
+    }
+  }
+
+  if (hasAnyCell) {
+    container.push([yTable]);
+  }
+}
+
+function insertDomNodesIntoContainer(container: Y.XmlFragment | Y.XmlElement, childNodes: Node[]) {
+  let pendingInlines: Node[] = [];
+  const flushInlines = () => {
+    if (pendingInlines.length > 0) {
+      appendInlineParagraph(container, pendingInlines);
+      pendingInlines = [];
+    }
+  };
+
+  for (const node of childNodes) {
+    if (node.nodeType === Node.TEXT_NODE) {
+      pendingInlines.push(node);
+      continue;
+    }
+
+    if (node.nodeType !== Node.ELEMENT_NODE) {
+      continue;
+    }
+
+    const el = node as HTMLElement;
+    const tag = el.tagName.toLowerCase();
+
+    if (!BLOCK_TAG_NAMES.has(tag)) {
+      pendingInlines.push(node);
+      continue;
+    }
+
+    flushInlines();
+
+    // 1. Direct standalone image: <img src="..." />
+    if (tag === 'img') {
+      const src = el.getAttribute('src');
+      if (src) {
+        const yImg = new Y.XmlElement('image');
+        yImg.setAttribute('src', src);
+        const alt = el.getAttribute('alt');
+        if (alt) yImg.setAttribute('alt', alt);
+        const title = el.getAttribute('title');
+        if (title) yImg.setAttribute('title', title);
+        container.push([yImg]);
+      }
+      continue;
+    }
+
+    // 2. Horizontal rule: <hr />
+    if (tag === 'hr') {
+      container.push([new Y.XmlElement('horizontalRule')]);
+      continue;
+    }
+
+    // 3. Table: <table>...</table>
+    if (tag === 'table') {
+      appendTableElement(container, el);
+      continue;
+    }
+
+    // 4. Headings: <h1> - <h6>
+    if (/^h[1-6]$/.test(tag)) {
+      const level = Math.min(3, Math.max(1, parseInt(tag[1], 10) || 1));
+      const h = new Y.XmlElement('heading');
+      h.setAttribute('level', String(level));
+      const align = el.style.textAlign;
+      if (align) h.setAttribute('textAlign', align);
+      container.push([h]);
+      populateElementWithInlines(h, el);
+      continue;
+    }
+
+    // 5. Unordered list / Task list
+    if (tag === 'ul') {
+      const isTaskList = el.getAttribute('data-type') === 'taskList' || el.classList.contains('task-list');
+      const listType = isTaskList ? 'taskList' : 'bulletList';
+      const yList = new Y.XmlElement(listType);
+      container.push([yList]);
+      for (const li of Array.from(el.children)) {
+        if (li.tagName.toLowerCase() === 'li') {
+          const itemType = isTaskList ? 'taskItem' : 'listItem';
+          const yItem = new Y.XmlElement(itemType);
+          if (isTaskList) {
+            const checked = li.getAttribute('data-checked') === 'true' || (li.querySelector('input[type="checkbox"]') as HTMLInputElement)?.checked;
+            yItem.setAttribute('checked', checked ? 'true' : 'false');
+          }
+          yList.push([yItem]);
+          const yP = new Y.XmlElement('paragraph');
+          yItem.push([yP]);
+          populateElementWithInlines(yP, li);
+        }
+      }
+      continue;
+    }
+
+    // 6. Ordered list
+    if (tag === 'ol') {
+      const yList = new Y.XmlElement('orderedList');
+      if (el.hasAttribute('start')) {
+        const startVal = parseInt(el.getAttribute('start') || '1', 10);
+        if (!isNaN(startVal) && startVal > 1) {
+          yList.setAttribute('start', String(startVal));
+        }
+      }
+      if (el.hasAttribute('data-list-style')) {
+        const styleVal = el.getAttribute('data-list-style');
+        if (styleVal && styleVal !== 'decimal') {
+          yList.setAttribute('listStyle', styleVal);
+        }
+      }
+      container.push([yList]);
+      for (const li of Array.from(el.children)) {
+        if (li.tagName.toLowerCase() === 'li') {
+          const yItem = new Y.XmlElement('listItem');
+          yList.push([yItem]);
+          const yP = new Y.XmlElement('paragraph');
+          yItem.push([yP]);
+          populateElementWithInlines(yP, li);
+        }
+      }
+      continue;
+    }
+
+    // 7. Blockquote
+    if (tag === 'blockquote') {
+      const bq = new Y.XmlElement('blockquote');
+      container.push([bq]);
+      const yP = new Y.XmlElement('paragraph');
+      bq.push([yP]);
+      populateElementWithInlines(yP, el);
+      continue;
+    }
+
+    // 8. Code block
+    if (tag === 'pre') {
+      const cb = new Y.XmlElement('codeBlock');
+      container.push([cb]);
+      const text = el.textContent || '';
+      if (text) {
+        const yText = new Y.XmlText(text);
+        cb.push([yText]);
+      }
+      continue;
+    }
+
+    // 9. Container with nested tables (e.g. <div><table>...</table></div>)
+    if (tag === 'div' && el.querySelector('table')) {
+      insertDomNodesIntoContainer(container, Array.from(el.childNodes));
+      continue;
+    }
+
+    // 10. Paragraph or container that may contain images
+    const nestedImages = Array.from(el.querySelectorAll('img'));
+    if (nestedImages.length > 0) {
+      // If the element is purely wrapping images (e.g. <p><img src="..." /></p>)
+      if (el.textContent?.trim() === '') {
+        for (const imgEl of nestedImages) {
+          const src = imgEl.getAttribute('src');
+          if (src) {
+            const yImg = new Y.XmlElement('image');
+            yImg.setAttribute('src', src);
+            const alt = imgEl.getAttribute('alt');
+            if (alt) yImg.setAttribute('alt', alt);
+            const title = imgEl.getAttribute('title');
+            if (title) yImg.setAttribute('title', title);
+            container.push([yImg]);
+          }
+        }
+        continue;
+      }
+
+      // Mixed content (text + image): split into text paragraphs and images
+      for (const child of Array.from(el.childNodes)) {
+        if (child.nodeType === Node.ELEMENT_NODE && (child as HTMLElement).tagName.toLowerCase() === 'img') {
+          const imgEl = child as HTMLElement;
+          const src = imgEl.getAttribute('src');
+          if (src) {
+            const yImg = new Y.XmlElement('image');
+            yImg.setAttribute('src', src);
+            const alt = imgEl.getAttribute('alt');
+            if (alt) yImg.setAttribute('alt', alt);
+            const title = imgEl.getAttribute('title');
+            if (title) yImg.setAttribute('title', title);
+            container.push([yImg]);
+          }
+        } else {
+          const p = new Y.XmlElement('paragraph');
+          container.push([p]);
+          populateElementWithInlines(p, child);
+        }
+      }
+      continue;
+    }
+
+    // 11. YouTube iframe or container div
+    if (tag === 'iframe') {
+      const src = el.getAttribute('src') || '';
+      const ytMatch = src.match(/(?:youtube\.com|youtube-nocookie\.com)\/embed\/([a-zA-Z0-9_-]{11})/i);
+      if (ytMatch && ytMatch[1]) {
+        const yYoutube = new Y.XmlElement('youtube');
+        yYoutube.setAttribute('videoId', ytMatch[1]);
+        yYoutube.setAttribute('embed', 'true');
+        container.push([yYoutube]);
+        continue;
+      }
+    }
+
+    if (tag === 'div' && el.hasAttribute('data-youtube-video')) {
+      const videoId = el.getAttribute('data-video-id');
+      if (videoId) {
+        const yYoutube = new Y.XmlElement('youtube');
+        yYoutube.setAttribute('videoId', videoId);
+        const embedVal = el.getAttribute('data-embed') !== 'false';
+        yYoutube.setAttribute('embed', embedVal ? 'true' : 'false');
+        container.push([yYoutube]);
+        continue;
+      }
+    }
+
+    // 12. Math block
+    if (
+      (tag === 'div' && el.getAttribute('data-type') === 'math-block') ||
+      el.classList.contains('veyra-math-block')
+    ) {
+      const latex = el.getAttribute('data-latex') || el.textContent || '';
+      const yMath = new Y.XmlElement('mathBlock');
+      yMath.setAttribute('latex', latex);
+      container.push([yMath]);
+      continue;
+    }
+
+    // 13. Standard paragraph / div
+    const p = new Y.XmlElement('paragraph');
+    const align = el.style.textAlign;
+    if (align) p.setAttribute('textAlign', align);
+    container.push([p]);
+    populateElementWithInlines(p, el);
+  }
+
+  flushInlines();
+}
+
 /**
  * Inserts HTML or plain text into a Y.XmlFragment (used when importing REST notes).
- * Preserves all rich text formatting: bold, underline, highlight, italic, lists, headings, etc.
+ * Preserves all rich text formatting: bold, underline, highlight, italic, lists, headings, tables, etc.
  */
 export function insertHtmlIntoFragment(fragment: Y.XmlFragment, htmlOrText: string) {
   if (!htmlOrText) return;
@@ -176,210 +553,7 @@ export function insertHtmlIntoFragment(fragment: Y.XmlFragment, htmlOrText: stri
       return;
     }
 
-    for (const node of childNodes) {
-      if (node.nodeType === Node.TEXT_NODE) {
-        const text = node.textContent?.trim();
-        if (text) {
-          const p = new Y.XmlElement('paragraph');
-          fragment.push([p]);
-          const yText = new Y.XmlText(text);
-          p.push([yText]);
-        }
-        continue;
-      }
-
-      if (node.nodeType === Node.ELEMENT_NODE) {
-        const el = node as HTMLElement;
-        const tag = el.tagName.toLowerCase();
-
-        // 1. Direct standalone image: <img src="..." />
-        if (tag === 'img') {
-          const src = el.getAttribute('src');
-          if (src) {
-            const yImg = new Y.XmlElement('image');
-            yImg.setAttribute('src', src);
-            const alt = el.getAttribute('alt');
-            if (alt) yImg.setAttribute('alt', alt);
-            const title = el.getAttribute('title');
-            if (title) yImg.setAttribute('title', title);
-            fragment.push([yImg]);
-          }
-          continue;
-        }
-
-        // 2. Headings: <h1> - <h6>
-        if (/^h[1-6]$/.test(tag)) {
-          const level = Math.min(3, Math.max(1, parseInt(tag[1], 10) || 1));
-          const h = new Y.XmlElement('heading');
-          h.setAttribute('level', String(level));
-          const align = el.style.textAlign;
-          if (align) h.setAttribute('textAlign', align);
-          fragment.push([h]);
-          populateElementWithInlines(h, el);
-          continue;
-        }
-
-        // 3. Unordered list / Task list
-        if (tag === 'ul') {
-          const isTaskList = el.getAttribute('data-type') === 'taskList' || el.classList.contains('task-list');
-          const listType = isTaskList ? 'taskList' : 'bulletList';
-          const yList = new Y.XmlElement(listType);
-          fragment.push([yList]);
-          for (const li of Array.from(el.children)) {
-            if (li.tagName.toLowerCase() === 'li') {
-              const itemType = isTaskList ? 'taskItem' : 'listItem';
-              const yItem = new Y.XmlElement(itemType);
-              if (isTaskList) {
-                const checked = li.getAttribute('data-checked') === 'true' || (li.querySelector('input[type="checkbox"]') as HTMLInputElement)?.checked;
-                yItem.setAttribute('checked', checked ? 'true' : 'false');
-              }
-              yList.push([yItem]);
-              const yP = new Y.XmlElement('paragraph');
-              yItem.push([yP]);
-              populateElementWithInlines(yP, li);
-            }
-          }
-          continue;
-        }
-
-        // 4. Ordered list
-        if (tag === 'ol') {
-          const yList = new Y.XmlElement('orderedList');
-          if (el.hasAttribute('start')) {
-            const startVal = parseInt(el.getAttribute('start') || '1', 10);
-            if (!isNaN(startVal) && startVal > 1) {
-              yList.setAttribute('start', String(startVal));
-            }
-          }
-          if (el.hasAttribute('data-list-style')) {
-            const styleVal = el.getAttribute('data-list-style');
-            if (styleVal && styleVal !== 'decimal') {
-              yList.setAttribute('listStyle', styleVal);
-            }
-          }
-          fragment.push([yList]);
-          for (const li of Array.from(el.children)) {
-            if (li.tagName.toLowerCase() === 'li') {
-              const yItem = new Y.XmlElement('listItem');
-              yList.push([yItem]);
-              const yP = new Y.XmlElement('paragraph');
-              yItem.push([yP]);
-              populateElementWithInlines(yP, li);
-            }
-          }
-          continue;
-        }
-
-        // 5. Blockquote
-        if (tag === 'blockquote') {
-          const bq = new Y.XmlElement('blockquote');
-          fragment.push([bq]);
-          const yP = new Y.XmlElement('paragraph');
-          bq.push([yP]);
-          populateElementWithInlines(yP, el);
-          continue;
-        }
-
-        // 6. Code block
-        if (tag === 'pre') {
-          const cb = new Y.XmlElement('codeBlock');
-          fragment.push([cb]);
-          const text = el.textContent || '';
-          if (text) {
-            const yText = new Y.XmlText(text);
-            cb.push([yText]);
-          }
-          continue;
-        }
-
-        // 7. Paragraph or container that may contain images
-        const nestedImages = Array.from(el.querySelectorAll('img'));
-        if (nestedImages.length > 0) {
-          // If the element is purely wrapping images (e.g. <p><img src="..." /></p>)
-          if (el.textContent?.trim() === '') {
-            for (const imgEl of nestedImages) {
-              const src = imgEl.getAttribute('src');
-              if (src) {
-                const yImg = new Y.XmlElement('image');
-                yImg.setAttribute('src', src);
-                const alt = imgEl.getAttribute('alt');
-                if (alt) yImg.setAttribute('alt', alt);
-                const title = imgEl.getAttribute('title');
-                if (title) yImg.setAttribute('title', title);
-                fragment.push([yImg]);
-              }
-            }
-            continue;
-          }
-
-          // Mixed content (text + image): split into text paragraphs and images
-          for (const child of Array.from(el.childNodes)) {
-            if (child.nodeType === Node.ELEMENT_NODE && (child as HTMLElement).tagName.toLowerCase() === 'img') {
-              const imgEl = child as HTMLElement;
-              const src = imgEl.getAttribute('src');
-              if (src) {
-                const yImg = new Y.XmlElement('image');
-                yImg.setAttribute('src', src);
-                const alt = imgEl.getAttribute('alt');
-                if (alt) yImg.setAttribute('alt', alt);
-                const title = imgEl.getAttribute('title');
-                if (title) yImg.setAttribute('title', title);
-                fragment.push([yImg]);
-              }
-            } else {
-              const p = new Y.XmlElement('paragraph');
-              fragment.push([p]);
-              populateElementWithInlines(p, child);
-            }
-          }
-          continue;
-        }
-
-        // 8. YouTube iframe or container div
-        if (tag === 'iframe') {
-          const src = el.getAttribute('src') || '';
-          const ytMatch = src.match(/(?:youtube\.com|youtube-nocookie\.com)\/embed\/([a-zA-Z0-9_-]{11})/i);
-          if (ytMatch && ytMatch[1]) {
-            const yYoutube = new Y.XmlElement('youtube');
-            yYoutube.setAttribute('videoId', ytMatch[1]);
-            yYoutube.setAttribute('embed', 'true');
-            fragment.push([yYoutube]);
-            continue;
-          }
-        }
-
-        if (tag === 'div' && el.hasAttribute('data-youtube-video')) {
-          const videoId = el.getAttribute('data-video-id');
-          if (videoId) {
-            const yYoutube = new Y.XmlElement('youtube');
-            yYoutube.setAttribute('videoId', videoId);
-            const embedVal = el.getAttribute('data-embed') !== 'false';
-            yYoutube.setAttribute('embed', embedVal ? 'true' : 'false');
-            fragment.push([yYoutube]);
-            continue;
-          }
-        }
-
-        // 9. Math block
-        if (
-          (tag === 'div' && el.getAttribute('data-type') === 'math-block') ||
-          el.classList.contains('veyra-math-block')
-        ) {
-          const latex = el.getAttribute('data-latex') || el.textContent || '';
-          const yMath = new Y.XmlElement('mathBlock');
-          yMath.setAttribute('latex', latex);
-          fragment.push([yMath]);
-          continue;
-        }
-
-        // 10. Standard paragraph / div
-        const p = new Y.XmlElement('paragraph');
-        const align = el.style.textAlign;
-        if (align) p.setAttribute('textAlign', align);
-        fragment.push([p]);
-        populateElementWithInlines(p, el);
-      }
-    }
+    insertDomNodesIntoContainer(fragment, childNodes);
   } catch (err) {
     console.warn('⚠️ [insertHtmlIntoFragment] Error:', err);
     const p = new Y.XmlElement('paragraph');
@@ -396,7 +570,11 @@ export function insertHtmlIntoFragment(fragment: Y.XmlFragment, htmlOrText: stri
  * 4. Fallback: imports notes.content if it was stored in REST format.
  * 5. Identifies all pages in doc.getArray('pageOrder') and selects best active page.
  */
-export async function loadYjsNote(noteId: string): Promise<YjsLoadedNote> {
+export async function loadYjsNote(
+  noteId: string,
+  options?: { signal?: AbortSignal }
+): Promise<YjsLoadedNote> {
+  const signal = options?.signal;
   console.group(`📝 [Veyra Yjs Loader] Iniciando carga de nota: ${noteId}`);
   const startTime = performance.now();
   const ydoc = new Y.Doc();
@@ -405,19 +583,43 @@ export async function loadYjsNote(noteId: string): Promise<YjsLoadedNote> {
 
   // 0. Connect local IndexedDB persistence for instant offline restore
   let idbPersistence: IndexeddbPersistence | null = null;
+  const cleanup = () => {
+    try {
+      idbPersistence?.destroy();
+    } catch (_) { }
+    try {
+      awareness.destroy();
+    } catch (_) { }
+    try {
+      ydoc.destroy();
+    } catch (_) { }
+  };
+
+  const throwIfAborted = () => {
+    if (signal?.aborted) {
+      cleanup();
+      console.groupEnd();
+      throw new DOMException('Aborted', 'AbortError');
+    }
+  };
+
   if (typeof window !== 'undefined') {
     try {
       idbPersistence = new IndexeddbPersistence(`veyra-yjs-${noteId}`, ydoc);
       await idbPersistence.whenSynced;
+      throwIfAborted();
       const cachedPages = ydoc.getArray('pageOrder');
       if (cachedPages.length > 0) {
         hasBinaryData = true;
         console.log(`💾 [yjs-loader] Nota recuperada de IndexedDB local (${cachedPages.length} páginas)`);
       }
-    } catch (idbErr) {
+    } catch (idbErr: any) {
+      if (idbErr?.name === 'AbortError') throw idbErr;
       console.warn('[yjs-loader] IndexedDB initialization failed:', idbErr);
     }
   }
+
+  throwIfAborted();
 
   // 1. Fetch note row from notes table
   let { data: noteRow, error: noteRowErr } = await supabase
@@ -425,6 +627,8 @@ export async function loadYjsNote(noteId: string): Promise<YjsLoadedNote> {
     .select('id, title, content, sync_mode')
     .eq('id', noteId)
     .maybeSingle();
+
+  throwIfAborted();
 
   if (noteRowErr) {
     console.warn('⚠️ [NoteRow] Error al consultar datos de la nota:', noteRowErr);
@@ -434,6 +638,7 @@ export async function loadYjsNote(noteId: string): Promise<YjsLoadedNote> {
     try {
       const { localDB } = await import('./db/local-db');
       const local = await localDB.notes.get(noteId);
+      throwIfAborted();
       if (local) {
         noteRow = {
           id: local.id,
@@ -442,7 +647,8 @@ export async function loadYjsNote(noteId: string): Promise<YjsLoadedNote> {
           sync_mode: (local as any).sync_mode || 'rest',
         };
       }
-    } catch (e) {
+    } catch (e: any) {
+      if (e?.name === 'AbortError') throw e;
       console.warn('⚠️ [NoteRow] Error consultando localDB:', e);
     }
   }
@@ -456,6 +662,8 @@ export async function loadYjsNote(noteId: string): Promise<YjsLoadedNote> {
     .select('snapshot, server_clock')
     .eq('note_id', noteId)
     .maybeSingle();
+
+  throwIfAborted();
 
   if (snapErr) {
     console.warn('⚠️ [Snapshot] Error al consultar snapshot:', snapErr);
@@ -489,6 +697,8 @@ export async function loadYjsNote(noteId: string): Promise<YjsLoadedNote> {
     .gt('id', serverClock)
     .order('id', { ascending: true });
 
+  throwIfAborted();
+
   if (updateErr) {
     console.warn('⚠️ [Deltas] Error al consultar note_yjs_updates:', updateErr);
   }
@@ -521,7 +731,7 @@ export async function loadYjsNote(noteId: string): Promise<YjsLoadedNote> {
 
   // 4. Fallback for REST notes or notes without Yjs snapshots: import notes.content
   const pageOrder = ydoc.getArray<string>('pageOrder');
-  if (!hasBinaryData && noteRow?.content) {
+  if (!hasBinaryData && pageOrder.length === 0 && noteRow?.content) {
     console.log('🔄 [REST Fallback] Nota sin snapshots binarios. Importando notes.content...');
     try {
       if (noteRow.content.startsWith('{')) {
@@ -532,7 +742,7 @@ export async function loadYjsNote(noteId: string): Promise<YjsLoadedNote> {
             const pageId = p.id || crypto.randomUUID();
             ids.push(pageId);
             const frag = ydoc.getXmlFragment(pageId);
-            if (p.content) {
+            if (p.content && frag.length === 0) {
               insertHtmlIntoFragment(frag, p.content);
             }
           }
@@ -542,7 +752,9 @@ export async function loadYjsNote(noteId: string): Promise<YjsLoadedNote> {
         const initialId = crypto.randomUUID();
         pageOrder.push([initialId]);
         const frag = ydoc.getXmlFragment(initialId);
-        insertHtmlIntoFragment(frag, noteRow.content);
+        if (frag.length === 0) {
+          insertHtmlIntoFragment(frag, noteRow.content);
+        }
       }
     } catch (e) {
       console.warn('⚠️ [REST Fallback] Error parseando content JSON:', e);
@@ -779,6 +991,56 @@ export function yElementToHtml(el: Y.XmlElement | Y.XmlText): string {
       } catch {
         return `<div class="veyra-math-block" data-type="math-block">${latex}</div>`;
       }
+    }
+    if (nodeName === 'table') {
+      const tableAttrs: string[] = ['class="veyra-table"'];
+      const tableStyle = el.getAttribute('tableStyle');
+      if (tableStyle && tableStyle !== 'default') {
+        tableAttrs.push(`data-table-style="${String(tableStyle).replace(/"/g, '&quot;')}"`);
+      }
+      const borderColor = el.getAttribute('borderColor');
+      if (borderColor) {
+        const safeColor = String(borderColor).replace(/"/g, '&quot;');
+        tableAttrs.push(`data-border-color="${safeColor}"`);
+        tableAttrs.push(`style="--table-custom-border: ${safeColor};"`);
+      }
+      const tableAlign = el.getAttribute('tableAlign');
+      if (tableAlign) {
+        const safeAlign = String(tableAlign).replace(/"/g, '&quot;');
+        tableAttrs.push(`data-table-align="${safeAlign}"`);
+        tableAttrs.push(`align="${safeAlign}"`);
+      }
+      return `<table ${tableAttrs.join(' ')}><tbody>${childrenHtml}</tbody></table>`;
+    }
+    if (nodeName === 'tablerow' || nodeName === 'tr') {
+      const height = el.getAttribute('height');
+      const rowAttrs = height
+        ? ` data-row-height="${String(height).replace(/"/g, '&quot;')}" style="height: ${String(height).replace(/"/g, '&quot;')};"`
+        : '';
+      return `<tr${rowAttrs}>${childrenHtml}</tr>`;
+    }
+    if (nodeName === 'tableheader' || nodeName === 'th' || nodeName === 'tablecell' || nodeName === 'td') {
+      const tag = nodeName === 'tableheader' || nodeName === 'th' ? 'th' : 'td';
+      const cellAttrs: string[] = [];
+      const colspan = Number(el.getAttribute('colspan'));
+      if (!isNaN(colspan) && colspan > 1) cellAttrs.push(`colspan="${colspan}"`);
+      const rowspan = Number(el.getAttribute('rowspan'));
+      if (!isNaN(rowspan) && rowspan > 1) cellAttrs.push(`rowspan="${rowspan}"`);
+      const colwidth = el.getAttribute('colwidth');
+      if (Array.isArray(colwidth) && colwidth.length > 0) {
+        cellAttrs.push(`data-colwidth="${colwidth.join(',')}"`);
+      }
+      const bg = el.getAttribute('backgroundColor');
+      if (bg) {
+        const safeBg = String(bg).replace(/"/g, '&quot;');
+        cellAttrs.push(`data-background-color="${safeBg}"`);
+        cellAttrs.push(`style="background-color: ${safeBg};"`);
+      }
+      const attrStr = cellAttrs.length > 0 ? ` ${cellAttrs.join(' ')}` : '';
+      return `<${tag}${attrStr}>${childrenHtml}</${tag}>`;
+    }
+    if (nodeName === 'horizontalrule' || nodeName === 'hr') {
+      return '<hr />';
     }
     if (nodeName === 'mathinline') {
       const latex = el.getAttribute('latex') || '';

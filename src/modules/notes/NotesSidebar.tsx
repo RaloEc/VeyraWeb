@@ -30,7 +30,6 @@ import {
   Share2,
   Pin,
   CheckSquare,
-  LayoutDashboard,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { MorphIcon } from 'morphicons/react';
@@ -368,6 +367,8 @@ export const NotesSidebar: React.FC<NotesSidebarProps> = ({
   const [selectedNoteIds, setSelectedNoteIds] = useState<string[]>([]);
   const [selectedFolderIds, setSelectedFolderIds] = useState<string[]>([]);
   const [isBatchBusy, setIsBatchBusy] = useState(false);
+  const sidebarListRef = useRef<HTMLDivElement>(null);
+  const lastSelectionAnchorRef = useRef<{ type: 'note' | 'folder'; id: string } | null>(null);
 
   const selectedNoteSet = useMemo(() => new Set(selectedNoteIds), [selectedNoteIds]);
   const selectedFolderSet = useMemo(() => new Set(selectedFolderIds), [selectedFolderIds]);
@@ -377,6 +378,7 @@ export const NotesSidebar: React.FC<NotesSidebarProps> = ({
     setIsSelectionMode(false);
     setSelectedNoteIds([]);
     setSelectedFolderIds([]);
+    lastSelectionAnchorRef.current = null;
   };
 
   const toggleNoteSelection = (noteId: string) => {
@@ -384,6 +386,7 @@ export const NotesSidebar: React.FC<NotesSidebarProps> = ({
     setSelectedNoteIds((prev) =>
       prev.includes(noteId) ? prev.filter((id) => id !== noteId) : [...prev, noteId]
     );
+    lastSelectionAnchorRef.current = { type: 'note', id: noteId };
   };
 
   const toggleFolderSelection = (folderId: string) => {
@@ -391,6 +394,59 @@ export const NotesSidebar: React.FC<NotesSidebarProps> = ({
     setSelectedFolderIds((prev) =>
       prev.includes(folderId) ? prev.filter((id) => id !== folderId) : [...prev, folderId]
     );
+    lastSelectionAnchorRef.current = { type: 'folder', id: folderId };
+  };
+
+  const handleSelectableClick = (
+    type: 'note' | 'folder',
+    id: string,
+    shiftKey: boolean
+  ) => {
+    if (shiftKey && lastSelectionAnchorRef.current && sidebarListRef.current) {
+      const elements = Array.from(
+        sidebarListRef.current.querySelectorAll<HTMLElement>('[data-selectable-id][data-selectable-type]')
+      );
+      const anchor = lastSelectionAnchorRef.current;
+      const anchorIdx = elements.findIndex(
+        (el) => el.dataset.selectableType === anchor.type && el.dataset.selectableId === anchor.id
+      );
+      const targetIdx = elements.findIndex(
+        (el) => el.dataset.selectableType === type && el.dataset.selectableId === id
+      );
+
+      if (anchorIdx !== -1 && targetIdx !== -1) {
+        const start = Math.min(anchorIdx, targetIdx);
+        const end = Math.max(anchorIdx, targetIdx);
+        const rangeNoteIds: string[] = [];
+        const rangeFolderIds: string[] = [];
+
+        for (let i = start; i <= end; i++) {
+          const el = elements[i];
+          const elId = el.dataset.selectableId;
+          if (!elId) continue;
+          if (el.dataset.selectableType === 'note') {
+            rangeNoteIds.push(elId);
+          } else if (el.dataset.selectableType === 'folder') {
+            rangeFolderIds.push(elId);
+          }
+        }
+
+        setIsSelectionMode(true);
+        if (rangeNoteIds.length > 0) {
+          setSelectedNoteIds((prev) => Array.from(new Set([...prev, ...rangeNoteIds])));
+        }
+        if (rangeFolderIds.length > 0) {
+          setSelectedFolderIds((prev) => Array.from(new Set([...prev, ...rangeFolderIds])));
+        }
+        return;
+      }
+    }
+
+    if (type === 'note') {
+      toggleNoteSelection(id);
+    } else {
+      toggleFolderSelection(id);
+    }
   };
 
   useEffect(() => {
@@ -1259,6 +1315,8 @@ export const NotesSidebar: React.FC<NotesSidebarProps> = ({
         <div className="veyra-delete-collapse-inner">
       <div
         draggable={activeView !== 'trash'}
+        data-selectable-type="note"
+        data-selectable-id={note.id}
         onDragStart={(e) => {
           e.stopPropagation();
           if (isSelectionMode && (isChecked || totalSelectedCount > 0)) {
@@ -1325,7 +1383,7 @@ export const NotesSidebar: React.FC<NotesSidebarProps> = ({
           if (isSelectionMode || e.ctrlKey || e.metaKey) {
             e.preventDefault();
             e.stopPropagation();
-            toggleNoteSelection(note.id);
+            handleSelectableClick('note', note.id, e.shiftKey);
             return;
           }
           onSelectNote(note.id);
@@ -1582,6 +1640,8 @@ export const NotesSidebar: React.FC<NotesSidebarProps> = ({
         {/* Folder row */}
         <div
           draggable={activeView !== 'trash'}
+          data-selectable-type="folder"
+          data-selectable-id={folder.id}
           onDragStart={(e) => {
             e.stopPropagation();
             if (isSelectionMode && (isFolderChecked || totalSelectedCount > 0)) {
@@ -1708,7 +1768,7 @@ export const NotesSidebar: React.FC<NotesSidebarProps> = ({
             if (isSelectionMode || e.ctrlKey || e.metaKey) {
               e.preventDefault();
               e.stopPropagation();
-              toggleFolderSelection(folder.id);
+              handleSelectableClick('folder', folder.id, e.shiftKey);
               return;
             }
             toggleFolderExpanded(null, folder.id);
@@ -1895,49 +1955,6 @@ export const NotesSidebar: React.FC<NotesSidebarProps> = ({
         </div>
 
         <div className="flex items-center gap-1 shrink-0">
-          {(onOpenDashboard || onOpenCalendar) && (
-            <div className="flex items-center p-0.5 rounded-md bg-veyra-elevated/70 border border-veyra-border/80">
-              {onOpenDashboard && (
-                <button
-                  type="button"
-                  onClick={onOpenDashboard}
-                  title="Dashboard"
-                  className={cn(
-                    'p-1 rounded transition-colors cursor-pointer',
-                    isDashboardActive
-                      ? 'bg-accent/15 text-accent'
-                      : 'text-veyra-subtle hover:text-veyra-text hover:bg-white/5'
-                  )}
-                >
-                  <LayoutDashboard className="w-3.5 h-3.5" />
-                </button>
-              )}
-              {onOpenCalendar && (
-                <button
-                  type="button"
-                  onClick={onOpenCalendar}
-                  title="Calendario Completo"
-                  className={cn(
-                    'p-1 rounded transition-colors cursor-pointer',
-                    isCalendarOpen && !isDashboardActive
-                      ? 'bg-accent/15 text-accent'
-                      : 'text-veyra-subtle hover:text-veyra-text hover:bg-white/5'
-                  )}
-                >
-                  <Calendar className="w-3.5 h-3.5" />
-                </button>
-              )}
-            </div>
-          )}
-
-          <button
-            type="button"
-            onClick={() => setIsSettingsOpen(true)}
-            title="Preferencias y cuenta"
-            className="p-1 rounded text-veyra-subtle hover:text-veyra-text hover:bg-white/5 transition-colors cursor-pointer"
-          >
-            <Settings className="w-3.5 h-3.5" />
-          </button>
           {onToggleSidebar && (
             <button
               onClick={onToggleSidebar}
@@ -2008,7 +2025,7 @@ export const NotesSidebar: React.FC<NotesSidebarProps> = ({
       ) : (
         <>
           {/* 2. Scrollable Middle Area: Vistas (icon-only) + Carpetas + Notas */}
-          <div className="flex-1 overflow-y-auto p-3 space-y-3.5">
+          <div ref={sidebarListRef} className="flex-1 overflow-y-auto p-3 space-y-3.5">
             {/* Top Vistas + Animated Sticky Batch Action Bar wrapper (zero gap when collapsed) */}
             <div>
               {/* Compact Icon-Only VISTAS Row */}
@@ -2706,7 +2723,6 @@ export const NotesSidebar: React.FC<NotesSidebarProps> = ({
             </div>
 
             <div className="flex items-center gap-2">
-              <span>⌘</span>
               <button
                 type="button"
                 onClick={() => setIsSettingsOpen(true)}

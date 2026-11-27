@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { Loader2, PanelLeft, Search, Sparkles, Timer, Play, Pause, RotateCcw } from 'lucide-react';
+import { Loader2, PanelLeft, Search, Sparkles, Timer, Play, Pause, RotateCcw, LayoutDashboard, Calendar } from 'lucide-react';
 import { toast } from 'sonner';
 import { NotesSidebar } from './NotesSidebar';
 import { NoteEditor } from './NoteEditor';
@@ -508,17 +508,60 @@ export const NotesModule: React.FC<NotesModuleProps> = ({
       {/* Main Center Stage with Permanent Clean Top Header */}
       <div className="flex-1 min-w-0 flex flex-col h-full overflow-hidden bg-veyra-canvas">
         <header className="h-12 border-b border-veyra-border px-4 md:px-6 flex items-center justify-between gap-3 shrink-0 bg-veyra-canvas/90 backdrop-blur-md z-20">
-          <div className="flex items-center gap-2 min-w-0">
-            {!isSidebarOpen && onToggleSidebar && (
+          <div className="flex items-center gap-2.5 min-w-0">
+            {!isSidebarOpen && (
+              <>
+                <div className="flex items-center gap-2 min-w-0">
+                  <div className="w-6 h-6 rounded-md bg-accent flex items-center justify-center font-bold text-white text-xs shadow-sm shrink-0">
+                    V
+                  </div>
+                  <span className="font-bold text-sm tracking-wider text-veyra-text truncate">
+                    VEYRA
+                  </span>
+                </div>
+                {onToggleSidebar && (
+                  <button
+                    type="button"
+                    onClick={onToggleSidebar}
+                    title="Mostrar barra lateral (Ctrl+\)"
+                    className="p-1.5 rounded-lg text-veyra-muted hover:text-veyra-text hover:bg-veyra-elevated transition-colors cursor-pointer"
+                  >
+                    <PanelLeft className="w-4 h-4 text-accent" />
+                  </button>
+                )}
+              </>
+            )}
+
+            <div className="flex items-center p-0.5 rounded-lg bg-veyra-elevated/70 border border-veyra-border/80 shrink-0">
               <button
                 type="button"
-                onClick={onToggleSidebar}
-                title="Mostrar barra lateral (Ctrl+\)"
-                className="p-1.5 rounded-lg text-veyra-muted hover:text-veyra-text hover:bg-veyra-elevated transition-colors cursor-pointer"
+                onClick={handleOpenDashboard}
+                title="Dashboard"
+                className={cn(
+                  'flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors cursor-pointer',
+                  !isCalendarActive && !selectedNote && !selectedEvent && !selectedReminder
+                    ? 'bg-accent/15 text-accent'
+                    : 'text-veyra-muted hover:text-veyra-text hover:bg-white/5'
+                )}
               >
-                <PanelLeft className="w-4 h-4 text-accent" />
+                <LayoutDashboard className="w-3.5 h-3.5 shrink-0" />
+                <span className="hidden md:inline">Dashboard</span>
               </button>
-            )}
+              <button
+                type="button"
+                onClick={handleOpenCalendar}
+                title="Calendario Completo"
+                className={cn(
+                  'flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors cursor-pointer',
+                  isCalendarActive && !selectedNote && !selectedEvent && !selectedReminder
+                    ? 'bg-accent/15 text-accent'
+                    : 'text-veyra-muted hover:text-veyra-text hover:bg-white/5'
+                )}
+              >
+                <Calendar className="w-3.5 h-3.5 shrink-0" />
+                <span className="hidden md:inline">Calendario</span>
+              </button>
+            </div>
           </div>
 
           <div className="flex items-center gap-2 min-w-0 ml-auto">

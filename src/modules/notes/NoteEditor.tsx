@@ -3469,8 +3469,9 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
     }
 
     let isCancelled = false;
+    const controller = new AbortController();
 
-    loadYjsNote(note.id)
+    loadYjsNote(note.id, { signal: controller.signal })
       .then((data) => {
         if (isCancelled) {
           data.destroy();
@@ -3492,14 +3493,14 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
         }));
       })
       .catch((err) => {
+        if (isCancelled || err?.name === 'AbortError') return;
         console.error('[NoteEditor] Error descargando nota Yjs:', err);
-        if (!isCancelled) {
-          setLoadError('Error descargando el contenido de la nota.');
-        }
+        setLoadError('Error descargando el contenido de la nota.');
       });
 
     return () => {
       isCancelled = true;
+      controller.abort();
     };
   }, [note?.id]);
 

@@ -14,6 +14,7 @@ import {
   AlertCircle,
   Pencil,
   ChevronDown,
+  Tag,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import {
@@ -182,6 +183,7 @@ export const CreateWithVeyraAssistant: React.FC<CreateWithVeyraAssistantProps> =
   const [proposalEntries, setProposalEntries] = useState<EditableProposalEntry[]>([]);
   const [expandedEntryId, setExpandedEntryId] = useState<string | null>(null);
   const [collapsedGroupKeys, setCollapsedGroupKeys] = useState<Record<string, boolean>>({});
+  const [tagDraftById, setTagDraftById] = useState<Record<string, string>>({});
   const [isConfirming, setIsConfirming] = useState(false);
 
   useEffect(() => {
@@ -223,6 +225,7 @@ export const CreateWithVeyraAssistant: React.FC<CreateWithVeyraAssistantProps> =
     setProposalEntries([]);
     setExpandedEntryId(null);
     setCollapsedGroupKeys({});
+    setTagDraftById({});
 
     try {
       const result = await parseQuickAddWithAI({
@@ -430,7 +433,7 @@ export const CreateWithVeyraAssistant: React.FC<CreateWithVeyraAssistantProps> =
         all_day_date: item.data.isAllDay ? item.data.startDate : null,
         location: item.data.location,
         description: item.data.description,
-        tags: item.data.tags || null,
+        tags: item.data.tags && item.data.tags.length > 0 ? item.data.tags : null,
         repeat_rule: recurrenceRule,
         recurrence_rule: recurrenceRule,
       });
@@ -480,6 +483,37 @@ export const CreateWithVeyraAssistant: React.FC<CreateWithVeyraAssistantProps> =
           : entry
       )
     );
+  };
+
+  const addTagToEventEntry = (id: string, rawValue: string) => {
+    const candidates = rawValue
+      .split(',')
+      .map((part) => part.trim().replace(/^#+/, ''))
+      .filter(Boolean);
+
+    setTagDraftById((prev) => ({ ...prev, [id]: '' }));
+    if (candidates.length === 0) return;
+
+    updateEntryItem(id, (curr) => {
+      if (curr.action !== 'create_event') return curr;
+      const existing = Array.isArray(curr.data.tags) ? curr.data.tags : [];
+      const nextTags = [...existing];
+      for (const candidate of candidates) {
+        if (!nextTags.some((t) => t.toLowerCase() === candidate.toLowerCase())) {
+          nextTags.push(candidate);
+        }
+      }
+      return { ...curr, data: { ...curr.data, tags: nextTags } };
+    });
+  };
+
+  const removeTagFromEventEntry = (id: string, tagToRemove: string) => {
+    updateEntryItem(id, (curr) => {
+      if (curr.action !== 'create_event') return curr;
+      const existing = Array.isArray(curr.data.tags) ? curr.data.tags : [];
+      const nextTags = existing.filter((t) => t !== tagToRemove);
+      return { ...curr, data: { ...curr.data, tags: nextTags } };
+    });
   };
 
   const selectedEntries = proposalEntries.filter((e) => e.selected);
@@ -944,22 +978,90 @@ export const CreateWithVeyraAssistant: React.FC<CreateWithVeyraAssistantProps> =
                     >
                       <div className="overflow-hidden">
                         <div className="px-2.5 pb-2.5 pt-1.5 border-t border-veyra-border/60 space-y-2 text-xs">
-                          <div>
-                            <label className="block text-[10px] text-veyra-muted mb-0.5">
-                              Título
-                            </label>
-                            <input
-                              type="text"
-                              value={item.data.title}
-                              onChange={(e) => {
-                                const val = e.target.value;
-                                updateEntryItem(id, (curr) => ({
-                                  ...curr,
-                                  data: { ...curr.data, title: val },
-                                } as QuickAddProposalItem));
-                              }}
-                              className="w-full px-2.5 py-1.5 rounded-lg bg-veyra-canvas/80 border border-veyra-border text-xs text-veyra-text focus:outline-none focus:border-accent/60"
-                            />
+                          <div className={cn(item.action === 'create_event' && 'grid grid-cols-1 sm:grid-cols-12 gap-2')}>
+                            <div className={cn(item.action === 'create_event' && 'sm:col-span-7')}>
+                              <label className="block text-[10px] text-veyra-muted mb-0.5">
+                                Título
+                              </label>
+                              <input
+                                type="text"
+                                value={item.data.title}
+                                onChange={(e) => {
+                                  const val = e.target.value;
+                                  updateEntryItem(id, (curr) => ({
+                                    ...curr,
+                                    data: { ...curr.data, title: val },
+                                  } as QuickAddProposalItem));
+                                }}
+                                className="w-full px-2.5 py-1.5 rounded-lg bg-veyra-canvas/80 border border-veyra-border text-xs text-veyra-text focus:outline-none focus:border-accent/60"
+                              />
+                            </div>
+
+                            {item.action === 'create_event' && (
+                              <div className="sm:col-span-5">
+                                <label className="flex items-center gap-1 text-[10px] text-veyra-muted mb-0.5">
+                                  <Tag className="w-2.5 h-2.5" />
+                                  <span>Etiquetas (#)</span>
+                                </label>
+                                <div className="min-h-[30px] px-2 py-1 rounded-lg bg-veyra-canvas/80 border border-veyra-border focus-within:border-accent/60 flex flex-wrap items-center gap-1">
+                                  {(item.data.tags || []).map((tag) => (
+                                    <span
+                                      key={tag}
+                                      className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-veyra-elevated border border-accent/30 text-[10.5px] font-mono text-veyra-text/90"
+                                    >
+                                      <span>#{tag}</span>
+                                      <button
+                                        type="button"
+                                        onClick={() => removeTagFromEventEntry(id, tag)}
+                                        aria-label={`Quitar etiqueta ${tag}`}
+                                        className="text-veyra-muted hover:text-rose-400 cursor-pointer transition-colors"
+                                      >
+                                        <X className="w-2.5 h-2.5" />
+                                      </button>
+                                    </span>
+                                  ))}
+                                  <input
+                                    type="text"
+                                    value={tagDraftById[id] || ''}
+                                    onChange={(e) => {
+                                      const val = e.target.value;
+                                      if (val.includes(',')) {
+                                        addTagToEventEntry(id, val);
+                                      } else {
+                                        setTagDraftById((prev) => ({ ...prev, [id]: val }));
+                                      }
+                                    }}
+                                    onKeyDown={(e) => {
+                                      if (e.key === 'Enter') {
+                                        e.preventDefault();
+                                        addTagToEventEntry(id, tagDraftById[id] || '');
+                                      } else if (
+                                        e.key === 'Backspace' &&
+                                        !(tagDraftById[id] || '') &&
+                                        item.data.tags &&
+                                        item.data.tags.length > 0
+                                      ) {
+                                        removeTagFromEventEntry(
+                                          id,
+                                          item.data.tags[item.data.tags.length - 1]
+                                        );
+                                      }
+                                    }}
+                                    onBlur={() => {
+                                      if ((tagDraftById[id] || '').trim()) {
+                                        addTagToEventEntry(id, tagDraftById[id] || '');
+                                      }
+                                    }}
+                                    placeholder={
+                                      item.data.tags && item.data.tags.length > 0
+                                        ? '+ #tag'
+                                        : '#clase, #trabajo...'
+                                    }
+                                    className="flex-1 min-w-[68px] bg-transparent text-[11px] font-mono text-veyra-text placeholder:text-veyra-subtle focus:outline-none"
+                                  />
+                                </div>
+                              </div>
+                            )}
                           </div>
 
                           {item.action === 'create_reminder' && (
