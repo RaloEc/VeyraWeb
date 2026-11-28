@@ -15,6 +15,7 @@ import {
   Pencil,
   ChevronDown,
   Tag,
+  Minus,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import {
@@ -27,6 +28,7 @@ import { cn } from '../../lib/utils';
 
 export interface CreateWithVeyraAssistantProps {
   onClose: () => void;
+  onMinimize?: () => void;
   onManualReminder: () => void;
   onManualEvent: () => void;
   onManualNote: () => void;
@@ -164,6 +166,7 @@ function plainTextToHtml(text: string): string {
 
 export const CreateWithVeyraAssistant: React.FC<CreateWithVeyraAssistantProps> = ({
   onClose,
+  onMinimize,
   onManualReminder,
   onManualEvent,
   onManualNote,
@@ -671,14 +674,27 @@ export const CreateWithVeyraAssistant: React.FC<CreateWithVeyraAssistantProps> =
           <Sparkles className="w-4 h-4 text-accent" />
           <h3 className="text-sm font-bold tracking-tight">Crear con Veyra</h3>
         </div>
-        <button
-          type="button"
-          onClick={onClose}
-          aria-label="Cerrar"
-          className="w-8 h-8 rounded-full bg-veyra-elevated hover:bg-veyra-border/70 flex items-center justify-center text-veyra-muted hover:text-veyra-text transition-colors cursor-pointer"
-        >
-          <X className="w-4 h-4" />
-        </button>
+        <div className="flex items-center gap-1.5">
+          {onMinimize && (
+            <button
+              type="button"
+              onClick={onMinimize}
+              title="Minimizar"
+              aria-label="Minimizar"
+              className="w-8 h-8 rounded-full bg-veyra-elevated hover:bg-veyra-border/70 flex items-center justify-center text-veyra-muted hover:text-veyra-text transition-colors cursor-pointer"
+            >
+              <Minus className="w-4 h-4" />
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Cerrar"
+            className="w-8 h-8 rounded-full bg-veyra-elevated hover:bg-veyra-border/70 flex items-center justify-center text-veyra-muted hover:text-veyra-text transition-colors cursor-pointer"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
       </div>
 
       {/* Multimodal Input Pill */}

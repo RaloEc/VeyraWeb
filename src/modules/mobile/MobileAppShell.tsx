@@ -83,6 +83,11 @@ export const MobileAppShell: React.FC<MobileAppShellProps> = ({
   const [newFolderName, setNewFolderName] = useState('');
   const [settingsPageSection, setSettingsPageSection] = useState<MobileSettingsSection | null>(null);
   const [isGlobalSearchOpen, setIsGlobalSearchOpen] = useState(false);
+  const [pendingSearchHighlight, setPendingSearchHighlight] = useState<{
+    noteId: string;
+    query: string;
+    ts: number;
+  } | null>(null);
 
   const selectedEvent = useMemo(
     () => (selectedEventId ? eventsHook.events.find((e) => e.id === selectedEventId) || null : null),
@@ -98,11 +103,16 @@ export const MobileAppShell: React.FC<MobileAppShellProps> = ({
   );
 
   const handleSelectNote = useCallback(
-    (id: string | null) => {
+    (id: string | null, searchQuery?: string) => {
       setIsCalendarOpen(false);
       setSelectedEventId(null);
       setSelectedReminderId(null);
       setSelectedNoteId(id);
+      if (id && searchQuery?.trim()) {
+        setPendingSearchHighlight({ noteId: id, query: searchQuery.trim(), ts: Date.now() });
+      } else {
+        setPendingSearchHighlight(null);
+      }
       if (typeof window !== 'undefined') {
         if (id) {
           window.history.pushState({ type: 'note', id }, '', `/notes/${id}`);
@@ -344,6 +354,12 @@ export const MobileAppShell: React.FC<MobileAppShellProps> = ({
             setActiveTab('notes');
           }}
           onSelectEvent={(id) => handleSelectEvent(id)}
+          pendingSearchHighlight={
+            pendingSearchHighlight && pendingSearchHighlight.noteId === selectedNote.id
+              ? pendingSearchHighlight
+              : null
+          }
+          onConsumeSearchHighlight={() => setPendingSearchHighlight(null)}
         />
       </div>
     );
@@ -553,7 +569,7 @@ export const MobileAppShell: React.FC<MobileAppShellProps> = ({
         events={eventsHook.events}
         reminders={remindersHook.reminders}
         templates={allTemplates}
-        onSelectNote={(id) => handleSelectNote(id)}
+        onSelectNote={(id, searchQuery) => handleSelectNote(id, searchQuery)}
         onSelectFolder={(folderId) => {
           setSelectedFolderId(folderId);
           setActiveTab('notes');

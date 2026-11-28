@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { Loader2, PanelLeft, Search, Sparkles } from 'lucide-react';
+import { Loader2, PanelLeft, Search, Sparkles, Maximize2, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { NotesSidebar } from './NotesSidebar';
 import { NoteEditor } from './NoteEditor';
@@ -56,6 +56,12 @@ export const NotesModule: React.FC<NotesModuleProps> = ({
   const { allTemplates } = useTemplates(userId);
   const [isGlobalSearchOpen, setIsGlobalSearchOpen] = useState(false);
   const [isQuickAIModalOpen, setIsQuickAIModalOpen] = useState(false);
+  const [isQuickAIMinimized, setIsQuickAIMinimized] = useState(false);
+  const [pendingSearchHighlight, setPendingSearchHighlight] = useState<{
+    noteId: string;
+    query: string;
+    ts: number;
+  } | null>(null);
   const [isQuickAIExpanded, setIsQuickAIExpanded] = useState(false);
   const [isQuickEventModalOpen, setIsQuickEventModalOpen] = useState(false);
   const [isQuickReminderModalOpen, setIsQuickReminderModalOpen] = useState(false);
@@ -165,12 +171,17 @@ export const NotesModule: React.FC<NotesModuleProps> = ({
     }
   }, [isSidebarOpen, onToggleSidebar]);
 
-  const handleSelectNote = (id: string | null) => {
+  const handleSelectNote = (id: string | null, searchQuery?: string) => {
     setIsSettingsOpen(false);
     setIsCalendarOpen(false);
     setSelectedEventId(null);
     setSelectedReminderId(null);
     setSelectedNoteId(id);
+    if (id && searchQuery?.trim()) {
+      setPendingSearchHighlight({ noteId: id, query: searchQuery.trim(), ts: Date.now() });
+    } else {
+      setPendingSearchHighlight(null);
+    }
     if (id) closeSidebarOnMobile();
     if (typeof window !== 'undefined') {
       if (id) {
@@ -562,7 +573,10 @@ export const NotesModule: React.FC<NotesModuleProps> = ({
           <div className="flex items-center gap-2 min-w-0 ml-auto">
             <button
               type="button"
-              onClick={() => setIsQuickAIModalOpen(true)}
+              onClick={() => {
+                setIsQuickAIModalOpen(true);
+                setIsQuickAIMinimized(false);
+              }}
               title="Crear con Veyra IA (Texto, Voz o Imagen)"
               className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-accent text-white hover:brightness-110 active:scale-[0.98] text-xs font-semibold transition-all duration-150 cursor-pointer shrink-0"
             >
@@ -683,6 +697,12 @@ export const NotesModule: React.FC<NotesModuleProps> = ({
                 events={eventsHook.events}
                 onSelectFolder={setSelectedFolderId}
                 onSelectEvent={handleSelectEvent}
+                pendingSearchHighlight={
+                  pendingSearchHighlight && pendingSearchHighlight.noteId === selectedNote.id
+                    ? pendingSearchHighlight
+                    : null
+                }
+                onConsumeSearchHighlight={() => setPendingSearchHighlight(null)}
               />
             </div>
           ) : isCalendarActive ? (
@@ -748,35 +768,85 @@ export const NotesModule: React.FC<NotesModuleProps> = ({
       />
 
       {isQuickAIModalOpen && (
-        <aside
-          aria-label="Crear con Veyra"
-          className={`fixed bottom-4 right-4 left-4 sm:left-auto z-50 sm:w-full max-h-[calc(100vh-2rem)] rounded-[24px] bg-veyra-card border border-veyra-border shadow-2xl p-5 flex flex-col animate-in fade-in slide-in-from-bottom-4 duration-200 transition-[max-width] ease-[cubic-bezier(0.16,1,0.3,1)] ${isQuickAIExpanded ? 'sm:max-w-[560px]' : 'sm:max-w-[440px]'
-            }`}
-        >
-          <CreateWithVeyraAssistant
-            variant="sidebar"
-            onClose={() => {
-              setIsQuickAIModalOpen(false);
-              setIsQuickAIExpanded(false);
-            }}
-            onHasProposalChange={setIsQuickAIExpanded}
-            onManualReminder={() => setIsQuickReminderModalOpen(true)}
-            onManualEvent={() => setIsQuickEventModalOpen(true)}
-            onManualNote={async () => {
-              const newNote = await createNote(null, null, 'Nota rápida');
-              if (newNote) handleSelectNote(newNote.id);
-            }}
-            onSaveReminder={async (payload) => await remindersHook?.createReminder(payload)}
-            onSaveEvent={async (payload) => await eventsHook?.createEvent(payload)}
-            onSaveNote={async (title, contentHtml) => {
-              const created = await createNote(null, null, title, contentHtml);
-              if (created && created.id) {
-                handleSelectNote(created.id);
-              }
-            }}
-            autoFocus={true}
-          />
-        </aside>
+        <>
+          <aside
+            aria-label="Crear con Veyra"
+            className={cn(
+              'fixed bottom-4 right-4 left-4 sm:left-auto z-50 sm:w-full max-h-[calc(100vh-2rem)] rounded-[24px] bg-veyra-card border-2 border-accent/35 dark:border-accent/45 ring-1 ring-black/10 dark:ring-white/10 shadow-[0_20px_50px_rgba(0,0,0,0.22)] dark:shadow-[0_20px_50px_rgba(0,0,0,0.65)] p-5 flex flex-col animate-in fade-in slide-in-from-bottom-4 duration-200 transition-[max-width] ease-[cubic-bezier(0.16,1,0.3,1)]',
+              isQuickAIExpanded ? 'sm:max-w-[560px]' : 'sm:max-w-[440px]',
+              isQuickAIMinimized && 'hidden'
+            )}
+          >
+            <CreateWithVeyraAssistant
+              variant="sidebar"
+              onMinimize={() => setIsQuickAIMinimized(true)}
+              onClose={() => {
+                setIsQuickAIModalOpen(false);
+                setIsQuickAIMinimized(false);
+                setIsQuickAIExpanded(false);
+              }}
+              onHasProposalChange={setIsQuickAIExpanded}
+              onManualReminder={() => setIsQuickReminderModalOpen(true)}
+              onManualEvent={() => setIsQuickEventModalOpen(true)}
+              onManualNote={async () => {
+                const newNote = await createNote(null, null, 'Nota rápida');
+                if (newNote) handleSelectNote(newNote.id);
+              }}
+              onSaveReminder={async (payload) => await remindersHook?.createReminder(payload)}
+              onSaveEvent={async (payload) => await eventsHook?.createEvent(payload)}
+              onSaveNote={async (title, contentHtml) => {
+                const created = await createNote(null, null, title, contentHtml);
+                if (created && created.id) {
+                  handleSelectNote(created.id);
+                }
+              }}
+              autoFocus={true}
+            />
+          </aside>
+
+          {isQuickAIMinimized && (
+            <div className="fixed bottom-4 right-4 z-50 flex items-center gap-2 pl-3.5 pr-2 py-1.5 rounded-full bg-veyra-card border-2 border-accent/45 ring-1 ring-black/10 dark:ring-white/10 shadow-[0_12px_32px_rgba(0,0,0,0.25)] animate-in fade-in slide-in-from-bottom-2 duration-150 select-none">
+              <button
+                type="button"
+                onClick={() => setIsQuickAIMinimized(false)}
+                title="Restaurar Crear con Veyra"
+                className="flex items-center gap-2 text-xs font-semibold text-veyra-text hover:text-accent transition-colors cursor-pointer"
+              >
+                <Sparkles className="w-3.5 h-3.5 text-accent shrink-0" />
+                <span>Crear con Veyra</span>
+                {isQuickAIExpanded && (
+                  <span
+                    className="w-2 h-2 rounded-full bg-accent animate-pulse"
+                    title="Propuesta lista"
+                  />
+                )}
+              </button>
+              <div className="w-[1px] h-4 bg-veyra-border/70 mx-0.5" />
+              <button
+                type="button"
+                onClick={() => setIsQuickAIMinimized(false)}
+                title="Expandir"
+                aria-label="Expandir Crear con Veyra"
+                className="w-7 h-7 rounded-full hover:bg-veyra-elevated flex items-center justify-center text-veyra-muted hover:text-veyra-text transition-colors cursor-pointer"
+              >
+                <Maximize2 className="w-3.5 h-3.5" />
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsQuickAIModalOpen(false);
+                  setIsQuickAIMinimized(false);
+                  setIsQuickAIExpanded(false);
+                }}
+                title="Cerrar"
+                aria-label="Cerrar Crear con Veyra"
+                className="w-7 h-7 rounded-full hover:bg-veyra-elevated flex items-center justify-center text-veyra-muted hover:text-veyra-text transition-colors cursor-pointer"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          )}
+        </>
       )}
 
       <GlobalSearchModal

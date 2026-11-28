@@ -996,7 +996,7 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
 
                 {/* Modo Negro AMOLED (Solo en tema oscuro) */}
                 {settings.themeMode !== 'light' && (
-                  <div className="pt-2 flex items-center justify-between gap-4">
+                  <label className="pt-2 flex items-center justify-between gap-4 cursor-pointer group select-none">
                     <div className="min-w-0 flex-1">
                       <span className="font-semibold text-xs text-veyra-text block">Modo Negro AMOLED</span>
                       <span className="text-[10.5px] text-veyra-muted leading-relaxed block mt-0.5">
@@ -1005,23 +1005,20 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
                     </div>
                     <button
                       type="button"
-                      role="switch"
+                      role="checkbox"
                       aria-label="Activar Modo Negro AMOLED"
                       aria-checked={Boolean(settings.amoledEnabled)}
                       onClick={() => updateSetting('amoledEnabled', !settings.amoledEnabled)}
                       className={cn(
-                        'inline-flex items-center w-10 h-5.5 p-0.5 rounded-full transition-colors shrink-0 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent',
-                        settings.amoledEnabled ? 'bg-accent' : 'bg-zinc-700'
+                        'w-5 h-5 rounded-md border flex items-center justify-center transition-colors shrink-0 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent',
+                        settings.amoledEnabled
+                          ? 'bg-accent border-accent text-white'
+                          : 'bg-veyra-elevated border-veyra-border group-hover:border-accent/60'
                       )}
                     >
-                      <span
-                        className={cn(
-                          'w-4.5 h-4.5 rounded-full bg-white shadow-sm transition-transform duration-200',
-                          settings.amoledEnabled ? 'translate-x-4.5' : 'translate-x-0'
-                        )}
-                      />
+                      {settings.amoledEnabled && <Check className="w-3.5 h-3.5 stroke-[3]" />}
                     </button>
-                  </div>
+                  </label>
                 )}
               </div>
 

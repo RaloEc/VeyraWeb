@@ -40,6 +40,7 @@ import {
   HardDrive,
   Loader2,
   MoreHorizontal,
+  Search,
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { NOTE_FONTS, areColorsEqual } from './constants/noteFonts';
@@ -86,6 +87,8 @@ export interface EditorToolbarProps {
   onToggleFormattingMarks?: () => void;
   isFocusMode?: boolean;
   onToggleFocusMode?: () => void;
+  onOpenInNoteSearch?: () => void;
+  isInNoteSearchOpen?: boolean;
 }
 
 const NOOP_EDITOR = {
@@ -102,6 +105,8 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({
   onOpenTemplates,
   showFormattingMarks,
   onToggleFormattingMarks,
+  onOpenInNoteSearch,
+  isInNoteSearchOpen = false,
 }) => {
   const isEditorReady = Boolean(editorProp);
   const editor = editorProp ?? NOOP_EDITOR;
@@ -154,6 +159,7 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({
   const [visibleCount, setVisibleCount] = useState<number | null>(null);
   const [extendedHeight, setExtendedHeight] = useState<number>(82);
   const [isOverflowOpen, setIsOverflowOpen] = useState(false);
+  const hasToggledModeRef = useRef(false);
   const [overflowCoords, setOverflowCoords] = useState<{ top: number; right: number }>({
     top: 0,
     right: 8,
@@ -169,6 +175,7 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({
   });
 
   const handleToggleToolbarMode = useCallback(() => {
+    hasToggledModeRef.current = true;
     setIsTextColorMenuOpen(false);
     setIsHighlightMenuOpen(false);
     setIsFontMenuOpen(false);
@@ -364,10 +371,13 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({
     if (hasTemplates) items.push({ id: 'templates', group: 'insert', fallbackWidth: 28 });
     if (hasUploadImage) items.push({ id: 'image', group: 'insert', fallbackWidth: 28 });
     if (hasAttachFromDrive) items.push({ id: 'drive', group: 'insert', fallbackWidth: 28 });
-    // 6. IA
+    // 6. IA y Buscar
     items.push({ id: 'ai', group: 'ai', fallbackWidth: 28 });
+    if (onOpenInNoteSearch) {
+      items.push({ id: 'find-in-note', group: 'ai', fallbackWidth: 28 });
+    }
     return items;
-  }, [hasTemplates, hasUploadImage, hasAttachFromDrive, hasFormattingMarks]);
+  }, [hasTemplates, hasUploadImage, hasAttachFromDrive, hasFormattingMarks, onOpenInNoteSearch]);
 
   const recalculateVisibleCount = useCallback(() => {
     const container = toolbarContainerRef.current;
@@ -1516,7 +1526,7 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({
     });
   }
 
-  // 6. IA
+  // 6. IA y Buscar en nota
   toolbarItems.push({
     id: 'ai',
     group: 'ai',
@@ -1532,6 +1542,24 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({
         'Asistente IA (o escribe /ia)'
       ),
   });
+
+  if (onOpenInNoteSearch) {
+    toolbarItems.push({
+      id: 'find-in-note',
+      group: 'ai',
+      isActive: isInNoteSearchOpen,
+      render: (inOverflow) =>
+        toolBtn(
+          isInNoteSearchOpen,
+          () => {
+            if (inOverflow) setIsOverflowOpen(false);
+            onOpenInNoteSearch();
+          },
+          <Search className="w-3.5 h-3.5" />,
+          'Buscar en esta nota (Ctrl+F)'
+        ),
+    });
+  }
 
   const effectiveVisibleCount =
     visibleCount === null ? toolbarItems.length : Math.min(visibleCount, toolbarItems.length);
@@ -1596,7 +1624,10 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({
         {toolbarMode === 'compact' ? (
           <div
             ref={toolbarContainerRef}
-            className="h-9 px-2.5 sm:px-3 flex items-center gap-1 overflow-hidden animate-veyra-toolbar-compact"
+            className={cn(
+              'h-9 px-2.5 sm:px-3 flex items-center gap-1 overflow-hidden',
+              hasToggledModeRef.current && 'animate-veyra-toolbar-compact'
+            )}
           >
             <div
               ref={toolbarTrackRef}
@@ -1667,7 +1698,10 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({
         ) : (
           <div
             ref={extendedContentRef}
-            className="flex items-stretch animate-veyra-toolbar-expand"
+            className={cn(
+              'flex items-stretch',
+              hasToggledModeRef.current && 'animate-veyra-toolbar-expand'
+            )}
           >
             <div className="flex-1 min-w-0 flex items-stretch overflow-x-auto scrollbar-thin px-2.5 sm:px-3 pt-1.5 pb-1">
               {/* Sección: Historial */}
@@ -1906,9 +1940,9 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({
 
               <div className="w-[1px] self-stretch my-1 bg-veyra-border/80 shrink-0" />
 
-              {/* Sección: Asistente IA */}
+              {/* Sección: Asistente IA y Buscar en nota */}
               <div className="flex flex-col justify-between shrink-0 pl-2.5 pr-1">
-                <div className="flex-1 flex items-center justify-center">
+                <div className="flex-1 flex items-center justify-center gap-1">
                   <button
                     type="button"
                     onMouseDown={(e) => e.preventDefault()}
@@ -1924,9 +1958,27 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({
                     <Sparkles className="w-4 h-4 text-accent" />
                     <span className="text-[10.5px] font-medium leading-none">Asistente</span>
                   </button>
+
+                  {onOpenInNoteSearch && (
+                    <button
+                      type="button"
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={onOpenInNoteSearch}
+                      title="Buscar y reemplazar en esta nota (Ctrl+F)"
+                      className={cn(
+                        'h-[50px] min-w-[52px] px-2 rounded-lg transition-colors flex flex-col items-center justify-center gap-1 cursor-pointer',
+                        isInNoteSearchOpen
+                          ? 'bg-accent/15 text-accent font-semibold'
+                          : 'text-veyra-muted hover:text-veyra-text hover:bg-black/5 dark:hover:bg-white/5'
+                      )}
+                    >
+                      <Search className="w-4 h-4" />
+                      <span className="text-[10.5px] font-medium leading-none">Buscar</span>
+                    </button>
+                  )}
                 </div>
                 <div className="text-[10px] leading-none text-veyra-muted/80 font-medium text-center pt-1 tracking-tight">
-                  IA
+                  IA / Buscar
                 </div>
               </div>
             </div>

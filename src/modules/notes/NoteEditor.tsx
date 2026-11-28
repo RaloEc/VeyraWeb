@@ -59,6 +59,8 @@ import { getLiveVirtualBreaks, isA4PaginationEnabled } from './pagination/a4Pagi
 import { calculateParagraphSplit } from './pagination/lineBreakMeasurer';
 import type { A4VirtualBreakWidgetSpec } from './pagination/types';
 import { AICommandExtension } from './extensions/AICommandExtension';
+import { SearchAndReplaceExtension } from './extensions/SearchAndReplaceExtension';
+import { InNoteFindReplaceBar } from './components/InNoteFindReplaceBar';
 import { EditorToolbar } from './EditorToolbar';
 import { CollabPresence } from './CollabPresence';
 import {
@@ -134,6 +136,8 @@ export interface NoteEditorProps {
   events?: CalendarEvent[];
   onSelectFolder?: (folderId: string | null) => void;
   onSelectEvent?: (eventId: string) => void;
+  pendingSearchHighlight?: { noteId: string; query: string; ts: number } | null;
+  onConsumeSearchHighlight?: () => void;
 }
 
 interface YjsActiveEditorProps {
@@ -168,6 +172,9 @@ interface YjsActiveEditorProps {
   onSelectEvent?: (eventId: string) => void;
   entryMode?: 'open' | 'switch';
   isSwitchingNote?: boolean;
+  skipInitialEnter?: boolean;
+  pendingSearchHighlight?: { noteId: string; query: string; ts: number } | null;
+  onConsumeSearchHighlight?: () => void;
 }
 
 const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
@@ -193,6 +200,9 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
   onSelectEvent,
   entryMode = 'open',
   isSwitchingNote = false,
+  skipInitialEnter = false,
+  pendingSearchHighlight,
+  onConsumeSearchHighlight,
 }) => {
   const [activePageId, setActivePageId] = useState<string>(() => {
     if (typeof window !== 'undefined') {
@@ -215,6 +225,18 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
   const [, setLastSavedAt] = useState<Date | null>(new Date());
   const [isPagesSidebarOpen, setIsPagesSidebarOpen] = useState(false);
   const [isFocusMode, setIsFocusMode] = useState(false);
+  const [isFindReplaceOpen, setIsFindReplaceOpen] = useState(false);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f') {
+        e.preventDefault();
+        setIsFindReplaceOpen(true);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
   const [pageFormat, setPageFormat] = useState<'infinite' | 'a4'>(() => {
     // 1. Prioridad: Metadato Yjs de esta nota específica
     const metaFmt = ydoc.getMap('meta').get('pageFormat');
@@ -245,7 +267,9 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
     return 'infinite';
   });
   const [initialPageFormat] = useState<'infinite' | 'a4'>(pageFormat);
-  const [animPhase, setAnimPhase] = useState<'entering' | 'entered' | 'closing'>('entering');
+  const [animPhase, setAnimPhase] = useState<'entering' | 'entered' | 'closing'>(() =>
+    skipInitialEnter ? 'entered' : 'entering'
+  );
   const [showSwitchWipeEdge, setShowSwitchWipeEdge] = useState(entryMode === 'switch');
   const isClosingRef = useRef(false);
 
@@ -1310,6 +1334,7 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
         BookmarkPrompt,
         AIPrompt,
         AICommandExtension,
+        SearchAndReplaceExtension,
         A4PaginationExtension.configure({ enabled: true }),
       ],
       editorProps: {
@@ -2445,6 +2470,76 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
     triggerAutoSave();
   };
 
+  // Jump to & pulse-highlight matching text when opened from Global Search
+  const lastConsumedHighlightTsRef = useRef<number>(0);
+  useEffect(() => {
+    if (!editor || !pendingSearchHighlight || !pendingSearchHighlight.query) return;
+    if (pendingSearchHighlight.ts === lastConsumedHighlightTsRef.current) return;
+
+    const queryText = pendingSearchHighlight.query.trim();
+    if (!queryText) {
+      onConsumeSearchHighlight?.();
+      return;
+    }
+
+    const tryHighlight = (): boolean => {
+      if (editor.isDestroyed) return false;
+      const found = editor.commands.flashSearchMatch(queryText);
+      if (!found) return false;
+
+      const storage = (editor.storage as unknown as Record<string, { results?: Array<{ from: number; to: number }> }>)
+        .searchAndReplace;
+      const first = storage?.results?.[0];
+      if (first) {
+        try {
+          const domAt = editor.view.domAtPos(first.from);
+          const el = domAt.node instanceof HTMLElement ? domAt.node : domAt.node.parentElement;
+          el?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+        } catch {
+          // Ignore if DOM position is unavailable
+        }
+      }
+      lastConsumedHighlightTsRef.current = pendingSearchHighlight.ts;
+      onConsumeSearchHighlight?.();
+      window.setTimeout(() => {
+        if (!editor.isDestroyed) {
+          editor.commands.clearSearch();
+        }
+      }, 1850);
+      return true;
+    };
+
+    const rafId = requestAnimationFrame(() => {
+      if (tryHighlight()) return;
+
+      // If multi-page infinite mode, search other pages in Yjs and switch to the first match
+      if (pageFormat === 'infinite' && pages.length > 1) {
+        const fold = (s: string) =>
+          s
+            .normalize('NFD')
+            .replace(/[\u0300-\u036f]/g, '')
+            .toLowerCase();
+        const needle = fold(queryText);
+        const words = needle.split(/\s+/).filter((w) => w.length >= 2);
+        for (let i = 0; i < pages.length; i++) {
+          const pid = pages[i];
+          if (pid === activePageId) continue;
+          const html = yFragmentToHtml(ydoc.getXmlFragment(resolvePageFragmentName(pid)));
+          const plain = fold(html.replace(/<[^>]+>/g, ' '));
+          if (plain.includes(needle) || words.some((w) => plain.includes(w))) {
+            handleSelectPage(pid, i + 1);
+            return;
+          }
+        }
+      }
+
+      lastConsumedHighlightTsRef.current = pendingSearchHighlight.ts;
+      onConsumeSearchHighlight?.();
+    });
+
+    return () => cancelAnimationFrame(rafId);
+  }, [editor, pendingSearchHighlight, pageFormat, pages, activePageId, ydoc, onConsumeSearchHighlight]);
+
   // Breadcrumb de Ubicación Unificado (Jerarquía de Carpeta / Evento - Opción B)
   const breadcrumb = useMemo(() => {
     const linkedEvent = events?.find(
@@ -2562,6 +2657,23 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
               className="p-1.5 rounded-md text-veyra-muted hover:text-veyra-text hover:bg-black/5 dark:hover:bg-white/5 transition-colors cursor-pointer flex items-center justify-center shrink-0"
             >
               <PanelLeft className="w-4 h-4 text-accent" />
+            </button>
+          )}
+
+          {onOpenGlobalSearch && (
+            <button
+              type="button"
+              onClick={onOpenGlobalSearch}
+              title="Buscar en Veyra (Ctrl+K)"
+              aria-label="Buscar en Veyra (Ctrl+K)"
+              className="h-7 px-2 rounded-md text-veyra-muted hover:text-veyra-text hover:bg-black/5 dark:hover:bg-white/5 transition-colors cursor-pointer flex items-center gap-1.5 shrink-0"
+            >
+              <Search className="w-3.5 h-3.5 text-accent shrink-0" />
+              {!isTightHeader && (
+                <kbd className="hidden lg:inline-flex items-center px-1 py-0.2 rounded bg-veyra-elevated/80 border border-veyra-border/70 text-[9.5px] font-mono text-veyra-subtle">
+                  Ctrl K
+                </kbd>
+              )}
             </button>
           )}
 
@@ -2727,21 +2839,9 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
 
           {!isTightHeader && <CollabPresence users={collabUsers} currentUserId={currentUserId} />}
 
-          {/* Bloque 1: Utilidades globales compactas (Pomodoro + Buscar + Restaurar Enfoque) */}
+          {/* Bloque 1: Utilidades globales compactas (Pomodoro + Restaurar Enfoque) */}
           <div className="flex items-center gap-1 shrink-0">
             <PomodoroHeaderPill />
-
-            {onOpenGlobalSearch && (
-              <button
-                type="button"
-                onClick={onOpenGlobalSearch}
-                title="Buscar (Ctrl+K)"
-                aria-label="Buscar (Ctrl+K)"
-                className="h-7 w-7 rounded-md text-veyra-muted hover:text-veyra-text hover:bg-black/5 dark:hover:bg-white/5 transition-colors cursor-pointer flex items-center justify-center shrink-0"
-              >
-                <Search className="w-3.5 h-3.5" />
-              </button>
-            )}
 
             {isFocusMode && !(pageFormat === 'a4' && activeHeaderFooterZone !== null) && (
               <button
@@ -3010,6 +3110,8 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
             onToggleFormattingMarks={handleToggleFormattingMarks}
             isFocusMode={isFocusMode}
             onToggleFocusMode={() => setIsFocusMode((prev) => !prev)}
+            onOpenInNoteSearch={() => setIsFindReplaceOpen((prev) => !prev)}
+            isInNoteSearchOpen={isFindReplaceOpen}
           />
         )}
       </div>
@@ -3022,6 +3124,12 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
         )}
       >
         <div className="flex-1 min-w-0 relative flex flex-col overflow-hidden">
+          <InNoteFindReplaceBar
+            editor={editor}
+            isOpen={isFindReplaceOpen}
+            onClose={() => setIsFindReplaceOpen(false)}
+          />
+
           {/* Botón flotante lateral derecho para abrir el Organizador de Hojas */}
           <button
             type="button"
@@ -3461,6 +3569,8 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
   events,
   onSelectFolder,
   onSelectEvent,
+  pendingSearchHighlight,
+  onConsumeSearchHighlight,
 }) => {
   const [displayedState, setDisplayedState] = useState<{
     note: Note;
@@ -3468,8 +3578,24 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
     entryMode: 'open' | 'switch';
   } | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [shellAnimPhase, setShellAnimPhase] = useState<'entering' | 'entered'>('entering');
   const latestNoteRef = useRef<Note | null>(note);
   const { isDark, isAmoled } = useTheme();
+
+  useEffect(() => {
+    if (displayedState) return;
+    let raf1 = 0;
+    let raf2 = 0;
+    raf1 = requestAnimationFrame(() => {
+      raf2 = requestAnimationFrame(() => {
+        setShellAnimPhase('entered');
+      });
+    });
+    return () => {
+      cancelAnimationFrame(raf1);
+      cancelAnimationFrame(raf2);
+    };
+  }, [displayedState]);
 
   useEffect(() => {
     latestNoteRef.current = note;
@@ -3629,7 +3755,12 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
     return (
       <div className="flex-1 min-w-0 flex flex-col h-full bg-veyra-canvas select-none">
         {/* Instant Contextual Header */}
-        <div className="h-12 border-b border-veyra-border px-3 sm:px-4 flex items-center justify-between gap-2 text-xs shrink-0 bg-veyra-canvas/90 backdrop-blur-md">
+        <div
+          className={cn(
+            'h-12 border-b border-veyra-border px-3 sm:px-4 flex items-center justify-between gap-2 text-xs shrink-0 bg-veyra-canvas/90 backdrop-blur-md',
+            shellAnimPhase === 'entered' ? 'veyra-note-chrome-entered' : 'veyra-note-chrome-entering'
+          )}
+        >
           <div className="flex items-center gap-1.5 min-w-0 flex-1">
             {!isSidebarOpen && onToggleSidebar && (
               <button
@@ -3639,6 +3770,19 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
                 className="p-1.5 rounded-md text-veyra-muted hover:text-veyra-text hover:bg-black/5 dark:hover:bg-white/5 transition-colors cursor-pointer flex items-center justify-center shrink-0"
               >
                 <PanelLeft className="w-4 h-4 text-accent" />
+              </button>
+            )}
+            {onOpenGlobalSearch && (
+              <button
+                type="button"
+                onClick={onOpenGlobalSearch}
+                title="Buscar en Veyra (Ctrl+K)"
+                className="h-7 px-2 rounded-md text-veyra-muted hover:text-veyra-text hover:bg-black/5 dark:hover:bg-white/5 transition-colors cursor-pointer flex items-center gap-1.5 shrink-0"
+              >
+                <Search className="w-3.5 h-3.5 text-accent shrink-0" />
+                <kbd className="hidden lg:inline-flex items-center px-1 py-0.2 rounded bg-veyra-elevated/80 border border-veyra-border/70 text-[9.5px] font-mono text-veyra-subtle">
+                  Ctrl K
+                </kbd>
               </button>
             )}
             {onCloseNote && (
@@ -3680,16 +3824,6 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
 
           <div className="flex items-center gap-1.5 shrink-0">
             <PomodoroHeaderPill />
-            {onOpenGlobalSearch && (
-              <button
-                type="button"
-                onClick={onOpenGlobalSearch}
-                title="Buscar (Ctrl+K)"
-                className="h-7 w-7 rounded-md text-veyra-muted hover:text-veyra-text hover:bg-black/5 dark:hover:bg-white/5 transition-colors cursor-pointer flex items-center justify-center shrink-0"
-              >
-                <Search className="w-3.5 h-3.5" />
-              </button>
-            )}
             <div className="w-[1px] h-4 bg-veyra-border/70 mx-0.5 shrink-0 hidden sm:block" />
             <div className="hidden sm:flex items-center gap-1.5 h-7 px-2 rounded-md text-xs text-veyra-muted opacity-60">
               {cachedFormat === 'a4' ? <FileText className="w-3.5 h-3.5" /> : <ScrollText className="w-3.5 h-3.5" />}
@@ -3714,12 +3848,20 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
         </div>
 
         {/* Instant Full Toolbar (inert while Yjs content hydrates) */}
-        <EditorToolbar
-          editor={null}
-          onOpenTemplates={() => setIsTemplatesModalOpen(true)}
-          showFormattingMarks={false}
-          onToggleFormattingMarks={() => {}}
-        />
+        <div
+          className={cn(
+            'shrink-0',
+            shellAnimPhase === 'entered' ? 'veyra-note-chrome-entered' : 'veyra-note-chrome-entering'
+          )}
+        >
+          <EditorToolbar
+            editor={null}
+            onOpenTemplates={() => setIsTemplatesModalOpen(true)}
+            showFormattingMarks={false}
+            onToggleFormattingMarks={() => {}}
+            onOpenInNoteSearch={() => {}}
+          />
+        </div>
 
         {/* Instant Canvas & Sheet Content Skeleton */}
         <div
@@ -3732,6 +3874,11 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
             <div
               className={cn(
                 'mx-auto w-full rounded-xl border transition-colors',
+                shellAnimPhase === 'entered'
+                  ? 'veyra-note-sheet-entered'
+                  : cachedFormat === 'a4'
+                    ? 'veyra-note-sheet-a4-entering'
+                    : 'veyra-note-sheet-entering',
                 cachedFormat === 'a4'
                   ? 'max-w-[794px] min-h-[720px] p-10 sm:p-14 bg-white text-slate-900 border-slate-300/80 shadow-md'
                   : cn(
@@ -3802,6 +3949,9 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
       onSelectEvent={onSelectEvent}
       entryMode={displayedState.entryMode}
       isSwitchingNote={isSwitchingNote}
+      skipInitialEnter={shellAnimPhase === 'entered'}
+      pendingSearchHighlight={pendingSearchHighlight}
+      onConsumeSearchHighlight={onConsumeSearchHighlight}
     />
   );
 };

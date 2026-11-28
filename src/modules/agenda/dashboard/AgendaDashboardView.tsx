@@ -141,7 +141,7 @@ export const AgendaDashboardView: React.FC<AgendaDashboardViewProps> = ({
 
   return (
     <div className="flex-1 flex flex-col h-full bg-veyra-canvas overflow-hidden">
-      <main className="flex-1 overflow-y-auto px-6 xl:px-10 pt-8 xl:pt-12 2xl:pt-16 pb-12 custom-scrollbar">
+      <main className="flex-1 overflow-y-auto px-6 xl:px-10 pt-4 xl:pt-5 2xl:pt-6 pb-12 custom-scrollbar">
         <div className="max-w-4xl xl:max-w-5xl 2xl:max-w-[1180px] mx-auto flex flex-col space-y-8 xl:space-y-10 2xl:space-y-12">
           {/* Header + Single-line Today Strip */}
           <GreetingWidget

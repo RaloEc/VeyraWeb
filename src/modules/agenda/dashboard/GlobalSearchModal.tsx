@@ -29,7 +29,7 @@ export interface GlobalSearchModalProps {
   events: CalendarEvent[];
   reminders: Reminder[];
   templates: NoteTemplate[];
-  onSelectNote: (noteId: string) => void;
+  onSelectNote: (noteId: string, searchQuery?: string) => void;
   onSelectFolder: (folderId: string) => void;
   onSelectEvent: (eventId: string) => void;
   onSelectReminder: (reminderId: string) => void;
@@ -43,6 +43,8 @@ interface SearchEntry {
   category: Exclude<SearchCategory, 'all'>;
   title: string;
   subtitle: string;
+  bodyText?: string;
+  folderName?: string;
   meta?: string;
   color?: string | null;
   recencyMs: number;
@@ -50,6 +52,67 @@ interface SearchEntry {
   titleNorm: string;
   tagsNorm: string;
   onExecute: () => void;
+}
+
+function stripHtmlFast(raw: string): string {
+  if (!raw) return '';
+  return raw
+    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&quot;/gi, '"')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function extractNotePlainText(content: string | null | undefined, preview: string): string {
+  if (!content) return preview;
+  const trimmed = content.trim();
+  if (trimmed.startsWith('{')) {
+    try {
+      const parsed = JSON.parse(trimmed) as {
+        pages?: Array<{ title?: string; content?: string }>;
+      };
+      if (Array.isArray(parsed.pages)) {
+        const joined = parsed.pages
+          .map((p) => [p.title || '', stripHtmlFast(p.content || '')].filter(Boolean).join(' '))
+          .filter(Boolean)
+          .join(' ');
+        return joined || preview;
+      }
+    } catch {
+      // Fallback to raw HTML stripping
+    }
+  }
+  return stripHtmlFast(trimmed) || preview;
+}
+
+function buildMatchSnippet(bodyText: string, tokens: string[]): string {
+  if (!bodyText || tokens.length === 0) return '';
+  const cleanTokens = tokens
+    .map((t) => (t.startsWith('#') ? t.slice(1) : t))
+    .filter((t) => t.length >= 2);
+  if (cleanTokens.length === 0) return bodyText.slice(0, 120);
+
+  const normBody = normalizeText(bodyText);
+  let matchIdx = -1;
+  for (const tok of cleanTokens) {
+    const idx = normBody.indexOf(tok);
+    if (idx !== -1 && (matchIdx === -1 || idx < matchIdx)) {
+      matchIdx = idx;
+    }
+  }
+
+  if (matchIdx === -1) return bodyText.slice(0, 120);
+  const start = Math.max(0, matchIdx - 40);
+  const end = Math.min(bodyText.length, matchIdx + 95);
+  const prefix = start > 0 ? '...' : '';
+  const suffix = end < bodyText.length ? '...' : '';
+  return `${prefix}${bodyText.slice(start, end).trim()}${suffix}`;
 }
 
 function normalizeText(str: string): string {
@@ -140,6 +203,8 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({
 
   const inputRef = useRef<HTMLInputElement>(null);
   const itemRefs = useRef<Array<HTMLButtonElement | null>>([]);
+  const queryRef = useRef('');
+  queryRef.current = query;
 
   useEffect(() => {
     if (!isOpen) return;
@@ -161,14 +226,16 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({
   }, [folders]);
 
   const allEntries = useMemo<SearchEntry[]>(() => {
+    if (!isOpen) return [];
     const entries: SearchEntry[] = [];
 
-    // 1. Notes
+    // 1. Notes (full-text extraction cached only while modal is open)
     for (const note of notes) {
       if (note.deleted === 1) continue;
       const title = note.title?.trim() || 'Nota sin título';
       const folderName = note.folder_id ? folderMap.get(note.folder_id)?.name || '' : '';
       const preview = note.preview_text?.trim() || '';
+      const bodyText = extractNotePlainText(note.content, preview);
       const subtitle = [folderName, preview].filter(Boolean).join(' · ') || 'Nota';
 
       entries.push({
@@ -176,13 +243,15 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({
         category: 'notes',
         title,
         subtitle,
+        bodyText,
+        folderName,
         meta: 'Nota',
         recencyMs: note.updated_at_ms || note.created_at_ms || 0,
         titleNorm: normalizeText(title),
-        tagsNorm: normalizeText(`${title} ${preview}`),
-        searchNorm: normalizeText(`${title} ${folderName} ${preview}`),
+        tagsNorm: normalizeText(`${title} ${bodyText}`),
+        searchNorm: normalizeText(`${title} ${folderName} ${bodyText}`),
         onExecute: () => {
-          onSelectNote(note.id);
+          onSelectNote(note.id, queryRef.current.trim() || undefined);
           onClose();
         },
       });
@@ -302,6 +371,7 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({
 
     return entries;
   }, [
+    isOpen,
     notes,
     folders,
     events,
@@ -373,7 +443,13 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({
       }
 
       if (allMatch) {
-        scored.push({ entry, score });
+        let resolvedEntry = entry;
+        if (entry.category === 'notes' && entry.bodyText) {
+          const snippet = buildMatchSnippet(entry.bodyText, tokens);
+          const dynamicSubtitle = [entry.folderName, snippet].filter(Boolean).join(' · ') || 'Nota';
+          resolvedEntry = { ...entry, subtitle: dynamicSubtitle };
+        }
+        scored.push({ entry: resolvedEntry, score });
         counts.all += 1;
         counts[entry.category] += 1;
       }

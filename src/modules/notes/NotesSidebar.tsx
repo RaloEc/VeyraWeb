@@ -2274,23 +2274,6 @@ export const NotesSidebar: React.FC<NotesSidebarProps> = ({
                     <button
                       type="button"
                       onClick={() => {
-                        if (selectedFolderId) {
-                          setExpandedFolders((prev) => ({ ...prev, [selectedFolderId]: true }));
-                        }
-                        onCreateNote();
-                      }}
-                      className="p-1 rounded text-veyra-subtle hover:text-veyra-text hover:bg-white/5 transition-colors cursor-pointer"
-                      title={
-                        selectedFolderId
-                          ? 'Nueva nota en la carpeta seleccionada'
-                          : 'Nueva nota'
-                      }
-                    >
-                      <Plus className="w-3.5 h-3.5" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
                         setInlineSubfolderParentId(ROOT_INLINE_FOLDER);
                         setInlineSubfolderName('');
                         setInlineSubfolderColor('#60A5FA');
