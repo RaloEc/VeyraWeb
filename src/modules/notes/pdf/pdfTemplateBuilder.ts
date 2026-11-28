@@ -1447,10 +1447,37 @@ export function buildPdfDocumentHtml(
         } catch(e) {}
       }
 
+      var hasStartedPagination = false;
+      function safeRunPaginator() {
+        hasStartedPagination = true;
+        try {
+          runPaginator();
+        } catch (err) {
+          var rawDoc = document.getElementById('raw-document');
+          var output = document.getElementById('paged-output');
+          if (rawDoc && output && output.children.length === 0) {
+            output.innerHTML = '<div class="pdf-page-sheet"><div class="sheet-body">' + rawDoc.innerHTML + '</div></div>';
+          }
+        }
+      }
+
       function init() {
+        var fallbackTimer = setTimeout(function() {
+          if (!hasStartedPagination) safeRunPaginator();
+        }, 500);
+
         if (document.fonts && document.fonts.ready) {
-          document.fonts.ready.then(runWhenImagesLoaded);
+          document.fonts.ready
+            .then(function() {
+              clearTimeout(fallbackTimer);
+              runWhenImagesLoaded();
+            })
+            .catch(function() {
+              clearTimeout(fallbackTimer);
+              runWhenImagesLoaded();
+            });
         } else {
+          clearTimeout(fallbackTimer);
           runWhenImagesLoaded();
         }
       }
@@ -1458,13 +1485,17 @@ export function buildPdfDocumentHtml(
       function runWhenImagesLoaded() {
         var imgs = Array.from(document.images);
         if (imgs.length === 0) {
-          runPaginator();
+          safeRunPaginator();
           return;
         }
         var pending = imgs.length;
+        var imgFallback = setTimeout(safeRunPaginator, 1500);
         function done() {
           pending--;
-          if (pending <= 0) runPaginator();
+          if (pending <= 0) {
+            clearTimeout(imgFallback);
+            safeRunPaginator();
+          }
         }
         imgs.forEach(function(img) {
           if (img.complete) {
@@ -1474,7 +1505,10 @@ export function buildPdfDocumentHtml(
             img.addEventListener('error', done);
           }
         });
-        if (pending <= 0) runPaginator();
+        if (pending <= 0) {
+          clearTimeout(imgFallback);
+          safeRunPaginator();
+        }
       }
 
       if (document.readyState === 'complete') {

@@ -401,7 +401,7 @@ export const ReminderDetailView: React.FC<ReminderDetailViewProps> = ({
             type="button"
             onClick={onClose}
             title="Cerrar vista"
-            className="p-1 rounded text-veyra-muted hover:text-veyra-text hover:bg-white/5 transition-colors cursor-pointer"
+            className="p-1.5 rounded-md bg-red-500/10 hover:bg-red-500/20 text-red-500 transition-colors cursor-pointer flex items-center justify-center"
           >
             <X className="w-3.5 h-3.5" />
           </button>

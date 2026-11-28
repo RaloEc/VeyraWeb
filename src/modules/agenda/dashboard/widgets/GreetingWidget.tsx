@@ -1,6 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { CheckCircle2, Clock, Sparkles, AlertCircle } from 'lucide-react';
-import { cn } from '../../../../lib/utils';
+import React, { useState, useEffect, useMemo } from 'react';
+import { ArrowRight, Calendar } from 'lucide-react';
 import type { CalendarEvent } from '../../../../hooks/useEvents';
 import type { Reminder } from '../../../../types/reminders';
 
@@ -9,8 +8,17 @@ interface GreetingWidgetProps {
   userEmail?: string;
   todayEvents: CalendarEvent[];
   todayReminders: Reminder[];
-  isCompact?: boolean;
-  rowSpan?: number;
+  onSelectEvent?: (eventId: string) => void;
+  onSelectReminder?: (reminderId: string) => void;
+  onOpenFullCalendar?: () => void;
+}
+
+function formatTime(ms: number): string {
+  return new Date(ms).toLocaleTimeString([], {
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  });
 }
 
 export const GreetingWidget: React.FC<GreetingWidgetProps> = ({
@@ -18,8 +26,9 @@ export const GreetingWidget: React.FC<GreetingWidgetProps> = ({
   userEmail,
   todayEvents,
   todayReminders,
-  isCompact = false,
-  rowSpan = 3,
+  onSelectEvent,
+  onSelectReminder,
+  onOpenFullCalendar,
 }) => {
   const [now, setNow] = useState(() => new Date());
 
@@ -46,67 +55,101 @@ export const GreetingWidget: React.FC<GreetingWidgetProps> = ({
     month: 'long',
   }).format(now);
 
-  const activeReminders = todayReminders.filter((r) => r.status !== 'completed');
-  const highPriorityCount = activeReminders.filter(
-    (r) => r.priority === 3 || r.control_level === 'critical'
-  ).length;
+  const activeReminders = useMemo(
+    () => todayReminders.filter((r) => r.status !== 'completed'),
+    [todayReminders]
+  );
 
-  const isUltraCompact = rowSpan <= 2 && !isCompact;
+  // Build unified chronological items for today's clean top strip
+  const todayItems = useMemo(() => {
+    const list: Array<
+      | { kind: 'event'; id: string; timeMs: number; label: string; timeLabel: string; color?: string | null }
+      | { kind: 'reminder'; id: string; timeMs: number; label: string; timeLabel: string; color?: string | null }
+    > = [];
+
+    todayEvents.forEach((ev) => {
+      list.push({
+        kind: 'event',
+        id: ev.id,
+        timeMs: Number(ev.start_time_ms) || 0,
+        label: ev.title,
+        timeLabel: ev.is_all_day ? 'todo el día' : `a las ${formatTime(ev.start_time_ms)}`,
+        color: ev.color,
+      });
+    });
+
+    activeReminders.forEach((rem) => {
+      list.push({
+        kind: 'reminder',
+        id: rem.id,
+        timeMs: Number(rem.due_date_ms) || 0,
+        label: rem.title,
+        timeLabel: rem.due_date_ms ? `a las ${formatTime(rem.due_date_ms)}` : 'hoy',
+      });
+    });
+
+    return list.sort((a, b) => a.timeMs - b.timeMs);
+  }, [todayEvents, activeReminders]);
+
+  const primaryItem = todayItems[0];
+  const remainingCount = todayItems.length - 1;
 
   return (
-    <section className="h-full flex flex-col justify-center min-h-0">
-      <div
-        className={cn(
-          'flex justify-between gap-4 min-h-0',
-          isCompact ? 'flex-col items-start' : 'flex-row items-center'
-        )}
-      >
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-1.5 mb-1">
-            <span className="text-[11px] uppercase tracking-wider font-semibold text-accent capitalize flex items-center gap-1.5 truncate">
-              <Sparkles className="w-3.5 h-3.5 shrink-0" />
-              <span className="truncate">{formattedDate}</span>
-            </span>
-          </div>
+    <header className="flex flex-col gap-2 min-w-0">
+      <p className="text-xs font-medium text-veyra-muted capitalize truncate">
+        {formattedDate}
+      </p>
 
-          <h2
-            className={cn(
-              'font-bold text-veyra-text tracking-tight truncate leading-tight',
-              isUltraCompact ? 'text-lg sm:text-xl' : 'text-xl sm:text-2xl'
-            )}
+      <h1 className="text-2xl xl:text-3xl 2xl:text-4xl font-bold text-veyra-text tracking-tight truncate leading-tight">
+        {greeting}, {displayName}
+      </h1>
+
+      {/* Clean single-line "Hoy" strip */}
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 pt-1 text-xs text-veyra-muted">
+        {primaryItem ? (
+          <button
+            type="button"
+            onClick={() => {
+              if (primaryItem.kind === 'event') {
+                onSelectEvent?.(primaryItem.id);
+              } else {
+                onSelectReminder?.(primaryItem.id);
+              }
+            }}
+            className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-veyra-card/70 hover:bg-veyra-card text-veyra-text transition-colors cursor-pointer max-w-full"
           >
-            {greeting}, <span className="text-accent">{displayName}</span>
-          </h2>
-
-          <div className="text-xs text-veyra-muted mt-1.5 flex flex-wrap items-center gap-x-2.5 gap-y-1">
-            <span className="inline-flex items-center gap-1.5">
-              <Clock className="w-3.5 h-3.5 text-blue-400 shrink-0" />
-              <strong className="text-veyra-text font-semibold">{todayEvents.length}</strong>
-              <span>{todayEvents.length === 1 ? 'evento' : 'eventos'}</span>
+            <span
+              className="w-1.5 h-1.5 rounded-full shrink-0"
+              style={{ backgroundColor: primaryItem.color || 'var(--accent-primary)' }}
+            />
+            <span className="truncate">
+              <span className="text-veyra-muted">Hoy {primaryItem.timeLabel} · </span>
+              <span className="font-medium text-veyra-text">{primaryItem.label}</span>
             </span>
-
-            <span className="text-veyra-subtle">·</span>
-
-            <span className="inline-flex items-center gap-1.5">
-              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-              <strong className="text-veyra-text font-semibold">{activeReminders.length}</strong>
-              <span>{activeReminders.length === 1 ? 'tarea' : 'tareas'}</span>
-            </span>
-
-            {highPriorityCount > 0 && (
-              <>
-                <span className="text-veyra-subtle">·</span>
-                <span className="inline-flex items-center gap-1 text-rose-400 font-medium">
-                  <AlertCircle className="w-3.5 h-3.5 shrink-0" />
-                  <span>
-                    {highPriorityCount} {highPriorityCount === 1 ? 'urgente' : 'urgentes'}
-                  </span>
-                </span>
-              </>
+            {remainingCount > 0 && (
+              <span className="text-[11px] text-veyra-muted shrink-0">
+                (+{remainingCount} más)
+              </span>
             )}
-          </div>
-        </div>
+          </button>
+        ) : (
+          <span className="inline-flex items-center gap-1.5 text-veyra-muted">
+            <Calendar className="w-3.5 h-3.5 text-veyra-subtle shrink-0" />
+            <span>Sin eventos ni tareas pendientes hoy</span>
+          </span>
+        )}
+
+        {onOpenFullCalendar && (
+          <button
+            type="button"
+            onClick={onOpenFullCalendar}
+            className="inline-flex items-center gap-1 text-xs font-medium text-veyra-muted hover:text-accent transition-colors cursor-pointer"
+          >
+            <span>Ver agenda</span>
+            <ArrowRight className="w-3 h-3" />
+          </button>
+        )}
       </div>
-    </section>
+    </header>
   );
 };

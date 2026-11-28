@@ -49,6 +49,7 @@ import {
 import { AgendaSidebarView } from './AgendaSidebarView';
 import { UserSettingsModal } from '../../components/common/UserSettingsModal';
 import { ShareModal } from '../../components/common/ShareModal';
+import { useUserSettings } from '../../context/UserSettingsContext';
 import type { useReminders } from '../../hooks/useReminders';
 import type { useEvents } from '../../hooks/useEvents';
 
@@ -93,6 +94,9 @@ export interface NotesSidebarProps {
   userId?: string;
   userEmail?: string;
   userName?: string;
+  userAvatarUrl?: string;
+  onOpenSettings?: () => void;
+  isSettingsActive?: boolean;
   onSignOut?: () => void;
 }
 
@@ -188,8 +192,31 @@ export const NotesSidebar: React.FC<NotesSidebarProps> = ({
   userId,
   userEmail,
   userName,
+  userAvatarUrl,
+  onOpenSettings,
+  isSettingsActive,
   onSignOut,
 }) => {
+  const { settings } = useUserSettings();
+  const [avatarError, setAvatarError] = useState(false);
+
+  useEffect(() => {
+    setAvatarError(false);
+  }, [userAvatarUrl]);
+
+  const displayName =
+    settings.userName?.trim() ||
+    userName?.trim() ||
+    userEmail?.split('@')[0] ||
+    'Usuario';
+
+  const userInitials = useMemo(() => {
+    const parts = displayName.trim().split(/\s+/).filter(Boolean);
+    if (parts.length >= 2) {
+      return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
+    }
+    return (parts[0]?.slice(0, 2) || 'U').toUpperCase();
+  }, [displayName]);
   const [internalSidebarSection, setInternalSidebarSection] = useState<'notes' | 'agenda'>('agenda');
   const sidebarSection = controlledSidebarSection ?? internalSidebarSection;
 
@@ -2025,7 +2052,7 @@ export const NotesSidebar: React.FC<NotesSidebarProps> = ({
       ) : (
         <>
           {/* 2. Scrollable Middle Area: Vistas (icon-only) + Carpetas + Notas */}
-          <div ref={sidebarListRef} className="flex-1 overflow-y-auto p-3 space-y-3.5">
+          <div ref={sidebarListRef} className="flex-1 min-h-0 overflow-y-auto p-3 space-y-3.5">
             {/* Top Vistas + Animated Sticky Batch Action Bar wrapper (zero gap when collapsed) */}
             <div>
               {/* Compact Icon-Only VISTAS Row */}
@@ -2732,59 +2759,86 @@ export const NotesSidebar: React.FC<NotesSidebarProps> = ({
             )}
           </div>
 
-          {/* 4. Bottom Create Note Action + Footer */}
-          <div className="border-t border-veyra-border bg-veyra-card/50 shrink-0">
-            <div className="px-3 pt-2.5 pb-1">
-              <button
-                type="button"
-                onClick={() => {
-                  if (selectedFolderId) {
-                    setExpandedFolders((prev) => ({ ...prev, [selectedFolderId]: true }));
-                  }
-                  onCreateNote();
-                }}
-                title={
-                  selectedFolderId
-                    ? 'Crear nota en la carpeta seleccionada'
-                    : 'Crear nueva nota'
+          {/* 4. Bottom Create Note Action */}
+          <div className="border-t border-veyra-border bg-veyra-card/50 shrink-0 px-3 py-2.5">
+            <button
+              type="button"
+              onClick={() => {
+                if (selectedFolderId) {
+                  setExpandedFolders((prev) => ({ ...prev, [selectedFolderId]: true }));
                 }
-                className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-xl bg-accent text-white hover:brightness-110 active:scale-[0.98] text-xs font-semibold shadow-[0_4px_14px_-2px_color-mix(in_srgb,var(--accent-primary)_45%,transparent),inset_0_1px_0_rgba(255,255,255,0.2)] ring-1 ring-white/15 transition-all duration-150 cursor-pointer"
-              >
-                <Plus className="w-4 h-4 shrink-0" />
-                <span className="truncate">Crear nota</span>
-              </button>
-            </div>
-
-            <div className="h-8 px-4 flex items-center justify-between text-[11px] text-veyra-subtle font-mono">
-              <div className="flex items-center gap-1.5">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
-                <span>{allNotes.length} notas</span>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => setIsSettingsOpen(true)}
-                  title="Preferencias y cuenta"
-                  className="p-1 rounded text-veyra-subtle hover:text-veyra-text hover:bg-white/5 transition-colors cursor-pointer"
-                >
-                  <Settings className="w-3.5 h-3.5" />
-                </button>
-              </div>
-            </div>
+                onCreateNote();
+              }}
+              title={
+                selectedFolderId
+                  ? 'Crear nota en la carpeta seleccionada'
+                  : 'Crear nueva nota'
+              }
+              className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-xl bg-veyra-elevated border border-veyra-border text-veyra-text hover:bg-veyra-hover hover:border-veyra-muted/40 active:scale-[0.98] text-xs font-medium transition-all duration-150 cursor-pointer"
+            >
+              <Plus className="w-4 h-4 shrink-0" />
+              <span className="truncate">Crear nota</span>
+            </button>
           </div>
         </>
       )}
 
-      {/* Modal: Preferencias y Cuenta */}
-      <UserSettingsModal
-        isOpen={isSettingsOpen}
-        onClose={() => setIsSettingsOpen(false)}
-        userId={userId}
-        userEmail={userEmail}
-        userName={userName}
-        onSignOut={onSignOut}
-      />
+      {/* 5. Persistent User Profile Card + Settings Button (Visible in both Agenda & Notas) */}
+      <div className="border-t border-veyra-border bg-veyra-card/70 p-2 shrink-0">
+        <div className="flex items-center gap-2.5 px-2 py-1.5 rounded-xl bg-veyra-elevated/60 border border-veyra-border hover:border-veyra-muted/30 transition-colors">
+          {userAvatarUrl && !avatarError ? (
+            <img
+              src={userAvatarUrl}
+              alt={displayName}
+              onError={() => setAvatarError(true)}
+              className="w-8 h-8 rounded-full object-cover border border-veyra-border shrink-0"
+            />
+          ) : (
+            <div className="w-8 h-8 rounded-full bg-accent/15 text-accent border border-accent/25 font-semibold text-xs flex items-center justify-center shrink-0">
+              {userInitials}
+            </div>
+          )}
+
+          <div className="flex-1 min-w-0">
+            <p className="text-xs font-semibold text-veyra-text truncate leading-tight">
+              {displayName}
+            </p>
+            {userEmail && (
+              <p className="text-[10.5px] text-veyra-muted truncate leading-tight mt-0.5">
+                {userEmail}
+              </p>
+            )}
+          </div>
+
+          <button
+            type="button"
+            onClick={() => (onOpenSettings ? onOpenSettings() : setIsSettingsOpen(true))}
+            title="Ajustes y cuenta"
+            aria-label="Abrir ajustes"
+            className={cn(
+              'p-1.5 rounded-lg transition-colors cursor-pointer shrink-0',
+              isSettingsActive
+                ? 'bg-accent/15 text-accent'
+                : 'text-veyra-muted hover:text-veyra-text hover:bg-veyra-card'
+            )}
+          >
+            <Settings className="w-4 h-4" />
+          </button>
+        </div>
+      </div>
+
+      {/* Página de Ajustes: Preferencias y Cuenta (fallback si no se maneja desde el lienzo principal) */}
+      {!onOpenSettings && (
+        <UserSettingsModal
+          isOpen={isSettingsOpen}
+          onClose={() => setIsSettingsOpen(false)}
+          userId={userId}
+          userEmail={userEmail}
+          userName={userName}
+          userAvatarUrl={userAvatarUrl}
+          onSignOut={onSignOut}
+        />
+      )}
 
       {/* Modal: Compartir recurso */}
       {shareTarget && (

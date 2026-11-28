@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { PenTool, FileText, Sparkles, Trash2, Copy, Check } from 'lucide-react';
 import { toast } from 'sonner';
 import { WidgetCard } from '../WidgetCard';
@@ -38,6 +38,18 @@ export const QuickScratchpadWidget: React.FC<QuickScratchpadWidgetProps> = ({
   const [isConverting, setIsConverting] = useState(false);
   const [copied, setCopied] = useState(false);
   const debounceRef = useRef<number | null>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  const adjustHeight = useCallback(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${Math.min(el.scrollHeight, 360)}px`;
+  }, []);
+
+  useEffect(() => {
+    adjustHeight();
+  }, [content, adjustHeight]);
 
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
@@ -105,62 +117,57 @@ export const QuickScratchpadWidget: React.FC<QuickScratchpadWidgetProps> = ({
   return (
     <WidgetCard
       title="Bloc Rápido"
-      subtitle="Borrador"
-      icon={<PenTool className="w-4 h-4" />}
-      iconClassName="text-amber-400"
+      icon={<PenTool className="w-3.5 h-3.5" />}
+      iconClassName="text-veyra-muted"
       headerRight={
-        <button
-          type="button"
-          disabled={isConverting || !trimmedContent}
-          onClick={handleConvertToNote}
-          title="Convertir este apunte en una nota en Veyra"
-          className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-accent/15 text-accent text-xs font-semibold hover:bg-accent/25 transition-colors disabled:opacity-35 disabled:pointer-events-none cursor-pointer shrink-0"
-        >
-          {isConverting ? (
-            <Sparkles className="w-3.5 h-3.5 animate-spin" />
-          ) : (
-            <FileText className="w-3.5 h-3.5 shrink-0" />
-          )}
-          <span>Convertir a nota</span>
-        </button>
+        trimmedContent ? (
+          <button
+            type="button"
+            disabled={isConverting}
+            onClick={handleConvertToNote}
+            title="Convertir este apunte en una nota en Veyra"
+            className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-veyra-card/80 hover:bg-veyra-card text-veyra-text text-xs font-medium transition-colors disabled:opacity-40 cursor-pointer shrink-0"
+          >
+            {isConverting ? (
+              <Sparkles className="w-3.5 h-3.5 animate-spin text-accent" />
+            ) : (
+              <FileText className="w-3.5 h-3.5 shrink-0 text-veyra-muted" />
+            )}
+            <span>Convertir a nota</span>
+          </button>
+        ) : null
       }
     >
-      <div className="flex-1 min-h-0 flex flex-col rounded-lg bg-veyra-card/35 focus-within:bg-veyra-card/60 border-l-2 border-veyra-border focus-within:border-accent transition-colors overflow-hidden">
+      <div className="flex flex-col rounded-2xl bg-veyra-card/65 focus-within:bg-veyra-card transition-colors overflow-hidden">
         <textarea
+          ref={textareaRef}
+          rows={3}
           value={content}
           onChange={(e) => setContent(e.target.value)}
           placeholder="Escribe ideas rápidas, pendientes o fragmentos aquí... Se guardan automáticamente."
           style={{ backgroundColor: 'transparent', color: 'var(--text-main)' }}
-          className="flex-1 w-full appearance-none bg-transparent border-0 p-3 text-[13px] leading-relaxed text-veyra-text placeholder:text-veyra-muted/60 focus:outline-none resize-none custom-scrollbar min-h-[80px]"
+          className="w-full min-h-[120px] xl:min-h-[150px] 2xl:min-h-[175px] appearance-none bg-transparent border-0 p-4 xl:p-5 text-[13.5px] leading-relaxed text-veyra-text placeholder:text-veyra-muted/60 focus:outline-none resize-none custom-scrollbar"
         />
 
-        <div className="px-3 py-1.5 border-t border-veyra-border/50 flex items-center justify-between gap-2 text-[11px] text-veyra-muted shrink-0">
-          <div className="flex items-center gap-2 min-w-0 truncate">
-            <span className="inline-flex items-center gap-1.5 truncate">
-              <span
-                className={
-                  trimmedContent
-                    ? 'w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0'
-                    : 'w-1.5 h-1.5 rounded-full bg-veyra-subtle shrink-0'
-                }
-              />
-              <span className="truncate">
-                {trimmedContent ? 'Guardado localmente' : 'Listo para escribir'}
+        {trimmedContent && (
+          <div className="px-4 pb-2.5 pt-1 flex items-center justify-between gap-2 text-[11px] text-veyra-muted shrink-0">
+            <div className="flex items-center gap-2 min-w-0 truncate">
+              <span className="inline-flex items-center gap-1.5 truncate">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0" />
+                <span className="truncate">Guardado</span>
               </span>
-            </span>
-            <span className="text-veyra-subtle shrink-0">·</span>
-            <span className="font-mono text-[10.5px] shrink-0">
-              {wordCount} {wordCount === 1 ? 'pal.' : 'pals.'} / {charCount} car.
-            </span>
-          </div>
+              <span className="text-veyra-subtle shrink-0">·</span>
+              <span className="font-mono text-[10.5px] shrink-0">
+                {wordCount} {wordCount === 1 ? 'pal.' : 'pals.'} · {charCount} car.
+              </span>
+            </div>
 
-          {trimmedContent && (
             <div className="flex items-center gap-1 shrink-0">
               <button
                 type="button"
                 onClick={handleCopy}
                 title="Copiar texto"
-                className="flex items-center gap-1 px-1.5 py-0.5 rounded hover:bg-veyra-elevated/70 text-veyra-muted hover:text-veyra-text transition-colors cursor-pointer"
+                className="flex items-center gap-1 px-2 py-0.5 rounded-md hover:bg-veyra-hover text-veyra-muted hover:text-veyra-text transition-colors cursor-pointer"
               >
                 {copied ? (
                   <Check className="w-3 h-3 text-emerald-400" />
@@ -174,14 +181,14 @@ export const QuickScratchpadWidget: React.FC<QuickScratchpadWidgetProps> = ({
                 type="button"
                 onClick={handleClear}
                 title="Limpiar bloc"
-                className="flex items-center gap-1 px-1.5 py-0.5 rounded hover:bg-rose-500/10 text-veyra-muted hover:text-rose-400 transition-colors cursor-pointer"
+                className="flex items-center gap-1 px-2 py-0.5 rounded-md hover:bg-rose-500/10 text-veyra-muted hover:text-rose-400 transition-colors cursor-pointer"
               >
                 <Trash2 className="w-3 h-3" />
                 <span>Limpiar</span>
               </button>
             </div>
-          )}
-        </div>
+          </div>
+        )}
       </div>
     </WidgetCard>
   );

@@ -124,11 +124,12 @@ export const ExportPdfModal: React.FC<ExportPdfModalProps> = ({
   useEffect(() => {
     if (!isOpen) {
       isIframeLoadedRef.current = false;
+      setIframeSrcDoc('');
       return;
     }
     const iframe = previewIframeRef.current;
 
-    if (isIframeLoadedRef.current && iframe?.contentWindow) {
+    if (isIframeLoadedRef.current && iframeSrcDoc && iframe?.contentWindow) {
       const dynamicCss = buildDynamicPdfCss(config, {
         isForPrint: false,
         isDarkCanvas: isDark,
@@ -143,9 +144,11 @@ export const ExportPdfModal: React.FC<ExportPdfModalProps> = ({
       return;
     }
 
+    if (!previewHtml) return;
+
     if (!previewHtml.includes(VEYRA_ATTACHMENT_SCHEME)) {
+      isIframeLoadedRef.current = false;
       setIframeSrcDoc(previewHtml);
-      isIframeLoadedRef.current = true;
       return;
     }
 
@@ -154,8 +157,8 @@ export const ExportPdfModal: React.FC<ExportPdfModalProps> = ({
       .catch(() => previewHtml)
       .then((resolvedHtml) => {
         if (cancelled) return;
+        isIframeLoadedRef.current = false;
         setIframeSrcDoc(resolvedHtml);
-        isIframeLoadedRef.current = true;
       });
 
     return () => {
@@ -889,7 +892,12 @@ export const ExportPdfModal: React.FC<ExportPdfModalProps> = ({
               <iframe
                 ref={previewIframeRef}
                 title="Previsualización de Documento PDF"
-                srcDoc={iframeSrcDoc}
+                srcDoc={iframeSrcDoc || undefined}
+                onLoad={() => {
+                  if (iframeSrcDoc) {
+                    isIframeLoadedRef.current = true;
+                  }
+                }}
                 sandbox="allow-scripts allow-modals"
                 scrolling="yes"
                 className="w-full h-full border-0 pointer-events-auto block"

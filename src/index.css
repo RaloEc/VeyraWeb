@@ -89,7 +89,7 @@
   vertical-align: middle;
 }
 
-/* Custom modern sleek dark scrollbar */
+/* Custom modern sleek scrollbar */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
@@ -105,6 +105,23 @@
 }
 
 ::-webkit-scrollbar-thumb:hover {
+  background: var(--accent-primary);
+}
+
+/* Light mode scrollbar */
+html:not(.dark) {
+  color-scheme: light;
+}
+
+html:not(.dark) ::-webkit-scrollbar-thumb,
+html:not(.dark)::-webkit-scrollbar-thumb,
+.sheet-light-mode ::-webkit-scrollbar-thumb {
+  background: rgba(15, 23, 42, 0.18);
+}
+
+html:not(.dark) ::-webkit-scrollbar-thumb:hover,
+html:not(.dark)::-webkit-scrollbar-thumb:hover,
+.sheet-light-mode ::-webkit-scrollbar-thumb:hover {
   background: var(--accent-primary);
 }
 
@@ -2136,6 +2153,38 @@ figcaption,
   animation: veyra-stage-in 340ms cubic-bezier(0.16, 1, 0.3, 1) backwards;
 }
 
+@keyframes veyra-settings-tab-next {
+  from {
+    opacity: 0;
+    transform: translate3d(14px, 0, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes veyra-settings-tab-prev {
+  from {
+    opacity: 0;
+    transform: translate3d(-14px, 0, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+.veyra-settings-tab-next {
+  animation: veyra-settings-tab-next 280ms cubic-bezier(0.22, 1, 0.36, 1) backwards;
+  will-change: transform, opacity;
+}
+
+.veyra-settings-tab-prev {
+  animation: veyra-settings-tab-prev 280ms cubic-bezier(0.22, 1, 0.36, 1) backwards;
+  will-change: transform, opacity;
+}
+
 /* ==========================================================================
    In-App Alert Modal & Side Toast Animations
    ========================================================================== */
@@ -2300,6 +2349,37 @@ figcaption,
 
 .animate-veyra-proposal-item-in {
   animation: veyra-proposal-item-in 280ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+/* Editor Toolbar Expand / Collapse Smooth Transitions */
+@keyframes veyra-toolbar-expand {
+  from {
+    opacity: 0;
+    transform: translate3d(0, -6px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes veyra-toolbar-compact {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 4px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.animate-veyra-toolbar-expand {
+  animation: veyra-toolbar-expand 260ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.animate-veyra-toolbar-compact {
+  animation: veyra-toolbar-compact 220ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 

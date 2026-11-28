@@ -25,6 +25,7 @@ import {
   CheckCircle2,
   Code2,
   Quote,
+  PanelRightClose,
 } from 'lucide-react';
 import type { Editor } from '@tiptap/react';
 import * as Y from 'yjs';
@@ -39,7 +40,7 @@ export interface PagesSidebarProps {
   pages: string[];
   activePageId: string;
   onSelectPage: (pageId: string) => void;
-  onAddPage: () => void;
+  onAddPage: (insertAtIndex?: number) => void;
   ydoc: Y.Doc;
   noteTitle?: string;
   onSave?: () => void;
@@ -831,29 +832,16 @@ export const PagesSidebar: React.FC<PagesSidebarProps> = ({
           </button>
         </div>
 
-        {/* Acciones del encabezado derecho */}
-        <div className="flex items-center gap-1 shrink-0">
-          {activeTab === 'pages' && !isA4Mode && (
-            <button
-              type="button"
-              onClick={onAddPage}
-              className="h-7 px-2 flex items-center gap-1 rounded-md bg-accent text-white text-[10.5px] font-medium hover:opacity-90 shadow-2xs cursor-pointer transition-opacity"
-              title="Añadir hoja al final"
-            >
-              <Plus className="w-3 h-3 stroke-[2.5]" />
-              <span>Hoja</span>
-            </button>
-          )}
-
-          <button
-            type="button"
-            onClick={onClose}
-            className="h-7 w-7 rounded-md text-veyra-subtle hover:text-veyra-text hover:bg-veyra-hover transition-colors flex items-center justify-center cursor-pointer"
-            title="Ocultar panel lateral"
-          >
-            <X className="w-3.5 h-3.5" />
-          </button>
-        </div>
+        {/* Botón para ocultar panel hacia la derecha */}
+        <button
+          type="button"
+          onClick={onClose}
+          className="h-7 w-7 rounded-md text-veyra-subtle hover:text-veyra-text hover:bg-veyra-hover transition-colors flex items-center justify-center cursor-pointer shrink-0"
+          title="Ocultar panel"
+          aria-label="Ocultar panel"
+        >
+          <PanelRightClose className="w-4 h-4" />
+        </button>
       </div>
 
       {/* 2. CONTENIDO SEGÚN LA PESTAÑA ACTIVA */}
@@ -924,8 +912,8 @@ export const PagesSidebar: React.FC<PagesSidebarProps> = ({
                 <span>No se encontraron hojas que coincidan con la búsqueda.</span>
               </div>
             ) : (
-              <div className="space-y-2">
-                {filteredPages.map((page) => {
+              <div className="space-y-1.5">
+                {filteredPages.map((page, idx) => {
                   const isCurrent = isA4Mode
                     ? page.index === activeA4SheetIndex
                     : page.id === activePageId;
@@ -1550,18 +1538,65 @@ export const PagesSidebar: React.FC<PagesSidebarProps> = ({
                           </button>
                         </div>
                       )}
+
+                      {/* Zona interactiva entre hojas para insertar una nueva hoja exactamente en index + 1 */}
+                      {!isA4Mode && !search.trim() && idx < filteredPages.length - 1 && (
+                        <div className="group/insert relative h-3 flex items-center justify-center z-10">
+                          <div className="w-full h-[1px] bg-accent/40 opacity-0 group-hover/insert:opacity-100 transition-opacity duration-150" />
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onAddPage(page.index + 1);
+                            }}
+                            title="Insertar hoja aquí"
+                            aria-label="Insertar hoja aquí"
+                            className="absolute w-5 h-5 rounded-full bg-veyra-card border border-veyra-border hover:border-accent text-veyra-muted hover:text-accent flex items-center justify-center opacity-0 scale-75 group-hover/insert:opacity-100 group-hover/insert:scale-100 transition-all duration-150 cursor-pointer"
+                          >
+                            <Plus className="w-3 h-3" />
+                          </button>
+                        </div>
+                      )}
                     </React.Fragment>
                   );
                 })}
+
+                {/* Tarjeta/botón al final de la lista para crear nueva hoja */}
+                {!isA4Mode && (
+                  <button
+                    type="button"
+                    onClick={() => onAddPage()}
+                    className={cn(
+                      'w-full rounded-xl border border-dashed border-veyra-border/80 hover:border-accent/60 hover:bg-accent/[0.04] text-veyra-muted hover:text-accent transition-colors flex items-center justify-center gap-1.5 cursor-pointer text-[11px] font-medium mt-1',
+                      viewMode === 'visual' ? 'py-2.5' : 'py-2'
+                    )}
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>Nueva hoja</span>
+                  </button>
+                )}
               </div>
             )}
           </div>
 
-          {/* Pie del tab Hojas: Contador y reordenamiento con flechas */}
+          {/* Pie del tab Hojas: Contador, botón rápido + y reordenamiento con flechas */}
           <div className="p-2 border-t border-veyra-border shrink-0 bg-veyra-card flex items-center justify-between text-[11px] text-veyra-muted">
-            <span className="text-[10px] text-veyra-subtle font-mono">
-              {pagesMeta.length} {pagesMeta.length === 1 ? 'hoja total' : 'hojas en total'}
-            </span>
+            <div className="flex items-center gap-1.5">
+              <span className="text-[10px] text-veyra-subtle font-mono">
+                {pagesMeta.length} {pagesMeta.length === 1 ? 'hoja total' : 'hojas en total'}
+              </span>
+              {!isA4Mode && (
+                <button
+                  type="button"
+                  onClick={() => onAddPage()}
+                  title="Añadir nueva hoja al final"
+                  aria-label="Añadir nueva hoja"
+                  className="w-5 h-5 rounded-md text-veyra-muted hover:text-accent hover:bg-accent/10 transition-colors flex items-center justify-center cursor-pointer"
+                >
+                  <Plus className="w-3 h-3" />
+                </button>
+              )}
+            </div>
 
             {!isA4Mode && (
               <button

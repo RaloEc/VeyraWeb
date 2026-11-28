@@ -27,6 +27,7 @@ import {
   Minus,
   Check,
   ChevronDown,
+  ChevronUp,
   RotateCcw,
   Sigma,
   Table,
@@ -41,10 +42,7 @@ import {
   MoreHorizontal,
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
-import {
-  NOTE_FONTS,
-  areColorsEqual,
-} from './constants/noteFonts';
+import { NOTE_FONTS, areColorsEqual } from './constants/noteFonts';
 import {
   FONT_SIZES,
   getNextLargerFontSize,
@@ -74,6 +72,10 @@ const NUMBERING_OPTIONS: NumberingOption[] = [
   { id: 'lower-roman', label: 'i. ii. iii.', items: ['i.', 'ii.', 'iii.'] },
 ];
 
+type ToolbarViewMode = 'compact' | 'extended';
+
+const TOOLBAR_MODE_STORAGE_KEY = 'veyra-notes-toolbar-mode';
+
 export interface EditorToolbarProps {
   editor: Editor | null;
   onUploadImage?: (file: File) => Promise<void>;
@@ -82,10 +84,18 @@ export interface EditorToolbarProps {
   onOpenTemplates?: () => void;
   showFormattingMarks?: boolean;
   onToggleFormattingMarks?: () => void;
+  isFocusMode?: boolean;
+  onToggleFocusMode?: () => void;
 }
 
+const NOOP_EDITOR = {
+  isActive: () => false,
+  getAttributes: () => ({}),
+  can: () => ({ undo: () => false, redo: () => false }),
+} as unknown as Editor;
+
 export const EditorToolbar: React.FC<EditorToolbarProps> = ({
-  editor,
+  editor: editorProp,
   onUploadImage,
   onAttachFromDrive,
   isAttachingDrive = false,
@@ -93,6 +103,8 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({
   showFormattingMarks,
   onToggleFormattingMarks,
 }) => {
+  const isEditorReady = Boolean(editorProp);
+  const editor = editorProp ?? NOOP_EDITOR;
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Botones trigger y referencias de popover
@@ -113,22 +125,66 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({
   const [isFontSizeMenuOpen, setIsFontSizeMenuOpen] = useState(false);
   const [isOrderedListMenuOpen, setIsOrderedListMenuOpen] = useState(false);
 
-  const [textColorCoords, setTextColorCoords] = useState<{ top: number; left: number }>({ top: 0, left: 0 });
-  const [highlightCoords, setHighlightCoords] = useState<{ top: number; left: number }>({ top: 0, left: 0 });
+  const [textColorCoords, setTextColorCoords] = useState<{ top: number; left: number }>({
+    top: 0,
+    left: 0,
+  });
+  const [highlightCoords, setHighlightCoords] = useState<{ top: number; left: number }>({
+    top: 0,
+    left: 0,
+  });
   const [fontCoords, setFontCoords] = useState<{ top: number; left: number }>({ top: 0, left: 0 });
-  const [fontSizeCoords, setFontSizeCoords] = useState<{ top: number; left: number }>({ top: 0, left: 0 });
-  const [orderedListCoords, setOrderedListCoords] = useState<{ top: number; left: number }>({ top: 0, left: 0 });
+  const [fontSizeCoords, setFontSizeCoords] = useState<{ top: number; left: number }>({
+    top: 0,
+    left: 0,
+  });
+  const [orderedListCoords, setOrderedListCoords] = useState<{ top: number; left: number }>({
+    top: 0,
+    left: 0,
+  });
   const [customStartInput, setCustomStartInput] = useState<string>('2');
 
   // Responsive overflow tray refs & state
   const toolbarContainerRef = useRef<HTMLDivElement>(null);
   const toolbarTrackRef = useRef<HTMLDivElement>(null);
+  const extendedContentRef = useRef<HTMLDivElement>(null);
   const overflowBtnRef = useRef<HTMLButtonElement>(null);
   const overflowMenuRef = useRef<HTMLDivElement>(null);
   const itemWidthsRef = useRef<Map<string, number>>(new Map());
   const [visibleCount, setVisibleCount] = useState<number | null>(null);
+  const [extendedHeight, setExtendedHeight] = useState<number>(82);
   const [isOverflowOpen, setIsOverflowOpen] = useState(false);
-  const [overflowCoords, setOverflowCoords] = useState<{ top: number; right: number }>({ top: 0, right: 8 });
+  const [overflowCoords, setOverflowCoords] = useState<{ top: number; right: number }>({
+    top: 0,
+    right: 8,
+  });
+  const [toolbarMode, setToolbarMode] = useState<ToolbarViewMode>(() => {
+    if (typeof window === 'undefined') return 'extended';
+    try {
+      const saved = window.localStorage.getItem(TOOLBAR_MODE_STORAGE_KEY);
+      return saved === 'compact' || saved === 'extended' ? saved : 'extended';
+    } catch {
+      return 'extended';
+    }
+  });
+
+  const handleToggleToolbarMode = useCallback(() => {
+    setIsTextColorMenuOpen(false);
+    setIsHighlightMenuOpen(false);
+    setIsFontMenuOpen(false);
+    setIsFontSizeMenuOpen(false);
+    setIsOrderedListMenuOpen(false);
+    setIsOverflowOpen(false);
+    setToolbarMode((prev) => {
+      const next: ToolbarViewMode = prev === 'extended' ? 'compact' : 'extended';
+      try {
+        window.localStorage.setItem(TOOLBAR_MODE_STORAGE_KEY, next);
+      } catch {
+        // Ignore storage errors
+      }
+      return next;
+    });
+  }, []);
 
   // Hook de colores recientes y persistencia
   const {
@@ -181,9 +237,7 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({
 
   const updateFontPosition = useCallback(() => {
     if (!fontBtnRef.current) return;
-    setFontCoords(
-      clampPopoverCoords(fontBtnRef.current.getBoundingClientRect(), 288, 360)
-    );
+    setFontCoords(clampPopoverCoords(fontBtnRef.current.getBoundingClientRect(), 288, 360));
   }, [clampPopoverCoords]);
 
   const updateFontSizePosition = useCallback(() => {
@@ -234,7 +288,10 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({
     });
 
     if (!previousList) return null;
-    return (previousList as { start: number; count: number }).start + (previousList as { start: number; count: number }).count;
+    return (
+      (previousList as { start: number; count: number }).start +
+      (previousList as { start: number; count: number }).count
+    );
   }, [editor]);
 
   // Forzar actualización inmediata de la barra cuando cambia la selección o contenido del editor
@@ -242,7 +299,7 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({
   const lastSelectionRef = useRef<{ from: number; to: number } | null>(null);
 
   useEffect(() => {
-    if (!editor) return;
+    if (!isEditorReady) return;
     const handleUpdate = () => {
       setTick((t) => t + 1);
       if (editor.state && editor.state.selection && !editor.state.selection.empty) {
@@ -258,7 +315,7 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({
       editor.off('update', handleUpdate);
       editor.off('selectionUpdate', handleUpdate);
     };
-  }, [editor]);
+  }, [editor, isEditorReady]);
 
   const hasTemplates = Boolean(onOpenTemplates);
   const hasUploadImage = Boolean(onUploadImage);
@@ -267,44 +324,48 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({
 
   const toolbarItemsMeta = useMemo(() => {
     const items: Array<{ id: string; group: string; fallbackWidth: number }> = [
-      { id: 'h1', group: 'headings', fallbackWidth: 28 },
-      { id: 'h2', group: 'headings', fallbackWidth: 28 },
-      { id: 'h3', group: 'headings', fallbackWidth: 28 },
-      { id: 'bold', group: 'format', fallbackWidth: 28 },
-      { id: 'italic', group: 'format', fallbackWidth: 28 },
-      { id: 'underline', group: 'format', fallbackWidth: 28 },
-      { id: 'strike', group: 'format', fallbackWidth: 28 },
-      { id: 'blockquote', group: 'format', fallbackWidth: 28 },
-      { id: 'hr', group: 'format', fallbackWidth: 28 },
-      { id: 'text-color', group: 'style', fallbackWidth: 46 },
-      { id: 'highlight', group: 'style', fallbackWidth: 46 },
-      { id: 'font-family', group: 'style', fallbackWidth: 115 },
-      { id: 'font-size', group: 'style', fallbackWidth: 104 },
-      { id: 'clear-format', group: 'style', fallbackWidth: 28 },
-      { id: 'math', group: 'insert', fallbackWidth: 28 },
-      { id: 'table', group: 'insert', fallbackWidth: 28 },
-    ];
-    if (hasTemplates) items.push({ id: 'templates', group: 'insert', fallbackWidth: 28 });
-    items.push(
-      { id: 'code', group: 'insert', fallbackWidth: 28 },
-      { id: 'ai', group: 'insert', fallbackWidth: 28 }
-    );
-    if (hasUploadImage) items.push({ id: 'image', group: 'media', fallbackWidth: 28 });
-    if (hasAttachFromDrive) items.push({ id: 'drive', group: 'media', fallbackWidth: 28 });
-    items.push(
-      { id: 'task-list', group: 'lists', fallbackWidth: 28 },
-      { id: 'bullet-list', group: 'lists', fallbackWidth: 28 },
-      { id: 'ordered-list', group: 'lists', fallbackWidth: 50 },
-      { id: 'align-left', group: 'align', fallbackWidth: 28 },
-      { id: 'align-center', group: 'align', fallbackWidth: 28 },
-      { id: 'align-right', group: 'align', fallbackWidth: 28 },
-      { id: 'align-justify', group: 'align', fallbackWidth: 28 }
-    );
-    if (hasFormattingMarks) items.push({ id: 'formatting-marks', group: 'align', fallbackWidth: 28 });
-    items.push(
+      // 1. Historial
       { id: 'undo', group: 'history', fallbackWidth: 28 },
-      { id: 'redo', group: 'history', fallbackWidth: 28 }
+      { id: 'redo', group: 'history', fallbackWidth: 28 },
+      // 2. Fuente
+      { id: 'font-family', group: 'font', fallbackWidth: 115 },
+      { id: 'font-size', group: 'font', fallbackWidth: 104 },
+      { id: 'clear-format', group: 'font', fallbackWidth: 28 },
+      { id: 'bold', group: 'font', fallbackWidth: 28 },
+      { id: 'italic', group: 'font', fallbackWidth: 28 },
+      { id: 'underline', group: 'font', fallbackWidth: 28 },
+      { id: 'strike', group: 'font', fallbackWidth: 28 },
+      { id: 'text-color', group: 'font', fallbackWidth: 46 },
+      { id: 'highlight', group: 'font', fallbackWidth: 46 },
+      // 3. Párrafo
+      { id: 'bullet-list', group: 'paragraph', fallbackWidth: 28 },
+      { id: 'ordered-list', group: 'paragraph', fallbackWidth: 50 },
+      { id: 'task-list', group: 'paragraph', fallbackWidth: 28 },
+      { id: 'blockquote', group: 'paragraph', fallbackWidth: 28 },
+      { id: 'hr', group: 'paragraph', fallbackWidth: 28 },
+    ];
+    if (hasFormattingMarks) {
+      items.push({ id: 'formatting-marks', group: 'paragraph', fallbackWidth: 28 });
+    }
+    items.push(
+      { id: 'align-left', group: 'paragraph', fallbackWidth: 28 },
+      { id: 'align-center', group: 'paragraph', fallbackWidth: 28 },
+      { id: 'align-right', group: 'paragraph', fallbackWidth: 28 },
+      { id: 'align-justify', group: 'paragraph', fallbackWidth: 28 },
+      // 4. Estilos
+      { id: 'h1', group: 'styles', fallbackWidth: 28 },
+      { id: 'h2', group: 'styles', fallbackWidth: 28 },
+      { id: 'h3', group: 'styles', fallbackWidth: 28 },
+      // 5. Insertar
+      { id: 'table', group: 'insert', fallbackWidth: 28 },
+      { id: 'math', group: 'insert', fallbackWidth: 28 },
+      { id: 'code', group: 'insert', fallbackWidth: 28 }
     );
+    if (hasTemplates) items.push({ id: 'templates', group: 'insert', fallbackWidth: 28 });
+    if (hasUploadImage) items.push({ id: 'image', group: 'insert', fallbackWidth: 28 });
+    if (hasAttachFromDrive) items.push({ id: 'drive', group: 'insert', fallbackWidth: 28 });
+    // 6. IA
+    items.push({ id: 'ai', group: 'ai', fallbackWidth: 28 });
     return items;
   }, [hasTemplates, hasUploadImage, hasAttachFromDrive, hasFormattingMarks]);
 
@@ -328,7 +389,11 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({
     const style = window.getComputedStyle(container);
     const padLeft = parseFloat(style.paddingLeft) || 0;
     const padRight = parseFloat(style.paddingRight) || 0;
-    const availableWidth = Math.max(0, container.clientWidth - padLeft - padRight);
+    const MODE_TOGGLE_RESERVE = 36;
+    const availableWidth = Math.max(
+      0,
+      container.clientWidth - padLeft - padRight - MODE_TOGGLE_RESERVE
+    );
     if (availableWidth <= 0) return;
 
     const GAP = 2; // gap-0.5
@@ -376,6 +441,7 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({
   }, [toolbarItemsMeta]);
 
   useEffect(() => {
+    if (toolbarMode !== 'compact') return;
     const container = toolbarContainerRef.current;
     if (!container || typeof ResizeObserver === 'undefined') return;
     const observer = new ResizeObserver(() => {
@@ -383,7 +449,24 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({
     });
     observer.observe(container);
     return () => observer.disconnect();
-  }, [recalculateVisibleCount, editor]);
+  }, [recalculateVisibleCount, editor, toolbarMode]);
+
+  useEffect(() => {
+    if (toolbarMode !== 'extended') return;
+    const el = extendedContentRef.current;
+    if (!el) return;
+    const measure = () => {
+      const next = Math.ceil(el.getBoundingClientRect().height);
+      if (next > 0) {
+        setExtendedHeight((prev) => (prev === next ? prev : next));
+      }
+    };
+    measure();
+    if (typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [toolbarMode, editor, hasTemplates, hasUploadImage, hasAttachFromDrive, hasFormattingMarks]);
 
   // Cerrar popovers al hacer click fuera o al redimensionar/desplazar la ventana
   useEffect(() => {
@@ -500,32 +583,33 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({
     updateOverflowPosition,
   ]);
 
-  const watchedFontFamily = editor
+  const watchedFontFamily = isEditorReady
     ? (editor.getAttributes('textStyle').fontFamily as string | undefined) || ''
     : '';
-  const watchedFontSize = editor
+  const watchedFontSize = isEditorReady
     ? (editor.getAttributes('textStyle').fontSize as string | undefined) || ''
     : '';
 
   useEffect(() => {
-    if (!editor) return;
+    if (toolbarMode !== 'compact') return;
     const rafId = requestAnimationFrame(() => {
       recalculateVisibleCount();
     });
     return () => cancelAnimationFrame(rafId);
-  }, [editor, recalculateVisibleCount, watchedFontFamily, watchedFontSize]);
-
-  if (!editor) return null;
+  }, [isEditorReady, recalculateVisibleCount, watchedFontFamily, watchedFontSize, toolbarMode]);
 
   // Estado activo de colores y fuentes
   const currentTextColor = (editor.getAttributes('textStyle').color as string | undefined) || null;
-  const currentHighlightColor = (editor.getAttributes('highlight').color as string | undefined) || null;
+  const currentHighlightColor =
+    (editor.getAttributes('highlight').color as string | undefined) || null;
   const isHighlightActive = editor.isActive('highlight');
-  const currentFontFamily = (editor.getAttributes('textStyle').fontFamily as string | undefined) || null;
+  const currentFontFamily =
+    (editor.getAttributes('textStyle').fontFamily as string | undefined) || null;
   const currentFontSize = (editor.getAttributes('textStyle').fontSize as string | undefined) || null;
 
   const isOrderedListActive = editor.isActive('orderedList');
-  const currentListStyle = (editor.getAttributes('orderedList')?.listStyle as NumberingStyle) || 'decimal';
+  const currentListStyle =
+    (editor.getAttributes('orderedList')?.listStyle as NumberingStyle) || 'decimal';
   const currentListStart = (editor.getAttributes('orderedList')?.start as number) || 1;
   const previousContinuation = isOrderedListActive ? getPreviousListContinuation() : null;
 
@@ -672,6 +756,10 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({
     applyFontSize(prevSize);
   };
 
+  const handleTriggerImageUpload = () => {
+    fileInputRef.current?.click();
+  };
+
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file && onUploadImage) {
@@ -694,7 +782,11 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({
 
   const handleQuickApplyHighlight = () => {
     if (!editor) return;
-    if (isHighlightActive && currentHighlightColor && areColorsEqual(currentHighlightColor, lastHighlightColor)) {
+    if (
+      isHighlightActive &&
+      currentHighlightColor &&
+      areColorsEqual(currentHighlightColor, lastHighlightColor)
+    ) {
       editor.chain().focus().unsetHighlight().run();
     } else {
       editor.chain().focus().setHighlight({ color: lastHighlightColor }).run();
@@ -747,8 +839,6 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({
     const { selection } = state;
     const { from, to, $from } = selection;
 
-    // 1. Si la selección contiene o está dentro de un bloque con saltos de línea duros (<br>),
-    // convertirlos primero a párrafos reales para que no convierta todo el texto en un encabezado gigante.
     const blocksToProcess: Array<{ pos: number; node: any }> = [];
     state.doc.nodesBetween(from, to, (node, pos) => {
       if (node.isBlock && (node.type.name === 'paragraph' || node.type.name === 'heading')) {
@@ -781,8 +871,6 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({
       return;
     }
 
-    // 2. Si el usuario seleccionó solo una porción de texto dentro de un mismo párrafo (y no el párrafo entero),
-    // separar la selección en su propio bloque antes de convertirlo a encabezado para no afectar el resto del texto.
     const blockStart = $from.start();
     const blockEnd = $from.end();
     const isPartial = from > blockStart || to < blockEnd;
@@ -841,212 +929,46 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({
   }
 
   const toolbarItems: ToolbarItemDef[] = [
-    // 1. Headings
+    // 1. Historial
     {
-      id: 'h1',
-      group: 'headings',
-      isActive: editor.isActive('heading', { level: 1 }),
-      render: () =>
-        toolBtn(
-          editor.isActive('heading', { level: 1 }),
-          () => handleToggleHeading(1),
-          <Heading1 className="w-3.5 h-3.5" />,
-          'Título 1'
-        ),
-    },
-    {
-      id: 'h2',
-      group: 'headings',
-      isActive: editor.isActive('heading', { level: 2 }),
-      render: () =>
-        toolBtn(
-          editor.isActive('heading', { level: 2 }),
-          () => handleToggleHeading(2),
-          <Heading2 className="w-3.5 h-3.5" />,
-          'Título 2'
-        ),
-    },
-    {
-      id: 'h3',
-      group: 'headings',
-      isActive: editor.isActive('heading', { level: 3 }),
-      render: () =>
-        toolBtn(
-          editor.isActive('heading', { level: 3 }),
-          () => handleToggleHeading(3),
-          <Heading3 className="w-3.5 h-3.5" />,
-          'Título 3'
-        ),
-    },
-
-    // 2. Basic Text Formatting
-    {
-      id: 'bold',
-      group: 'format',
-      isActive: editor.isActive('bold'),
-      render: () =>
-        toolBtn(
-          editor.isActive('bold'),
-          () => editor.chain().focus().toggleBold().run(),
-          <Bold className="w-3.5 h-3.5" />,
-          'Negrita (Ctrl+B)'
-        ),
-    },
-    {
-      id: 'italic',
-      group: 'format',
-      isActive: editor.isActive('italic'),
-      render: () =>
-        toolBtn(
-          editor.isActive('italic'),
-          () => editor.chain().focus().toggleItalic().run(),
-          <Italic className="w-3.5 h-3.5" />,
-          'Cursiva (Ctrl+I)'
-        ),
-    },
-    {
-      id: 'underline',
-      group: 'format',
-      isActive: editor.isActive('underline'),
-      render: () =>
-        toolBtn(
-          editor.isActive('underline'),
-          () => editor.chain().focus().toggleUnderline().run(),
-          <UnderlineIcon className="w-3.5 h-3.5" />,
-          'Subrayado (Ctrl+U)'
-        ),
-    },
-    {
-      id: 'strike',
-      group: 'format',
-      isActive: editor.isActive('strike'),
-      render: () =>
-        toolBtn(
-          editor.isActive('strike'),
-          () => editor.chain().focus().toggleStrike().run(),
-          <Strikethrough className="w-3.5 h-3.5" />,
-          'Tachado'
-        ),
-    },
-    {
-      id: 'blockquote',
-      group: 'format',
-      isActive: editor.isActive('blockquote'),
-      render: () =>
-        toolBtn(
-          editor.isActive('blockquote'),
-          () => editor.chain().focus().toggleBlockquote().run(),
-          <Quote className="w-3.5 h-3.5" />,
-          'Cita'
-        ),
-    },
-    {
-      id: 'hr',
-      group: 'format',
+      id: 'undo',
+      group: 'history',
       isActive: false,
-      render: () =>
-        toolBtn(
-          false,
-          () => editor.chain().focus().setHorizontalRule().run(),
-          <Minus className="w-3.5 h-3.5" />,
-          'Línea divisoria horizontal'
-        ),
+      render: () => (
+        <button
+          type="button"
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={() => editor.chain().focus().undo().run()}
+          disabled={!editor.can().undo()}
+          className="h-7 px-1.5 rounded-md text-veyra-muted hover:text-veyra-text hover:bg-black/5 dark:hover:bg-white/5 disabled:opacity-30 disabled:pointer-events-none transition-colors cursor-pointer shrink-0 flex items-center justify-center"
+          title="Deshacer (Ctrl+Z)"
+        >
+          <Undo className="w-3.5 h-3.5" />
+        </button>
+      ),
+    },
+    {
+      id: 'redo',
+      group: 'history',
+      isActive: false,
+      render: () => (
+        <button
+          type="button"
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={() => editor.chain().focus().redo().run()}
+          disabled={!editor.can().redo()}
+          className="h-7 px-1.5 rounded-md text-veyra-muted hover:text-veyra-text hover:bg-black/5 dark:hover:bg-white/5 disabled:opacity-30 disabled:pointer-events-none transition-colors cursor-pointer shrink-0 flex items-center justify-center"
+          title="Rehacer (Ctrl+Y)"
+        >
+          <Redo className="w-3.5 h-3.5" />
+        </button>
+      ),
     },
 
-    // 3. Text Color, Highlight, Font Family, Font Size, Clear Formatting
-    {
-      id: 'text-color',
-      group: 'style',
-      isActive: Boolean(currentTextColor),
-      render: () => (
-        <div className="inline-flex items-center h-7 rounded-md p-0.5 transition-colors border border-transparent hover:border-black/10 dark:hover:border-white/10 hover:bg-black/5 dark:hover:bg-white/5 shrink-0">
-          <button
-            type="button"
-            onMouseDown={(e) => e.preventDefault()}
-            onClick={handleQuickApplyTextColor}
-            title={`Color de texto (Clic para aplicar / alternar ${lastTextColor})`}
-            className={cn(
-              'h-6 px-1.5 rounded flex flex-col items-center justify-center gap-0.5 cursor-pointer transition-colors',
-              currentTextColor
-                ? 'text-accent font-semibold'
-                : 'text-veyra-muted hover:text-veyra-text'
-            )}
-          >
-            <Palette className="w-3.5 h-3.5" />
-            <span
-              className="w-3.5 h-[2.5px] rounded-full transition-colors shadow-xs"
-              style={{ backgroundColor: lastTextColor }}
-            />
-          </button>
-          <button
-            ref={textColorBtnRef}
-            type="button"
-            onMouseDown={(e) => e.preventDefault()}
-            onClick={handleToggleTextColorMenu}
-            title="Elegir otro color de texto"
-            className={cn(
-              'h-6 w-3.5 rounded flex items-center justify-center cursor-pointer transition-colors text-veyra-muted hover:text-veyra-text hover:bg-black/10 dark:hover:bg-white/10',
-              isTextColorMenuOpen && 'bg-black/10 dark:bg-white/10 text-veyra-text'
-            )}
-          >
-            <ChevronDown
-              className={cn(
-                'w-2.5 h-2.5 transition-transform duration-150',
-                isTextColorMenuOpen && 'rotate-180'
-              )}
-            />
-          </button>
-        </div>
-      ),
-    },
-    {
-      id: 'highlight',
-      group: 'style',
-      isActive: isHighlightActive,
-      render: () => (
-        <div className="inline-flex items-center h-7 rounded-md p-0.5 transition-colors border border-transparent hover:border-black/10 dark:hover:border-white/10 hover:bg-black/5 dark:hover:bg-white/5 shrink-0">
-          <button
-            type="button"
-            onMouseDown={(e) => e.preventDefault()}
-            onClick={handleQuickApplyHighlight}
-            title="Resaltar texto (Clic para aplicar / alternar)"
-            className={cn(
-              'h-6 px-1.5 rounded flex flex-col items-center justify-center gap-0.5 cursor-pointer transition-colors',
-              isHighlightActive
-                ? 'text-accent font-semibold'
-                : 'text-veyra-muted hover:text-veyra-text'
-            )}
-          >
-            <Highlighter className="w-3.5 h-3.5" />
-            <span
-              className="w-3.5 h-[2.5px] rounded-full transition-colors shadow-xs"
-              style={{ backgroundColor: lastHighlightColor }}
-            />
-          </button>
-          <button
-            ref={highlightBtnRef}
-            type="button"
-            onMouseDown={(e) => e.preventDefault()}
-            onClick={handleToggleHighlightMenu}
-            title="Elegir otro color de resaltado"
-            className={cn(
-              'h-6 w-3.5 rounded flex items-center justify-center cursor-pointer transition-colors text-veyra-muted hover:text-veyra-text hover:bg-black/10 dark:hover:bg-white/10',
-              isHighlightMenuOpen && 'bg-black/10 dark:bg-white/10 text-veyra-text'
-            )}
-          >
-            <ChevronDown
-              className={cn(
-                'w-2.5 h-2.5 transition-transform duration-150',
-                isHighlightMenuOpen && 'rotate-180'
-              )}
-            />
-          </button>
-        </div>
-      ),
-    },
+    // 2. Fuente
     {
       id: 'font-family',
-      group: 'style',
+      group: 'font',
       isActive: Boolean(activeFontOption),
       render: () => (
         <div className="relative shrink-0">
@@ -1074,7 +996,7 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({
     },
     {
       id: 'font-size',
-      group: 'style',
+      group: 'font',
       isActive: Boolean(currentFontSize),
       render: () => (
         <div className="inline-flex items-center h-7 rounded-md p-0.5 transition-colors border border-transparent hover:border-black/10 dark:hover:border-white/10 hover:bg-black/5 dark:hover:bg-white/5 shrink-0">
@@ -1120,7 +1042,7 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({
     },
     {
       id: 'clear-format',
-      group: 'style',
+      group: 'font',
       isActive: false,
       render: () =>
         toolBtn(
@@ -1130,158 +1052,149 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({
           'Borrar todo formato (Restablecer texto normal)'
         ),
     },
-
-    // 4. Insert Blocks
     {
-      id: 'math',
-      group: 'insert',
-      isActive: false,
+      id: 'bold',
+      group: 'font',
+      isActive: editor.isActive('bold'),
       render: () =>
         toolBtn(
-          false,
-          () =>
-            editor
-              .chain()
-              .focus()
-              .insertContent({ type: 'mathBlock', attrs: { latex: '' } })
-              .run(),
-          <Sigma className="w-3.5 h-3.5" />,
-          'Insertar fórmula matemática (LaTeX / KaTeX)'
+          editor.isActive('bold'),
+          () => editor.chain().focus().toggleBold().run(),
+          <Bold className="w-3.5 h-3.5" />,
+          'Negrita (Ctrl+B)'
         ),
     },
     {
-      id: 'table',
-      group: 'insert',
-      isActive: editor.isActive('table'),
+      id: 'italic',
+      group: 'font',
+      isActive: editor.isActive('italic'),
       render: () =>
         toolBtn(
-          editor.isActive('table'),
-          () =>
-            editor
-              .chain()
-              .focus()
-              .insertTable({ rows: 3, cols: 3, withHeaderRow: true })
-              .run(),
-          <Table className="w-3.5 h-3.5" />,
-          'Insertar tabla (o escribe /tabla)'
-        ),
-    },
-  ];
-
-  if (onOpenTemplates) {
-    toolbarItems.push({
-      id: 'templates',
-      group: 'insert',
-      isActive: false,
-      render: (inOverflow) =>
-        toolBtn(
-          false,
-          () => {
-            if (inOverflow) setIsOverflowOpen(false);
-            onOpenTemplates();
-          },
-          <LayoutTemplate className="w-3.5 h-3.5 text-accent" />,
-          'Plantillas y modelos predefinidos (/plantilla)'
-        ),
-    });
-  }
-
-  toolbarItems.push(
-    {
-      id: 'code',
-      group: 'insert',
-      isActive: editor.isActive('codeBlock'),
-      render: () =>
-        toolBtn(
-          editor.isActive('codeBlock'),
-          () => editor.chain().focus().toggleCodeBlock().run(),
-          <Code2 className="w-3.5 h-3.5" />,
-          'Bloque de código (o escribe /codigo)'
+          editor.isActive('italic'),
+          () => editor.chain().focus().toggleItalic().run(),
+          <Italic className="w-3.5 h-3.5" />,
+          'Cursiva (Ctrl+I)'
         ),
     },
     {
-      id: 'ai',
-      group: 'insert',
-      isActive: editor.isActive('aiPrompt'),
-      render: (inOverflow) =>
+      id: 'underline',
+      group: 'font',
+      isActive: editor.isActive('underline'),
+      render: () =>
         toolBtn(
-          editor.isActive('aiPrompt'),
-          () => {
-            if (inOverflow) setIsOverflowOpen(false);
-            editor.chain().focus().insertContent({ type: 'aiPrompt' }).run();
-          },
-          <Sparkles className="w-3.5 h-3.5" />,
-          'Asistente IA (o escribe /ia)'
+          editor.isActive('underline'),
+          () => editor.chain().focus().toggleUnderline().run(),
+          <UnderlineIcon className="w-3.5 h-3.5" />,
+          'Subrayado (Ctrl+U)'
         ),
-    }
-  );
-
-  if (onUploadImage) {
-    toolbarItems.push({
-      id: 'image',
-      group: 'media',
-      isActive: false,
-      render: (inOverflow) => (
-        <button
-          type="button"
-          onMouseDown={(e) => e.preventDefault()}
-          onClick={() => {
-            if (inOverflow) setIsOverflowOpen(false);
-            fileInputRef.current?.click();
-          }}
-          title="Insertar imagen"
-          className="h-7 px-1.5 rounded-md text-veyra-muted hover:text-veyra-text hover:bg-black/5 dark:hover:bg-white/5 transition-colors flex items-center justify-center cursor-pointer shrink-0"
-        >
-          <ImageIcon className="w-3.5 h-3.5" />
-        </button>
+    },
+    {
+      id: 'strike',
+      group: 'font',
+      isActive: editor.isActive('strike'),
+      render: () =>
+        toolBtn(
+          editor.isActive('strike'),
+          () => editor.chain().focus().toggleStrike().run(),
+          <Strikethrough className="w-3.5 h-3.5" />,
+          'Tachado'
+        ),
+    },
+    {
+      id: 'text-color',
+      group: 'font',
+      isActive: Boolean(currentTextColor),
+      render: () => (
+        <div className="inline-flex items-center h-7 rounded-md p-0.5 transition-colors border border-transparent hover:border-black/10 dark:hover:border-white/10 hover:bg-black/5 dark:hover:bg-white/5 shrink-0">
+          <button
+            type="button"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={handleQuickApplyTextColor}
+            title={`Color de texto (Clic para aplicar / alternar ${lastTextColor})`}
+            className={cn(
+              'h-6 px-1.5 rounded flex flex-col items-center justify-center gap-0.5 cursor-pointer transition-colors',
+              currentTextColor
+                ? 'text-accent font-semibold'
+                : 'text-veyra-muted hover:text-veyra-text'
+            )}
+          >
+            <Palette className="w-3.5 h-3.5" />
+            <span
+              className="w-3.5 h-[2.5px] rounded-full transition-colors shadow-xs"
+              style={{ backgroundColor: lastTextColor }}
+            />
+          </button>
+          <button
+            ref={textColorBtnRef}
+            type="button"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={handleToggleTextColorMenu}
+            title="Elegir otro color de texto"
+            className={cn(
+              'h-6 w-3.5 rounded flex items-center justify-center cursor-pointer transition-colors text-veyra-muted hover:text-veyra-text hover:bg-black/10 dark:hover:bg-white/10',
+              isTextColorMenuOpen && 'bg-black/10 dark:bg-white/10 text-veyra-text'
+            )}
+          >
+            <ChevronDown
+              className={cn(
+                'w-2.5 h-2.5 transition-transform duration-150',
+                isTextColorMenuOpen && 'rotate-180'
+              )}
+            />
+          </button>
+        </div>
       ),
-    });
-  }
-
-  if (onAttachFromDrive) {
-    toolbarItems.push({
-      id: 'drive',
-      group: 'media',
-      isActive: false,
-      render: (inOverflow) => (
-        <button
-          type="button"
-          onMouseDown={(e) => e.preventDefault()}
-          onClick={() => {
-            if (inOverflow) setIsOverflowOpen(false);
-            void onAttachFromDrive();
-          }}
-          disabled={isAttachingDrive}
-          title="Adjuntar archivo desde Google Drive"
-          className="h-7 px-1.5 rounded-md text-veyra-muted hover:text-veyra-text hover:bg-black/5 dark:hover:bg-white/5 disabled:opacity-50 transition-colors flex items-center gap-1 cursor-pointer shrink-0"
-        >
-          {isAttachingDrive ? (
-            <Loader2 className="w-3.5 h-3.5 animate-spin text-accent" />
-          ) : (
-            <HardDrive className="w-3.5 h-3.5 text-emerald-500" />
-          )}
-        </button>
-      ),
-    });
-  }
-
-  toolbarItems.push(
-    // 5. Lists
-    {
-      id: 'task-list',
-      group: 'lists',
-      isActive: editor.isActive('taskList'),
-      render: () =>
-        toolBtn(
-          editor.isActive('taskList'),
-          () => editor.chain().focus().toggleTaskList().run(),
-          <CheckSquare className="w-3.5 h-3.5" />,
-          'Lista de tareas / Checklist'
-        ),
     },
+    {
+      id: 'highlight',
+      group: 'font',
+      isActive: isHighlightActive,
+      render: () => (
+        <div className="inline-flex items-center h-7 rounded-md p-0.5 transition-colors border border-transparent hover:border-black/10 dark:hover:border-white/10 hover:bg-black/5 dark:hover:bg-white/5 shrink-0">
+          <button
+            type="button"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={handleQuickApplyHighlight}
+            title="Resaltar texto (Clic para aplicar / alternar)"
+            className={cn(
+              'h-6 px-1.5 rounded flex flex-col items-center justify-center gap-0.5 cursor-pointer transition-colors',
+              isHighlightActive
+                ? 'text-accent font-semibold'
+                : 'text-veyra-muted hover:text-veyra-text'
+            )}
+          >
+            <Highlighter className="w-3.5 h-3.5" />
+            <span
+              className="w-3.5 h-[2.5px] rounded-full transition-colors shadow-xs"
+              style={{ backgroundColor: lastHighlightColor }}
+            />
+          </button>
+          <button
+            ref={highlightBtnRef}
+            type="button"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={handleToggleHighlightMenu}
+            title="Elegir otro color de resaltado"
+            className={cn(
+              'h-6 w-3.5 rounded flex items-center justify-center cursor-pointer transition-colors text-veyra-muted hover:text-veyra-text hover:bg-black/10 dark:hover:bg-white/10',
+              isHighlightMenuOpen && 'bg-black/10 dark:bg-white/10 text-veyra-text'
+            )}
+          >
+            <ChevronDown
+              className={cn(
+                'w-2.5 h-2.5 transition-transform duration-150',
+                isHighlightMenuOpen && 'rotate-180'
+              )}
+            />
+          </button>
+        </div>
+      ),
+    },
+
+    // 3. Párrafo
     {
       id: 'bullet-list',
-      group: 'lists',
+      group: 'paragraph',
       isActive: editor.isActive('bulletList'),
       render: () =>
         toolBtn(
@@ -1293,7 +1206,7 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({
     },
     {
       id: 'ordered-list',
-      group: 'lists',
+      group: 'paragraph',
       isActive: isOrderedListActive,
       render: () => (
         <div className="relative inline-flex items-center shrink-0">
@@ -1337,8 +1250,8 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({
               isOrderedListActive
                 ? 'bg-accent/15 text-accent hover:bg-accent/25 border-l border-accent/20'
                 : isOrderedListMenuOpen
-                ? 'bg-black/10 dark:bg-white/10 text-veyra-text'
-                : 'text-veyra-muted hover:text-veyra-text hover:bg-black/5 dark:hover:bg-white/5'
+                  ? 'bg-black/10 dark:bg-white/10 text-veyra-text'
+                  : 'text-veyra-muted hover:text-veyra-text hover:bg-black/5 dark:hover:bg-white/5'
             )}
           >
             <ChevronDown className="w-2.5 h-2.5" />
@@ -1346,62 +1259,48 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({
         </div>
       ),
     },
-
-    // 6. Alignment
     {
-      id: 'align-left',
-      group: 'align',
-      isActive: editor.isActive({ textAlign: 'left' }),
+      id: 'task-list',
+      group: 'paragraph',
+      isActive: editor.isActive('taskList'),
       render: () =>
         toolBtn(
-          editor.isActive({ textAlign: 'left' }),
-          () => editor.chain().focus().setTextAlign('left').run(),
-          <AlignLeft className="w-3.5 h-3.5" />,
-          'Alinear a la izquierda'
+          editor.isActive('taskList'),
+          () => editor.chain().focus().toggleTaskList().run(),
+          <CheckSquare className="w-3.5 h-3.5" />,
+          'Lista de tareas / Checklist'
         ),
     },
     {
-      id: 'align-center',
-      group: 'align',
-      isActive: editor.isActive({ textAlign: 'center' }),
+      id: 'blockquote',
+      group: 'paragraph',
+      isActive: editor.isActive('blockquote'),
       render: () =>
         toolBtn(
-          editor.isActive({ textAlign: 'center' }),
-          () => editor.chain().focus().setTextAlign('center').run(),
-          <AlignCenter className="w-3.5 h-3.5" />,
-          'Centrar'
+          editor.isActive('blockquote'),
+          () => editor.chain().focus().toggleBlockquote().run(),
+          <Quote className="w-3.5 h-3.5" />,
+          'Cita'
         ),
     },
     {
-      id: 'align-right',
-      group: 'align',
-      isActive: editor.isActive({ textAlign: 'right' }),
+      id: 'hr',
+      group: 'paragraph',
+      isActive: false,
       render: () =>
         toolBtn(
-          editor.isActive({ textAlign: 'right' }),
-          () => editor.chain().focus().setTextAlign('right').run(),
-          <AlignRight className="w-3.5 h-3.5" />,
-          'Alinear a la derecha'
+          false,
+          () => editor.chain().focus().setHorizontalRule().run(),
+          <Minus className="w-3.5 h-3.5" />,
+          'Línea divisoria horizontal'
         ),
     },
-    {
-      id: 'align-justify',
-      group: 'align',
-      isActive: editor.isActive({ textAlign: 'justify' }),
-      render: () =>
-        toolBtn(
-          editor.isActive({ textAlign: 'justify' }),
-          () => editor.chain().focus().setTextAlign('justify').run(),
-          <AlignJustify className="w-3.5 h-3.5" />,
-          'Justificar'
-        ),
-    }
-  );
+  ];
 
   if (onToggleFormattingMarks) {
     toolbarItems.push({
       id: 'formatting-marks',
-      group: 'align',
+      group: 'paragraph',
       isActive: !!showFormattingMarks,
       render: () =>
         toolBtn(
@@ -1414,49 +1313,266 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({
   }
 
   toolbarItems.push(
-    // 7. History
     {
-      id: 'undo',
-      group: 'history',
-      isActive: false,
-      render: () => (
-        <button
-          type="button"
-          onMouseDown={(e) => e.preventDefault()}
-          onClick={() => editor.chain().focus().undo().run()}
-          disabled={!editor.can().undo()}
-          className="h-7 px-1.5 rounded-md text-veyra-muted hover:text-veyra-text hover:bg-black/5 dark:hover:bg-white/5 disabled:opacity-30 disabled:pointer-events-none transition-colors cursor-pointer shrink-0 flex items-center justify-center"
-          title="Deshacer (Ctrl+Z)"
-        >
-          <Undo className="w-3.5 h-3.5" />
-        </button>
-      ),
+      id: 'align-left',
+      group: 'paragraph',
+      isActive: editor.isActive({ textAlign: 'left' }),
+      render: () =>
+        toolBtn(
+          editor.isActive({ textAlign: 'left' }),
+          () => editor.chain().focus().setTextAlign('left').run(),
+          <AlignLeft className="w-3.5 h-3.5" />,
+          'Alinear a la izquierda'
+        ),
     },
     {
-      id: 'redo',
-      group: 'history',
+      id: 'align-center',
+      group: 'paragraph',
+      isActive: editor.isActive({ textAlign: 'center' }),
+      render: () =>
+        toolBtn(
+          editor.isActive({ textAlign: 'center' }),
+          () => editor.chain().focus().setTextAlign('center').run(),
+          <AlignCenter className="w-3.5 h-3.5" />,
+          'Centrar'
+        ),
+    },
+    {
+      id: 'align-right',
+      group: 'paragraph',
+      isActive: editor.isActive({ textAlign: 'right' }),
+      render: () =>
+        toolBtn(
+          editor.isActive({ textAlign: 'right' }),
+          () => editor.chain().focus().setTextAlign('right').run(),
+          <AlignRight className="w-3.5 h-3.5" />,
+          'Alinear a la derecha'
+        ),
+    },
+    {
+      id: 'align-justify',
+      group: 'paragraph',
+      isActive: editor.isActive({ textAlign: 'justify' }),
+      render: () =>
+        toolBtn(
+          editor.isActive({ textAlign: 'justify' }),
+          () => editor.chain().focus().setTextAlign('justify').run(),
+          <AlignJustify className="w-3.5 h-3.5" />,
+          'Justificar'
+        ),
+    },
+
+    // 4. Estilos
+    {
+      id: 'h1',
+      group: 'styles',
+      isActive: editor.isActive('heading', { level: 1 }),
+      render: () =>
+        toolBtn(
+          editor.isActive('heading', { level: 1 }),
+          () => handleToggleHeading(1),
+          <Heading1 className="w-3.5 h-3.5" />,
+          'Título 1'
+        ),
+    },
+    {
+      id: 'h2',
+      group: 'styles',
+      isActive: editor.isActive('heading', { level: 2 }),
+      render: () =>
+        toolBtn(
+          editor.isActive('heading', { level: 2 }),
+          () => handleToggleHeading(2),
+          <Heading2 className="w-3.5 h-3.5" />,
+          'Título 2'
+        ),
+    },
+    {
+      id: 'h3',
+      group: 'styles',
+      isActive: editor.isActive('heading', { level: 3 }),
+      render: () =>
+        toolBtn(
+          editor.isActive('heading', { level: 3 }),
+          () => handleToggleHeading(3),
+          <Heading3 className="w-3.5 h-3.5" />,
+          'Título 3'
+        ),
+    },
+
+    // 5. Insertar
+    {
+      id: 'table',
+      group: 'insert',
+      isActive: editor.isActive('table'),
+      render: () =>
+        toolBtn(
+          editor.isActive('table'),
+          () =>
+            editor
+              .chain()
+              .focus()
+              .insertTable({ rows: 3, cols: 3, withHeaderRow: true })
+              .run(),
+          <Table className="w-3.5 h-3.5" />,
+          'Insertar tabla (o escribe /tabla)'
+        ),
+    },
+    {
+      id: 'math',
+      group: 'insert',
       isActive: false,
-      render: () => (
+      render: () =>
+        toolBtn(
+          false,
+          () =>
+            editor
+              .chain()
+              .focus()
+              .insertContent({ type: 'mathBlock', attrs: { latex: '' } })
+              .run(),
+          <Sigma className="w-3.5 h-3.5" />,
+          'Insertar fórmula matemática (LaTeX / KaTeX)'
+        ),
+    },
+    {
+      id: 'code',
+      group: 'insert',
+      isActive: editor.isActive('codeBlock'),
+      render: () =>
+        toolBtn(
+          editor.isActive('codeBlock'),
+          () => editor.chain().focus().toggleCodeBlock().run(),
+          <Code2 className="w-3.5 h-3.5" />,
+          'Bloque de código (o escribe /codigo)'
+        ),
+    }
+  );
+
+  if (onOpenTemplates) {
+    toolbarItems.push({
+      id: 'templates',
+      group: 'insert',
+      isActive: false,
+      render: (inOverflow) =>
+        toolBtn(
+          false,
+          () => {
+            if (inOverflow) setIsOverflowOpen(false);
+            onOpenTemplates();
+          },
+          <LayoutTemplate className="w-3.5 h-3.5 text-accent" />,
+          'Plantillas y modelos predefinidos (/plantilla)'
+        ),
+    });
+  }
+
+  if (onUploadImage) {
+    toolbarItems.push({
+      id: 'image',
+      group: 'insert',
+      isActive: false,
+      render: (inOverflow) => (
         <button
           type="button"
           onMouseDown={(e) => e.preventDefault()}
-          onClick={() => editor.chain().focus().redo().run()}
-          disabled={!editor.can().redo()}
-          className="h-7 px-1.5 rounded-md text-veyra-muted hover:text-veyra-text hover:bg-black/5 dark:hover:bg-white/5 disabled:opacity-30 disabled:pointer-events-none transition-colors cursor-pointer shrink-0 flex items-center justify-center"
-          title="Rehacer (Ctrl+Y)"
+          onClick={() => {
+            if (inOverflow) setIsOverflowOpen(false);
+            fileInputRef.current?.click();
+          }}
+          title="Insertar imagen"
+          className="h-7 px-1.5 rounded-md text-veyra-muted hover:text-veyra-text hover:bg-black/5 dark:hover:bg-white/5 transition-colors flex items-center justify-center cursor-pointer shrink-0"
         >
-          <Redo className="w-3.5 h-3.5" />
+          <ImageIcon className="w-3.5 h-3.5" />
         </button>
       ),
-    }
-  );
+    });
+  }
+
+  if (onAttachFromDrive) {
+    toolbarItems.push({
+      id: 'drive',
+      group: 'insert',
+      isActive: false,
+      render: (inOverflow) => (
+        <button
+          type="button"
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={() => {
+            if (inOverflow) setIsOverflowOpen(false);
+            void onAttachFromDrive();
+          }}
+          disabled={isAttachingDrive}
+          title="Adjuntar archivo desde Google Drive"
+          className="h-7 px-1.5 rounded-md text-veyra-muted hover:text-veyra-text hover:bg-black/5 dark:hover:bg-white/5 disabled:opacity-50 transition-colors flex items-center gap-1 cursor-pointer shrink-0"
+        >
+          {isAttachingDrive ? (
+            <Loader2 className="w-3.5 h-3.5 animate-spin text-accent" />
+          ) : (
+            <HardDrive className="w-3.5 h-3.5 text-emerald-500" />
+          )}
+        </button>
+      ),
+    });
+  }
+
+  // 6. IA
+  toolbarItems.push({
+    id: 'ai',
+    group: 'ai',
+    isActive: editor.isActive('aiPrompt'),
+    render: (inOverflow) =>
+      toolBtn(
+        editor.isActive('aiPrompt'),
+        () => {
+          if (inOverflow) setIsOverflowOpen(false);
+          editor.chain().focus().insertContent({ type: 'aiPrompt' }).run();
+        },
+        <Sparkles className="w-3.5 h-3.5" />,
+        'Asistente IA (o escribe /ia)'
+      ),
+  });
 
   const effectiveVisibleCount =
     visibleCount === null ? toolbarItems.length : Math.min(visibleCount, toolbarItems.length);
   const visibleItems = toolbarItems.slice(0, effectiveVisibleCount);
   const overflowItems = toolbarItems.slice(effectiveVisibleCount);
-  const showOverflowMenu = overflowItems.length > 0 && isOverflowOpen;
+  const showOverflowMenu = toolbarMode === 'compact' && overflowItems.length > 0 && isOverflowOpen;
   const hasActiveOverflowItem = overflowItems.some((item) => item.isActive);
+
+  const toolbarItemMap = new Map(toolbarItems.map((item) => [item.id, item]));
+  const renderItem = (id: string) => toolbarItemMap.get(id)?.render(false) ?? null;
+
+  const isHeading1 = editor.isActive('heading', { level: 1 });
+  const isHeading2 = editor.isActive('heading', { level: 2 });
+  const isHeading3 = editor.isActive('heading', { level: 3 });
+  const isNormalStyle = !isHeading1 && !isHeading2 && !isHeading3;
+
+  const ribbonLabeledBtn = (
+    isActive: boolean,
+    onClick: () => void,
+    icon: React.ReactNode,
+    label: string,
+    title: string,
+    disabled = false
+  ) => (
+    <button
+      type="button"
+      onMouseDown={(e) => e.preventDefault()}
+      onClick={onClick}
+      disabled={disabled}
+      title={title}
+      className={cn(
+        'h-6 px-2 rounded-md transition-colors flex items-center gap-1.5 cursor-pointer shrink-0 text-[11px] font-medium disabled:opacity-30 disabled:pointer-events-none',
+        isActive
+          ? 'bg-accent/15 text-accent font-semibold'
+          : 'text-veyra-muted hover:text-veyra-text hover:bg-black/5 dark:hover:bg-white/5'
+      )}
+    >
+      {icon}
+      <span className="whitespace-nowrap">{label}</span>
+    </button>
+  );
 
   return (
     <>
@@ -1471,59 +1587,363 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({
       )}
 
       <div
-        ref={toolbarContainerRef}
-        className="h-9 border-b border-veyra-border px-2.5 sm:px-3 flex items-center gap-1 bg-veyra-surface/40 shrink-0 select-none text-xs overflow-hidden"
+        className={cn(
+          'border-b border-veyra-border bg-veyra-surface/40 shrink-0 select-none text-xs overflow-hidden transition-[height] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)]',
+          !isEditorReady && 'pointer-events-none opacity-65'
+        )}
+        style={{ height: toolbarMode === 'compact' ? 36 : extendedHeight }}
       >
-        <div
-          ref={toolbarTrackRef}
-          className="flex-1 min-w-0 flex items-center gap-0.5 overflow-hidden"
-        >
-          {visibleItems.map((item, idx) => (
-            <React.Fragment key={item.id}>
-              {idx > 0 && visibleItems[idx - 1].group !== item.group && (
-                <div className="w-[1px] h-3.5 bg-veyra-border mx-1 shrink-0" />
-              )}
-              <div data-toolbar-item-id={item.id} className="inline-flex items-center shrink-0">
-                {item.render(false)}
-              </div>
-            </React.Fragment>
-          ))}
-        </div>
-
-        {overflowItems.length > 0 && (
-          <div className="flex items-center shrink-0 pl-1 border-l border-veyra-border/70">
-            <button
-              ref={overflowBtnRef}
-              type="button"
-              onMouseDown={(e) => e.preventDefault()}
-              onClick={() => {
-                if (!showOverflowMenu) {
-                  updateOverflowPosition();
-                  setIsTextColorMenuOpen(false);
-                  setIsHighlightMenuOpen(false);
-                  setIsFontMenuOpen(false);
-                  setIsFontSizeMenuOpen(false);
-                  setIsOrderedListMenuOpen(false);
-                  setIsOverflowOpen(true);
-                } else {
-                  setIsOverflowOpen(false);
-                }
-              }}
-              title={`Más herramientas (${overflowItems.length})`}
-              aria-label="Más herramientas"
-              aria-expanded={showOverflowMenu}
-              className={cn(
-                'relative h-7 px-1.5 rounded-md transition-colors flex items-center justify-center cursor-pointer shrink-0',
-                showOverflowMenu
-                  ? 'bg-accent/15 text-accent font-semibold'
-                  : 'text-veyra-muted hover:text-veyra-text hover:bg-black/5 dark:hover:bg-white/5'
-              )}
+        {toolbarMode === 'compact' ? (
+          <div
+            ref={toolbarContainerRef}
+            className="h-9 px-2.5 sm:px-3 flex items-center gap-1 overflow-hidden animate-veyra-toolbar-compact"
+          >
+            <div
+              ref={toolbarTrackRef}
+              className="flex-1 min-w-0 flex items-center gap-0.5 overflow-hidden"
             >
-              <MoreHorizontal className="w-3.5 h-3.5" />
-              {hasActiveOverflowItem && !showOverflowMenu && (
-                <span className="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-accent" />
-              )}
-            </button>
+              {visibleItems.map((item, idx) => (
+                <React.Fragment key={item.id}>
+                  {idx > 0 && visibleItems[idx - 1].group !== item.group && (
+                    <div className="w-[1px] h-3.5 bg-veyra-border mx-1 shrink-0" />
+                  )}
+                  <div data-toolbar-item-id={item.id} className="inline-flex items-center shrink-0">
+                    {item.render(false)}
+                  </div>
+                </React.Fragment>
+              ))}
+            </div>
+
+            {overflowItems.length > 0 && (
+              <div className="flex items-center shrink-0 pl-1 border-l border-veyra-border/70">
+                <button
+                  ref={overflowBtnRef}
+                  type="button"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => {
+                    if (!showOverflowMenu) {
+                      updateOverflowPosition();
+                      setIsTextColorMenuOpen(false);
+                      setIsHighlightMenuOpen(false);
+                      setIsFontMenuOpen(false);
+                      setIsFontSizeMenuOpen(false);
+                      setIsOrderedListMenuOpen(false);
+                      setIsOverflowOpen(true);
+                    } else {
+                      setIsOverflowOpen(false);
+                    }
+                  }}
+                  title={`Más herramientas (${overflowItems.length})`}
+                  aria-label="Más herramientas"
+                  aria-expanded={showOverflowMenu}
+                  className={cn(
+                    'relative h-7 px-1.5 rounded-md transition-colors flex items-center justify-center cursor-pointer shrink-0',
+                    showOverflowMenu
+                      ? 'bg-accent/15 text-accent font-semibold'
+                      : 'text-veyra-muted hover:text-veyra-text hover:bg-black/5 dark:hover:bg-white/5'
+                  )}
+                >
+                  <MoreHorizontal className="w-3.5 h-3.5" />
+                  {hasActiveOverflowItem && !showOverflowMenu && (
+                    <span className="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-accent" />
+                  )}
+                </button>
+              </div>
+            )}
+
+            <div className="flex items-center shrink-0 pl-1 border-l border-veyra-border/70">
+              <button
+                type="button"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={handleToggleToolbarMode}
+                title="Vista extendida (cinta por secciones estilo Word)"
+                aria-label="Cambiar a vista extendida"
+                className="h-7 px-1.5 rounded-md text-veyra-muted hover:text-veyra-text hover:bg-black/5 dark:hover:bg-white/5 transition-colors flex items-center justify-center cursor-pointer shrink-0"
+              >
+                <ChevronDown className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div
+            ref={extendedContentRef}
+            className="flex items-stretch animate-veyra-toolbar-expand"
+          >
+            <div className="flex-1 min-w-0 flex items-stretch overflow-x-auto scrollbar-thin px-2.5 sm:px-3 pt-1.5 pb-1">
+              {/* Sección: Historial */}
+              <div className="flex flex-col justify-between shrink-0 pr-2.5">
+                <div className="flex-1 flex flex-col justify-center gap-0.5">
+                  {ribbonLabeledBtn(
+                    false,
+                    () => editor.chain().focus().undo().run(),
+                    <Undo className="w-3.5 h-3.5 shrink-0" />,
+                    'Deshacer',
+                    'Deshacer (Ctrl+Z)',
+                    !editor.can().undo()
+                  )}
+                  {ribbonLabeledBtn(
+                    false,
+                    () => editor.chain().focus().redo().run(),
+                    <Redo className="w-3.5 h-3.5 shrink-0" />,
+                    'Rehacer',
+                    'Rehacer (Ctrl+Y)',
+                    !editor.can().redo()
+                  )}
+                </div>
+                <div className="text-[10px] leading-none text-veyra-muted/80 font-medium text-center pt-1 tracking-tight">
+                  Historial
+                </div>
+              </div>
+
+              <div className="w-[1px] self-stretch my-1 bg-veyra-border/80 shrink-0" />
+
+              {/* Sección: Fuente */}
+              <div className="flex flex-col justify-between shrink-0 px-2.5">
+                <div className="flex-1 flex flex-col justify-center gap-1">
+                  <div className="flex items-center gap-1">
+                    {renderItem('font-family')}
+                    {renderItem('font-size')}
+                    {renderItem('clear-format')}
+                  </div>
+                  <div className="flex items-center gap-0.5">
+                    {renderItem('bold')}
+                    {renderItem('italic')}
+                    {renderItem('underline')}
+                    {renderItem('strike')}
+                    <div className="w-[1px] h-3.5 bg-veyra-border/70 mx-1 shrink-0" />
+                    {renderItem('text-color')}
+                    {renderItem('highlight')}
+                  </div>
+                </div>
+                <div className="text-[10px] leading-none text-veyra-muted/80 font-medium text-center pt-1 tracking-tight">
+                  Fuente
+                </div>
+              </div>
+
+              <div className="w-[1px] self-stretch my-1 bg-veyra-border/80 shrink-0" />
+
+              {/* Sección: Párrafo */}
+              <div className="flex flex-col justify-between shrink-0 px-2.5">
+                <div className="flex-1 flex flex-col justify-center gap-1">
+                  <div className="flex items-center gap-0.5">
+                    {renderItem('bullet-list')}
+                    {renderItem('ordered-list')}
+                    {renderItem('task-list')}
+                    <div className="w-[1px] h-3.5 bg-veyra-border/70 mx-1 shrink-0" />
+                    {renderItem('blockquote')}
+                    {renderItem('hr')}
+                    {renderItem('formatting-marks')}
+                  </div>
+                  <div className="flex items-center gap-0.5">
+                    {renderItem('align-left')}
+                    {renderItem('align-center')}
+                    {renderItem('align-right')}
+                    {renderItem('align-justify')}
+                  </div>
+                </div>
+                <div className="text-[10px] leading-none text-veyra-muted/80 font-medium text-center pt-1 tracking-tight">
+                  Párrafo
+                </div>
+              </div>
+
+              <div className="w-[1px] self-stretch my-1 bg-veyra-border/80 shrink-0" />
+
+              {/* Sección: Estilos (Galería estilo Word) */}
+              <div className="flex flex-col justify-between shrink-0 px-2.5">
+                <div className="flex-1 flex items-center">
+                  <div className="flex items-center gap-1 p-1 rounded-lg border border-veyra-border/80 bg-veyra-bg/40">
+                    <button
+                      type="button"
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => editor.chain().focus().setParagraph().run()}
+                      title="Texto normal (Párrafo)"
+                      className={cn(
+                        'h-[46px] min-w-[58px] px-2 rounded-md border transition-all flex flex-col items-center justify-center cursor-pointer',
+                        isNormalStyle
+                          ? 'border-accent bg-accent/10 text-accent ring-1 ring-accent/40 shadow-xs'
+                          : 'border-transparent text-veyra-text hover:border-veyra-border hover:bg-black/5 dark:hover:bg-white/5'
+                      )}
+                    >
+                      <span className="text-[11px] font-normal leading-tight">AaBbCc</span>
+                      <span className="text-[9.5px] text-veyra-muted leading-tight mt-0.5">
+                        Normal
+                      </span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => handleToggleHeading(1)}
+                      title="Título 1"
+                      className={cn(
+                        'h-[46px] min-w-[62px] px-2 rounded-md border transition-all flex flex-col items-center justify-center cursor-pointer',
+                        isHeading1
+                          ? 'border-accent bg-accent/10 text-accent ring-1 ring-accent/40 shadow-xs'
+                          : 'border-transparent text-veyra-text hover:border-veyra-border hover:bg-black/5 dark:hover:bg-white/5'
+                      )}
+                    >
+                      <span className="text-[13px] font-bold tracking-tight leading-tight">
+                        Título 1
+                      </span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => handleToggleHeading(2)}
+                      title="Título 2"
+                      className={cn(
+                        'h-[46px] min-w-[62px] px-2 rounded-md border transition-all flex flex-col items-center justify-center cursor-pointer',
+                        isHeading2
+                          ? 'border-accent bg-accent/10 text-accent ring-1 ring-accent/40 shadow-xs'
+                          : 'border-transparent text-veyra-text hover:border-veyra-border hover:bg-black/5 dark:hover:bg-white/5'
+                      )}
+                    >
+                      <span className="text-[12px] font-semibold leading-tight text-accent/90">
+                        Título 2
+                      </span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => handleToggleHeading(3)}
+                      title="Título 3"
+                      className={cn(
+                        'h-[46px] min-w-[62px] px-2 rounded-md border transition-all flex flex-col items-center justify-center cursor-pointer',
+                        isHeading3
+                          ? 'border-accent bg-accent/10 text-accent ring-1 ring-accent/40 shadow-xs'
+                          : 'border-transparent text-veyra-muted hover:text-veyra-text hover:border-veyra-border hover:bg-black/5 dark:hover:bg-white/5'
+                      )}
+                    >
+                      <span className="text-[11px] font-semibold leading-tight">Título 3</span>
+                    </button>
+                  </div>
+                </div>
+                <div className="text-[10px] leading-none text-veyra-muted/80 font-medium text-center pt-1 tracking-tight">
+                  Estilos
+                </div>
+              </div>
+
+              <div className="w-[1px] self-stretch my-1 bg-veyra-border/80 shrink-0" />
+
+              {/* Sección: Insertar */}
+              <div className="flex flex-col justify-between shrink-0 px-2.5">
+                <div className="flex-1 flex flex-col justify-center gap-0.5">
+                  <div className="flex items-center gap-0.5">
+                    {ribbonLabeledBtn(
+                      editor.isActive('table'),
+                      () =>
+                        editor
+                          .chain()
+                          .focus()
+                          .insertTable({ rows: 3, cols: 3, withHeaderRow: true })
+                          .run(),
+                      <Table className="w-3.5 h-3.5 shrink-0" />,
+                      'Tabla',
+                      'Insertar tabla (o escribe /tabla)'
+                    )}
+                    {ribbonLabeledBtn(
+                      false,
+                      () =>
+                        editor
+                          .chain()
+                          .focus()
+                          .insertContent({ type: 'mathBlock', attrs: { latex: '' } })
+                          .run(),
+                      <Sigma className="w-3.5 h-3.5 shrink-0" />,
+                      'Fórmula',
+                      'Insertar fórmula matemática (LaTeX / KaTeX)'
+                    )}
+                    {ribbonLabeledBtn(
+                      editor.isActive('codeBlock'),
+                      () => editor.chain().focus().toggleCodeBlock().run(),
+                      <Code2 className="w-3.5 h-3.5 shrink-0" />,
+                      'Código',
+                      'Bloque de código (o escribe /codigo)'
+                    )}
+                  </div>
+                  {(onOpenTemplates || onUploadImage || onAttachFromDrive) && (
+                    <div className="flex items-center gap-0.5">
+                      {onOpenTemplates &&
+                        ribbonLabeledBtn(
+                          false,
+                          onOpenTemplates,
+                          <LayoutTemplate className="w-3.5 h-3.5 shrink-0 text-accent" />,
+                          'Plantillas',
+                          'Plantillas y modelos predefinidos (/plantilla)'
+                        )}
+                      {onUploadImage &&
+                        ribbonLabeledBtn(
+                          false,
+                          handleTriggerImageUpload,
+                          <ImageIcon className="w-3.5 h-3.5 shrink-0" />,
+                          'Imagen',
+                          'Insertar imagen'
+                        )}
+                      {onAttachFromDrive &&
+                        ribbonLabeledBtn(
+                          false,
+                          () => {
+                            void onAttachFromDrive();
+                          },
+                          isAttachingDrive ? (
+                            <Loader2 className="w-3.5 h-3.5 shrink-0 animate-spin text-accent" />
+                          ) : (
+                            <HardDrive className="w-3.5 h-3.5 shrink-0 text-emerald-500" />
+                          ),
+                          'Drive',
+                          'Adjuntar archivo desde Google Drive',
+                          isAttachingDrive
+                        )}
+                    </div>
+                  )}
+                </div>
+                <div className="text-[10px] leading-none text-veyra-muted/80 font-medium text-center pt-1 tracking-tight">
+                  Insertar
+                </div>
+              </div>
+
+              <div className="w-[1px] self-stretch my-1 bg-veyra-border/80 shrink-0" />
+
+              {/* Sección: Asistente IA */}
+              <div className="flex flex-col justify-between shrink-0 pl-2.5 pr-1">
+                <div className="flex-1 flex items-center justify-center">
+                  <button
+                    type="button"
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => editor.chain().focus().insertContent({ type: 'aiPrompt' }).run()}
+                    title="Asistente IA (o escribe /ia)"
+                    className={cn(
+                      'h-[50px] min-w-[56px] px-2.5 rounded-lg transition-colors flex flex-col items-center justify-center gap-1 cursor-pointer',
+                      editor.isActive('aiPrompt')
+                        ? 'bg-accent/15 text-accent font-semibold'
+                        : 'text-veyra-muted hover:text-veyra-text hover:bg-black/5 dark:hover:bg-white/5'
+                    )}
+                  >
+                    <Sparkles className="w-4 h-4 text-accent" />
+                    <span className="text-[10.5px] font-medium leading-none">Asistente</span>
+                  </button>
+                </div>
+                <div className="text-[10px] leading-none text-veyra-muted/80 font-medium text-center pt-1 tracking-tight">
+                  IA
+                </div>
+              </div>
+            </div>
+
+            {/* Botón para contraer a vista compacta (estilo Word esquina inferior derecha) */}
+            <div className="shrink-0 flex items-end pb-1 px-1.5 border-l border-veyra-border/60">
+              <button
+                type="button"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={handleToggleToolbarMode}
+                title="Contraer a vista compacta"
+                aria-label="Cambiar a vista compacta"
+                className="h-6 w-6 rounded-md text-veyra-muted hover:text-veyra-text hover:bg-black/5 dark:hover:bg-white/5 transition-colors flex items-center justify-center cursor-pointer"
+              >
+                <ChevronUp className="w-3.5 h-3.5" />
+              </button>
+            </div>
           </div>
         )}
       </div>
@@ -1595,7 +2015,6 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({
             }}
             className="p-1.5 rounded-xl bg-white dark:bg-[#18181B] border border-slate-200 dark:border-zinc-800 shadow-xl w-72 max-h-96 overflow-y-auto animate-in fade-in zoom-in-95 duration-100 scrollbar-thin select-none text-xs"
           >
-            {/* Cabecera / Opción para restablecer */}
             <button
               type="button"
               onMouseDown={(e) => e.preventDefault()}
@@ -1619,10 +2038,11 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({
 
             <div className="h-[1px] bg-slate-200 dark:bg-zinc-800 my-1.5" />
 
-            {/* Sección: Normas APA / Word clásicas */}
             <div className="px-2.5 pt-1 pb-1 text-[10px] font-bold text-accent uppercase tracking-wider flex items-center justify-between">
               <span>Normas APA / Word</span>
-              <span className="text-[9px] text-slate-400 dark:text-zinc-500 lowercase font-normal">académicas</span>
+              <span className="text-[9px] text-slate-400 dark:text-zinc-500 lowercase font-normal">
+                académicas
+              </span>
             </div>
             {NOTE_FONTS.filter((f) => f.group === 'apa').map((font) => {
               const isSelected = activeFontOption?.id === font.id;
@@ -1660,7 +2080,6 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({
 
             <div className="h-[1px] bg-slate-200 dark:bg-zinc-800 my-1.5" />
 
-            {/* Sección: Estilos y Creativas Veyra */}
             <div className="px-2.5 pt-1 pb-1 text-[10px] font-bold text-slate-400 dark:text-zinc-500 uppercase tracking-wider">
               Estilos y Diseños Veyra
             </div>
@@ -1701,7 +2120,7 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({
           document.body
         )}
 
-      {/* 4. Popover flotante del Selector de Tamaño de Texto */}
+      {/* POPUP FLOTANTE (PORTAL): Selector de Tamaño de Texto */}
       {isFontSizeMenuOpen &&
         typeof document !== 'undefined' &&
         createPortal(
@@ -1715,7 +2134,6 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({
             }}
             className="p-1.5 rounded-xl bg-white dark:bg-[#18181B] border border-slate-200 dark:border-zinc-800 shadow-xl w-52 max-h-80 overflow-y-auto animate-in fade-in zoom-in-95 duration-100 scrollbar-thin select-none text-xs"
           >
-            {/* Cabecera / Opción para restablecer */}
             <button
               type="button"
               onMouseDown={(e) => e.preventDefault()}
@@ -1738,9 +2156,7 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({
                     : 'Normal (14px - Por defecto)'}
                 </span>
               </span>
-              {!currentFontSize && (
-                <Check className="w-3.5 h-3.5 text-accent" />
-              )}
+              {!currentFontSize && <Check className="w-3.5 h-3.5 text-accent" />}
             </button>
 
             <div className="h-[1px] bg-slate-200 dark:bg-zinc-800 my-1.5" />
@@ -1773,9 +2189,7 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({
                     <span className="w-7 text-[11px] font-mono text-slate-500 dark:text-zinc-400">
                       {size.size}px
                     </span>
-                    <span style={{ fontSize: `${Math.min(size.size, 17)}px` }}>
-                      {size.label}
-                    </span>
+                    <span style={{ fontSize: `${Math.min(size.size, 17)}px` }}>{size.label}</span>
                   </span>
                   {isSelected && <Check className="w-3.5 h-3.5 text-accent shrink-0 ml-2" />}
                 </button>
@@ -1785,7 +2199,7 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({
           document.body
         )}
 
-      {/* Popover Biblioteca de numeración */}
+      {/* POPUP FLOTANTE (PORTAL): Biblioteca de numeración */}
       {isOrderedListMenuOpen &&
         createPortal(
           <div
@@ -1798,12 +2212,10 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({
             }}
             className="p-3 w-[268px] rounded-xl bg-white dark:bg-[#18181B] border border-slate-200 dark:border-zinc-800 shadow-2xl text-xs space-y-2.5 text-slate-800 dark:text-zinc-100 select-none animate-in fade-in zoom-in-95 duration-100"
           >
-            {/* Título Biblioteca de numeración */}
             <div className="px-1 text-[13px] font-semibold text-slate-900 dark:text-white tracking-tight">
               Biblioteca de numeración
             </div>
 
-            {/* Grid 3x3 de estilos idéntico a Word */}
             <div className="grid grid-cols-3 gap-2">
               {NUMBERING_OPTIONS.map((opt) => {
                 const isSelected = isOrderedListActive
@@ -1845,20 +2257,22 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({
               })}
             </div>
 
-            {/* Opciones de secuencia si la lista está activa */}
             {isOrderedListActive && (
               <div className="pt-2 border-t border-zinc-700/70 space-y-2">
                 <div className="px-1 text-[10px] font-bold text-accent uppercase tracking-wider">
                   Configuración de inicio
                 </div>
 
-                {/* Continuar numeración anterior */}
                 {previousContinuation !== null && previousContinuation !== currentListStart && (
                   <button
                     type="button"
                     onMouseDown={(e) => e.preventDefault()}
                     onClick={() => {
-                      editor.chain().focus().updateAttributes('orderedList', { start: previousContinuation }).run();
+                      editor
+                        .chain()
+                        .focus()
+                        .updateAttributes('orderedList', { start: previousContinuation })
+                        .run();
                       setIsOrderedListMenuOpen(false);
                     }}
                     className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-accent/20 hover:bg-accent/30 text-accent font-medium transition-colors cursor-pointer text-left"
@@ -1870,7 +2284,6 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({
                   </button>
                 )}
 
-                {/* Reiniciar en 1 */}
                 <button
                   type="button"
                   onMouseDown={(e) => e.preventDefault()}
@@ -1892,7 +2305,6 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({
                   {currentListStart === 1 && <Check className="w-3.5 h-3.5 text-accent" />}
                 </button>
 
-                {/* Iniciar en número personalizado */}
                 <div className="px-1 pt-0.5 space-y-1">
                   <span className="text-[10px] text-zinc-400 font-medium">
                     Iniciar en número:
@@ -1909,7 +2321,11 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({
                           e.preventDefault();
                           const val = parseInt(customStartInput, 10);
                           if (!isNaN(val) && val >= 1) {
-                            editor.chain().focus().updateAttributes('orderedList', { start: val }).run();
+                            editor
+                              .chain()
+                              .focus()
+                              .updateAttributes('orderedList', { start: val })
+                              .run();
                             setIsOrderedListMenuOpen(false);
                           }
                         }
@@ -1922,7 +2338,11 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({
                       onClick={() => {
                         const val = parseInt(customStartInput, 10);
                         if (!isNaN(val) && val >= 1) {
-                          editor.chain().focus().updateAttributes('orderedList', { start: val }).run();
+                          editor
+                            .chain()
+                            .focus()
+                            .updateAttributes('orderedList', { start: val })
+                            .run();
                           setIsOrderedListMenuOpen(false);
                         }
                       }}

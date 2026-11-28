@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useLayoutEffect, useCallback } from 'react';
 import {
   LogOut,
   Check,
@@ -28,7 +28,6 @@ import {
   X,
 } from 'lucide-react';
 import type { UserIdentity } from '@supabase/supabase-js';
-import { Modal } from './Modal';
 import { GoogleIcon } from './GoogleIcon';
 import { IntegrationsSettingsPanel } from './IntegrationsSettingsPanel';
 import { AUTH_INTENT_STORAGE_KEY, getAuthCallbackUrl } from '../../lib/googleDriveIntegration';
@@ -63,6 +62,7 @@ export interface UserSettingsModalProps {
   userId?: string;
   userEmail?: string;
   userName?: string;
+  userAvatarUrl?: string;
   onSignOut?: () => void;
 }
 
@@ -88,6 +88,25 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
   const { settings, isSaving, updateSetting, resetToDefaults } = useUserSettings();
 
   const [activeTab, setActiveTab] = useState<TabType>('account');
+  const [tabDirection, setTabDirection] = useState<'next' | 'prev'>('next');
+  const navRef = useRef<HTMLElement>(null);
+  const tabButtonRefs = useRef<Record<string, HTMLButtonElement | null>>({});
+  const [indicatorStyle, setIndicatorStyle] = useState<{ left: number; width: number; ready: boolean }>({
+    left: 0,
+    width: 0,
+    ready: false,
+  });
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
   const [localName, setLocalName] = useState(settings.userName || initialUserName || '');
   const [isUpdatingName, setIsUpdatingName] = useState(false);
 
@@ -500,110 +519,166 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
     { id: 'devices' as TabType, label: 'Dispositivos & PWA', icon: Smartphone },
   ];
 
+  const handleTabChange = (nextTab: TabType) => {
+    if (nextTab === activeTab) return;
+    const prevIdx = tabs.findIndex((t) => t.id === activeTab);
+    const nextIdx = tabs.findIndex((t) => t.id === nextTab);
+    setTabDirection(nextIdx >= prevIdx ? 'next' : 'prev');
+    setActiveTab(nextTab);
+  };
+
+  const updateIndicator = useCallback(() => {
+    const activeEl = tabButtonRefs.current[activeTab];
+    if (!activeEl) return;
+    setIndicatorStyle({
+      left: activeEl.offsetLeft,
+      width: activeEl.offsetWidth,
+      ready: true,
+    });
+  }, [activeTab]);
+
+  useLayoutEffect(() => {
+    if (!isOpen) return;
+    updateIndicator();
+  }, [isOpen, activeTab, updateIndicator]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    window.addEventListener('resize', updateIndicator);
+    return () => window.removeEventListener('resize', updateIndicator);
+  }, [isOpen, updateIndicator]);
+
+  if (!isOpen) return null;
+
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="Ajustes de Veyra" maxWidth="5xl" className="overflow-hidden">
-      <div className="flex flex-col md:flex-row -mx-4 -mb-4 -mt-2 h-[76dvh] md:h-[580px] min-h-0 overflow-hidden">
-        {/* Sidebar de pestañas */}
-        <aside className="w-full md:w-64 shrink-0 border-b md:border-b-0 md:border-r border-veyra-border p-2.5 md:p-4 space-y-2 bg-veyra-elevated/40 flex flex-col">
-          <div className="hidden md:block px-3 py-2.5 rounded-lg bg-veyra-card/70 border border-veyra-border/60">
-            <p className="text-[10px] text-veyra-subtle uppercase tracking-wider font-semibold">Conectado como</p>
-            <p className="text-xs font-semibold text-veyra-text truncate mt-0.5">{settings.userName || userEmail || 'Usuario'}</p>
-            <div className="flex items-center gap-1.5 mt-1">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-              <span className="text-[10px] text-emerald-400 font-medium">Sincronización activa</span>
-            </div>
-          </div>
-
-          <nav className="flex md:flex-col gap-1 overflow-x-auto md:overflow-visible pb-0.5 md:pb-0 scrollbar-none md:flex-1">
-            {tabs.map((tab) => {
-              const Icon = tab.icon;
-              const isActive = activeTab === tab.id;
-              return (
-                <button
-                  key={tab.id}
-                  onClick={() => setActiveTab(tab.id)}
-                  className={cn(
-                    'flex items-center gap-2 md:gap-2.5 px-3 py-2 md:py-2.5 rounded-lg text-xs font-medium transition-all text-left whitespace-nowrap cursor-pointer w-auto md:w-full shrink-0',
-                    isActive
-                      ? 'bg-accent/15 text-accent font-semibold shadow-xs'
-                      : 'text-veyra-muted hover:text-veyra-text hover:bg-veyra-elevated/80'
-                  )}
-                >
-                  <Icon className={cn('w-4 h-4 shrink-0', isActive ? 'text-accent' : 'text-veyra-subtle')} />
-                  <span>{tab.label}</span>
-                  {tab.id === 'notifications' &&
-                    (notificationPermission === 'default' || notificationPermission === 'denied') && (
-                      <span
-                        className={cn(
-                          'w-1.5 h-1.5 rounded-full ml-auto shrink-0',
-                          notificationPermission === 'denied' ? 'bg-amber-400' : 'bg-accent'
-                        )}
-                      />
-                    )}
-                  {tab.id === 'devices' && isInstallable && (
-                    <span className="w-1.5 h-1.5 rounded-full ml-auto shrink-0 bg-accent" />
-                  )}
-                </button>
-              );
-            })}
-          </nav>
-
-          <div className="hidden md:block pt-3 mt-auto border-t border-veyra-border space-y-1.5">
-            <button
-              onClick={resetToDefaults}
-              className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-[11px] text-veyra-subtle hover:text-veyra-text hover:bg-white/5 transition-colors cursor-pointer"
-            >
-              <RotateCcw className="w-3.5 h-3.5" />
-              <span>Restablecer ajustes</span>
-            </button>
-
-            {onSignOut && (
+    <div
+      role="region"
+      aria-label="Ajustes de Veyra"
+      className="flex-1 min-w-0 w-full h-full bg-veyra-canvas text-veyra-text flex flex-col overflow-hidden"
+    >
+      {/* Horizontal Minimalist Tab Bar */}
+      <div className="border-b border-veyra-border bg-veyra-canvas/90 px-5 sm:px-8 flex items-center justify-between gap-4 shrink-0">
+        <nav
+          ref={navRef}
+          aria-label="Secciones de ajustes"
+          className="relative flex items-center gap-5 sm:gap-6 overflow-x-auto scrollbar-none -mb-px"
+        >
+          {tabs.map((tab) => {
+            const Icon = tab.icon;
+            const isActive = activeTab === tab.id;
+            return (
               <button
-                onClick={() => {
-                  onClose();
-                  onSignOut();
+                key={tab.id}
+                ref={(el) => {
+                  tabButtonRefs.current[tab.id] = el;
                 }}
-                className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs text-red-400/90 hover:text-red-300 hover:bg-red-500/10 transition-colors cursor-pointer"
+                type="button"
+                onClick={() => handleTabChange(tab.id)}
+                className={cn(
+                  'relative flex items-center gap-2 py-3 text-xs sm:text-[13px] whitespace-nowrap transition-colors duration-200 cursor-pointer shrink-0',
+                  isActive
+                    ? 'text-veyra-text font-semibold'
+                    : 'text-veyra-muted hover:text-veyra-text font-medium'
+                )}
               >
-                <LogOut className="w-3.5 h-3.5" />
-                <span>Cerrar sesión</span>
+                <Icon className={cn('w-3.5 h-3.5 shrink-0 transition-colors duration-200', isActive ? 'text-accent' : 'text-veyra-subtle')} />
+                <span>{tab.label}</span>
+                {tab.id === 'notifications' &&
+                  (notificationPermission === 'default' || notificationPermission === 'denied') && (
+                    <span
+                      className={cn(
+                        'w-1.5 h-1.5 rounded-full shrink-0',
+                        notificationPermission === 'denied' ? 'bg-amber-400' : 'bg-accent'
+                      )}
+                    />
+                  )}
+                {tab.id === 'devices' && isInstallable && (
+                  <span className="w-1.5 h-1.5 rounded-full shrink-0 bg-accent" />
+                )}
               </button>
-            )}
-          </div>
-        </aside>
+            );
+          })}
 
-        {/* Panel de contenido de la pestaña */}
-        <div className="flex-1 p-5 md:p-6 overflow-y-auto overflow-x-hidden h-full space-y-6 text-xs">
-          {/* Indicador de guardado en la nube */}
-          <div className="flex items-center justify-between text-[11px] text-veyra-subtle pb-2 border-b border-veyra-border/50">
-            <span className="font-medium text-veyra-muted">Los cambios globales se sincronizan al instante en todos tus dispositivos conectados (Web y Móvil)</span>
-            {isSaving ? (
-              <span className="flex items-center gap-1.5 text-accent font-medium">
-                <Loader2 className="w-3 h-3 animate-spin" />
-                <span>Guardando...</span>
-              </span>
-            ) : (
-              <span className="flex items-center gap-1 text-emerald-400 font-medium">
-                <CloudCheck className="w-3.5 h-3.5" />
-                <span>En la nube</span>
-              </span>
-            )}
-          </div>
+          {indicatorStyle.ready && (
+            <span
+              aria-hidden="true"
+              style={{
+                transform: `translate3d(${indicatorStyle.left}px, 0, 0)`,
+                width: `${indicatorStyle.width}px`,
+              }}
+              className="pointer-events-none absolute bottom-0 left-0 h-[2px] bg-accent rounded-full transition-[transform,width] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)]"
+            />
+          )}
+        </nav>
+
+        {/* Right: Sync Status & Close Settings Button */}
+        <div className="flex items-center gap-2 shrink-0 py-1.5">
+          {isSaving ? (
+            <span className="hidden sm:flex items-center gap-1.5 px-2 py-1 text-[11px] text-accent font-medium">
+              <Loader2 className="w-3 h-3 animate-spin" />
+              <span>Guardando...</span>
+            </span>
+          ) : (
+            <span
+              title="Sincronización activa en la nube"
+              className="hidden sm:flex items-center gap-1.5 px-2 py-1 text-[11px] text-veyra-subtle font-medium"
+            >
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+              <span>Sincronizado</span>
+            </span>
+          )}
+
+          <button
+            type="button"
+            onClick={onClose}
+            title="Cerrar ajustes (Esc)"
+            aria-label="Cerrar ajustes"
+            className="p-1.5 rounded-md bg-red-500/10 hover:bg-red-500/20 text-red-500 transition-colors cursor-pointer flex items-center justify-center"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      </div>
+
+      {/* Main Single-Column Tab Content */}
+      <div className="flex-1 min-h-0 p-5 sm:p-7 lg:px-10 lg:py-8 overflow-y-auto overflow-x-hidden">
+        <div
+          key={activeTab}
+          className={cn(
+            'max-w-3xl mx-auto space-y-6 text-xs pb-8',
+            tabDirection === 'next' ? 'veyra-settings-tab-next' : 'veyra-settings-tab-prev'
+          )}
+        >
 
           {/* ══════════════════════════════════════════════════════════════ */}
           {/* PESTAÑA: CUENTA Y PERFIL                                      */}
           {/* ══════════════════════════════════════════════════════════════ */}
           {activeTab === 'account' && (
-            <div className="space-y-4">
-              <div>
-                <h4 className="text-sm font-semibold text-veyra-text">Identidad y Perfil</h4>
-                <p className="text-[11px] text-veyra-muted mt-0.5">
-                  Personaliza cómo te identificas y tu modo de trabajo prioritario.
-                </p>
+            <div className="divide-y divide-veyra-border/60">
+              <div className="pb-4 flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <h4 className="text-sm font-semibold text-veyra-text">Identidad y Perfil</h4>
+                  <p className="text-[11px] text-veyra-muted mt-0.5">
+                    Personaliza cómo te identificas y tu modo de trabajo prioritario.
+                  </p>
+                </div>
+                {onSignOut && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onClose();
+                      onSignOut();
+                    }}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-veyra-border text-[11px] font-medium text-veyra-muted hover:text-veyra-text hover:bg-veyra-elevated/50 transition-colors cursor-pointer shrink-0"
+                  >
+                    <LogOut className="w-3.5 h-3.5" />
+                    <span>Cerrar sesión</span>
+                  </button>
+                )}
               </div>
 
               {/* Nombre de usuario */}
-              <div className="p-3.5 rounded-lg bg-veyra-card/70 border border-veyra-border space-y-2">
+              <div className="py-5 space-y-2.5">
                 <label className="block text-[11px] font-semibold text-veyra-muted uppercase tracking-wider">
                   Nombre visible
                 </label>
@@ -613,24 +688,24 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
                     value={localName}
                     onChange={(e) => setLocalName(e.target.value)}
                     placeholder="Tu nombre o alias"
-                    className="flex-1 px-3 py-1.5 rounded-lg bg-veyra-elevated border border-veyra-border text-veyra-text placeholder:text-veyra-subtle focus:outline-none focus:border-accent text-xs"
+                    className="flex-1 min-w-0 px-3 py-1.5 rounded-md bg-transparent border border-veyra-border text-veyra-text placeholder:text-veyra-subtle focus:outline-none focus:border-accent text-xs"
                   />
                   <button
                     onClick={handleSaveName}
                     disabled={isUpdatingName || localName.trim() === settings.userName}
-                    className="px-3.5 py-1.5 rounded-lg bg-accent text-white font-medium hover:bg-accent/90 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                    className="px-3.5 py-1.5 rounded-md bg-accent text-white font-medium hover:bg-accent/90 disabled:opacity-40 disabled:cursor-not-allowed transition-colors shrink-0 cursor-pointer"
                   >
                     {isUpdatingName ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Guardar'}
                   </button>
                 </div>
-                <p className="text-[10px] text-veyra-subtle">
+                <p className="text-[10.5px] text-veyra-subtle">
                   Email vinculado: <span className="text-veyra-text font-mono">{userEmail || 'Sin email'}</span>
                 </p>
               </div>
 
               {/* Nivel de Control por Defecto */}
-              <div>
-                <label className="block text-[11px] font-semibold text-veyra-muted uppercase tracking-wider mb-2">
+              <div className="py-5 space-y-2.5">
+                <label className="block text-[11px] font-semibold text-veyra-muted uppercase tracking-wider">
                   Nivel de control predeterminado en recordatorios
                 </label>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
@@ -640,10 +715,10 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
                       type="button"
                       onClick={() => updateSetting('defaultControlLevel', lvl.id)}
                       className={cn(
-                        'p-3 rounded-lg border text-left transition-all cursor-pointer',
+                        'p-3 rounded-md border text-left transition-colors cursor-pointer',
                         settings.defaultControlLevel === lvl.id
-                          ? 'bg-accent/10 border-accent shadow-xs'
-                          : 'bg-veyra-card/60 border-veyra-border hover:border-veyra-subtle'
+                          ? 'bg-accent/10 border-accent'
+                          : 'bg-transparent border-veyra-border hover:border-veyra-subtle'
                       )}
                     >
                       <div className="flex items-center gap-1.5 mb-1">
@@ -657,7 +732,7 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
               </div>
 
               {/* Métodos de inicio de sesión y vinculación (Fase 3: linkIdentity) */}
-              <div className="p-3.5 rounded-lg bg-veyra-card/70 border border-veyra-border space-y-2.5">
+              <div className="py-5 space-y-2.5">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div>
                     <h5 className="text-xs font-semibold text-veyra-text flex items-center gap-1.5">
@@ -665,8 +740,7 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
                       <span>Métodos de inicio de sesión</span>
                     </h5>
                     <p className="text-[10.5px] text-veyra-muted mt-0.5">
-                      Vincula Google para iniciar sesión. Esto es independiente de conectar Google
-                      Drive (pestaña Integraciones).
+                      Vincula Google para iniciar sesión. Independiente de Google Drive (Integraciones).
                     </p>
                   </div>
 
@@ -677,7 +751,7 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
                     </span>
                   ) : googleIdentity ? (
                     <div className="flex items-center gap-2">
-                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/25">
                         <ShieldCheck className="w-3 h-3" />
                         Google vinculado
                       </span>
@@ -686,7 +760,7 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
                           type="button"
                           onClick={handleUnlinkGoogleIdentity}
                           disabled={linkingGoogle}
-                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-veyra-elevated hover:bg-red-500/15 text-veyra-muted hover:text-red-400 text-[11px] font-medium transition-colors cursor-pointer disabled:opacity-40"
+                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md border border-veyra-border hover:border-red-500/30 hover:bg-red-500/10 text-veyra-muted hover:text-red-400 text-[11px] font-medium transition-colors cursor-pointer disabled:opacity-40"
                         >
                           {linkingGoogle ? (
                             <Loader2 className="w-3 h-3 animate-spin" />
@@ -706,7 +780,7 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
                       type="button"
                       onClick={handleLinkGoogleIdentity}
                       disabled={linkingGoogle}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-veyra-elevated hover:bg-veyra-elevated/80 border border-veyra-border text-veyra-text text-xs font-medium transition-colors cursor-pointer disabled:opacity-50"
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-veyra-border hover:bg-veyra-elevated/50 text-veyra-text text-xs font-medium transition-colors cursor-pointer disabled:opacity-50"
                     >
                       {linkingGoogle ? (
                         <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -729,7 +803,7 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
               </div>
 
               {/* Legal y Privacidad */}
-              <div className="p-3.5 rounded-lg bg-veyra-card/70 border border-veyra-border space-y-2.5">
+              <div className="py-5 space-y-2.5">
                 <div>
                   <h5 className="text-xs font-semibold text-veyra-text flex items-center gap-1.5">
                     <ShieldCheck className="w-3.5 h-3.5 text-teal-400" />
@@ -744,7 +818,7 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
                     href="/privacy"
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-veyra-elevated border border-veyra-border text-[11px] font-medium text-veyra-muted hover:text-veyra-text hover:border-teal-500/40 transition-colors"
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-veyra-border text-[11px] font-medium text-veyra-muted hover:text-veyra-text hover:border-teal-500/40 transition-colors"
                   >
                     <ShieldCheck className="w-3.5 h-3.5 text-teal-400" />
                     <span>Política de Privacidad</span>
@@ -753,7 +827,7 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
                     href="/terms"
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-veyra-elevated border border-veyra-border text-[11px] font-medium text-veyra-muted hover:text-veyra-text hover:border-teal-500/40 transition-colors"
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-veyra-border text-[11px] font-medium text-veyra-muted hover:text-veyra-text hover:border-teal-500/40 transition-colors"
                   >
                     <FileText className="w-3.5 h-3.5 text-teal-400" />
                     <span>Términos de Servicio</span>
@@ -762,7 +836,7 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
                     href="/delete-account"
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-veyra-elevated border border-veyra-border text-[11px] font-medium text-veyra-muted hover:text-red-400 hover:border-red-500/30 transition-colors"
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-veyra-border text-[11px] font-medium text-veyra-muted hover:text-red-400 hover:border-red-500/30 transition-colors"
                   >
                     <Trash2 className="w-3.5 h-3.5 text-red-400" />
                     <span>Eliminación de Cuenta</span>
@@ -770,8 +844,26 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
                 </div>
               </div>
 
+              {/* Valores predeterminados */}
+              <div className="py-5 flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <h5 className="text-xs font-semibold text-veyra-text">Valores predeterminados</h5>
+                  <p className="text-[10.5px] text-veyra-muted mt-0.5">
+                    Restaura todas las preferencias globales a su configuración inicial.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={resetToDefaults}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-veyra-border text-[11px] font-medium text-veyra-muted hover:text-veyra-text hover:bg-veyra-elevated/50 transition-colors cursor-pointer shrink-0"
+                >
+                  <RotateCcw className="w-3.5 h-3.5" />
+                  <span>Restablecer ajustes</span>
+                </button>
+              </div>
+
               {/* Zona de peligro: Eliminación permanente de cuenta */}
-              <div className="p-3.5 rounded-lg bg-red-500/5 border border-red-500/25 space-y-2.5">
+              <div className="py-5 space-y-2.5">
                 <div className="flex items-center justify-between gap-2">
                   <div>
                     <h5 className="text-xs font-semibold text-red-400 flex items-center gap-1.5">
@@ -789,7 +881,7 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
                         setShowDeleteConfirm(true);
                         setDeleteConfirmText('');
                       }}
-                      className="px-3 py-1.5 rounded-lg bg-red-500/15 hover:bg-red-500/25 text-red-400 font-semibold transition-colors cursor-pointer shrink-0"
+                      className="px-3 py-1.5 rounded-md border border-red-500/35 hover:bg-red-500/10 text-red-400 font-semibold transition-colors cursor-pointer shrink-0"
                     >
                       Eliminar cuenta
                     </button>
@@ -807,7 +899,7 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
                         value={deleteConfirmText}
                         onChange={(e) => setDeleteConfirmText(e.target.value)}
                         placeholder="ELIMINAR"
-                        className="flex-1 px-3 py-1.5 rounded-lg bg-veyra-elevated border border-red-500/30 text-veyra-text placeholder:text-veyra-subtle focus:outline-none focus:border-red-400 text-xs font-mono"
+                        className="flex-1 px-3 py-1.5 rounded-md bg-transparent border border-red-500/30 text-veyra-text placeholder:text-veyra-subtle focus:outline-none focus:border-red-400 text-xs font-mono"
                       />
                       <div className="flex items-center gap-1.5">
                         <button
@@ -817,7 +909,7 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
                             setDeleteConfirmText('');
                           }}
                           disabled={isDeletingAccount}
-                          className="px-3 py-1.5 rounded-lg bg-veyra-elevated text-veyra-muted hover:text-veyra-text transition-colors cursor-pointer"
+                          className="px-3 py-1.5 rounded-md border border-veyra-border text-veyra-muted hover:text-veyra-text transition-colors cursor-pointer"
                         >
                           Cancelar
                         </button>
@@ -825,7 +917,7 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
                           type="button"
                           onClick={handleDeleteAccount}
                           disabled={isDeletingAccount || deleteConfirmText.trim().toUpperCase() !== 'ELIMINAR'}
-                          className="px-3 py-1.5 rounded-lg bg-red-600 hover:bg-red-500 text-white font-semibold disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer flex items-center gap-1.5"
+                          className="px-3 py-1.5 rounded-md bg-red-600 hover:bg-red-500 text-white font-semibold disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer flex items-center gap-1.5"
                         >
                           {isDeletingAccount && <Loader2 className="w-3 h-3 animate-spin" />}
                           <span>Confirmar borrado</span>
@@ -847,17 +939,17 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
           {/* PESTAÑA: APARIENCIA                                           */}
           {/* ══════════════════════════════════════════════════════════════ */}
           {activeTab === 'appearance' && (
-            <div className="space-y-4">
-              <div>
+            <div className="divide-y divide-veyra-border/60">
+              <div className="pb-4">
                 <h4 className="text-sm font-semibold text-veyra-text">Estilo e Interfaz</h4>
                 <p className="text-[11px] text-veyra-muted mt-0.5">
                   El tema claro/oscuro es independiente en este navegador; el color de acento se sincroniza en tiempo real entre Web y Móvil.
                 </p>
               </div>
 
-              {/* Modo de Tema */}
-              <div>
-                <label className="block text-[11px] font-semibold text-veyra-muted uppercase tracking-wider mb-1.5">
+              {/* Modo de Tema + AMOLED */}
+              <div className="py-5 space-y-3">
+                <label className="block text-[11px] font-semibold text-veyra-muted uppercase tracking-wider">
                   Tema de la interfaz
                 </label>
                 <div className="grid grid-cols-3 gap-2">
@@ -865,10 +957,10 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
                     type="button"
                     onClick={() => updateSetting('themeMode', 'dark')}
                     className={cn(
-                      'flex items-center justify-center gap-2 py-2.5 px-3 rounded-lg border font-medium transition-colors cursor-pointer',
+                      'flex items-center justify-center gap-2 py-2 px-3 rounded-md border font-medium transition-colors cursor-pointer',
                       settings.themeMode === 'dark'
-                        ? 'bg-accent/15 border-accent text-accent font-semibold'
-                        : 'bg-veyra-card/60 border-veyra-border text-veyra-muted hover:text-veyra-text'
+                        ? 'bg-accent/10 border-accent text-accent font-semibold'
+                        : 'bg-transparent border-veyra-border text-veyra-muted hover:text-veyra-text'
                     )}
                   >
                     <Moon className="w-3.5 h-3.5" />
@@ -878,10 +970,10 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
                     type="button"
                     onClick={() => updateSetting('themeMode', 'light')}
                     className={cn(
-                      'flex items-center justify-center gap-2 py-2.5 px-3 rounded-lg border font-medium transition-colors cursor-pointer',
+                      'flex items-center justify-center gap-2 py-2 px-3 rounded-md border font-medium transition-colors cursor-pointer',
                       settings.themeMode === 'light'
-                        ? 'bg-accent/15 border-accent text-accent font-semibold'
-                        : 'bg-veyra-card/60 border-veyra-border text-veyra-muted hover:text-veyra-text'
+                        ? 'bg-accent/10 border-accent text-accent font-semibold'
+                        : 'bg-transparent border-veyra-border text-veyra-muted hover:text-veyra-text'
                     )}
                   >
                     <Sun className="w-3.5 h-3.5" />
@@ -891,10 +983,10 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
                     type="button"
                     onClick={() => updateSetting('themeMode', 'system')}
                     className={cn(
-                      'flex items-center justify-center gap-2 py-2.5 px-3 rounded-lg border font-medium transition-colors cursor-pointer',
+                      'flex items-center justify-center gap-2 py-2 px-3 rounded-md border font-medium transition-colors cursor-pointer',
                       settings.themeMode === 'system'
-                        ? 'bg-accent/15 border-accent text-accent font-semibold'
-                        : 'bg-veyra-card/60 border-veyra-border text-veyra-muted hover:text-veyra-text'
+                        ? 'bg-accent/10 border-accent text-accent font-semibold'
+                        : 'bg-transparent border-veyra-border text-veyra-muted hover:text-veyra-text'
                     )}
                   >
                     <Laptop className="w-3.5 h-3.5" />
@@ -904,30 +996,12 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
 
                 {/* Modo Negro AMOLED (Solo en tema oscuro) */}
                 {settings.themeMode !== 'light' && (
-                  <div
-                    className={cn(
-                      'mt-2.5 flex items-center justify-between gap-4 p-3.5 rounded-xl border transition-colors overflow-hidden',
-                      settings.amoledEnabled
-                        ? 'bg-accent/10 border-accent/40'
-                        : 'bg-veyra-card/60 border-veyra-border'
-                    )}
-                  >
-                    <div className="flex items-start gap-3 min-w-0 flex-1">
-                      <span
-                        aria-hidden="true"
-                        className={cn(
-                          'w-7 h-7 rounded-lg bg-black border shrink-0 mt-0.5 flex items-center justify-center shadow-inner',
-                          settings.amoledEnabled ? 'border-accent/60' : 'border-zinc-700'
-                        )}
-                      >
-                        <span className="w-2.5 h-2.5 rounded-full bg-zinc-900 border border-zinc-700/80" />
+                  <div className="pt-2 flex items-center justify-between gap-4">
+                    <div className="min-w-0 flex-1">
+                      <span className="font-semibold text-xs text-veyra-text block">Modo Negro AMOLED</span>
+                      <span className="text-[10.5px] text-veyra-muted leading-relaxed block mt-0.5">
+                        Usa negro puro (#000000) en la interfaz y en el fondo de las notas en formato infinito
                       </span>
-                      <div className="min-w-0 flex-1">
-                        <span className="font-semibold text-xs text-veyra-text block">Modo Negro AMOLED</span>
-                        <span className="text-[10px] text-veyra-muted leading-relaxed block mt-0.5">
-                          Usa negro puro (#000000) en la interfaz y en el fondo de las notas en formato infinito
-                        </span>
-                      </div>
                     </div>
                     <button
                       type="button"
@@ -936,14 +1010,14 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
                       aria-checked={Boolean(settings.amoledEnabled)}
                       onClick={() => updateSetting('amoledEnabled', !settings.amoledEnabled)}
                       className={cn(
-                        'inline-flex items-center w-11 h-6 p-0.5 rounded-full transition-colors shrink-0 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-veyra-card',
+                        'inline-flex items-center w-10 h-5.5 p-0.5 rounded-full transition-colors shrink-0 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent',
                         settings.amoledEnabled ? 'bg-accent' : 'bg-zinc-700'
                       )}
                     >
                       <span
                         className={cn(
-                          'w-5 h-5 rounded-full bg-white shadow-sm transition-transform duration-200',
-                          settings.amoledEnabled ? 'translate-x-5' : 'translate-x-0'
+                          'w-4.5 h-4.5 rounded-full bg-white shadow-sm transition-transform duration-200',
+                          settings.amoledEnabled ? 'translate-x-4.5' : 'translate-x-0'
                         )}
                       />
                     </button>
@@ -952,11 +1026,11 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
               </div>
 
               {/* Color de Acento */}
-              <div>
-                <label className="block text-[11px] font-semibold text-veyra-muted uppercase tracking-wider mb-2">
+              <div className="py-5 space-y-2.5">
+                <label className="block text-[11px] font-semibold text-veyra-muted uppercase tracking-wider">
                   Color de Acento en Vivo
                 </label>
-                <div className="grid grid-cols-6 gap-2 p-3 rounded-lg bg-veyra-card/60 border border-veyra-border">
+                <div className="flex items-center gap-3 pt-1">
                   {availableAccents.map((item) => (
                     <button
                       key={item.theme}
@@ -964,8 +1038,8 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
                       onClick={() => updateSetting('accentTheme', item.theme)}
                       title={item.label}
                       className={cn(
-                        'w-8 h-8 rounded-full flex items-center justify-center transition-transform hover:scale-110 cursor-pointer mx-auto',
-                        settings.accentTheme === item.theme && 'ring-2 ring-offset-2 ring-offset-veyra-card ring-accent'
+                        'w-7 h-7 rounded-full flex items-center justify-center transition-transform hover:scale-110 cursor-pointer',
+                        settings.accentTheme === item.theme && 'ring-2 ring-offset-2 ring-offset-veyra-canvas ring-accent'
                       )}
                       style={{ backgroundColor: item.hex }}
                     >
@@ -973,14 +1047,14 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
                     </button>
                   ))}
                 </div>
-                <p className="text-[10px] text-veyra-subtle mt-1.5">
-                  Cambiar este color transmite una señal instantánea por WebSocket a tus demás dispositivos conectados para colorear iconos, bordes y botones en vivo.
+                <p className="text-[10.5px] text-veyra-subtle">
+                  Transmite una señal instantánea por WebSocket a tus demás dispositivos conectados.
                 </p>
               </div>
 
               {/* Papel en modo oscuro */}
-              <div>
-                <label className="block text-[11px] font-semibold text-veyra-muted uppercase tracking-wider mb-1.5">
+              <div className="py-5 space-y-2.5">
+                <label className="block text-[11px] font-semibold text-veyra-muted uppercase tracking-wider">
                   Papel de la nota en modo oscuro
                 </label>
                 <div className="grid grid-cols-2 gap-2">
@@ -988,10 +1062,10 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
                     type="button"
                     onClick={() => updateSetting('notePaperMode', 'auto')}
                     className={cn(
-                      'flex items-center justify-center gap-2 py-2 px-3 rounded-lg border font-medium transition-colors cursor-pointer',
+                      'flex items-center justify-center gap-2 py-2 px-3 rounded-md border font-medium transition-colors cursor-pointer',
                       settings.notePaperMode === 'auto'
-                        ? 'bg-accent/15 border-accent text-accent font-semibold'
-                        : 'bg-veyra-card/60 border-veyra-border text-veyra-muted hover:text-veyra-text'
+                        ? 'bg-accent/10 border-accent text-accent font-semibold'
+                        : 'bg-transparent border-veyra-border text-veyra-muted hover:text-veyra-text'
                     )}
                   >
                     <Moon className="w-3.5 h-3.5" />
@@ -1001,10 +1075,10 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
                     type="button"
                     onClick={() => updateSetting('notePaperMode', 'light')}
                     className={cn(
-                      'flex items-center justify-center gap-2 py-2 px-3 rounded-lg border font-medium transition-colors cursor-pointer',
+                      'flex items-center justify-center gap-2 py-2 px-3 rounded-md border font-medium transition-colors cursor-pointer',
                       settings.notePaperMode === 'light'
-                        ? 'bg-accent/15 border-accent text-accent font-semibold'
-                        : 'bg-veyra-card/60 border-veyra-border text-veyra-muted hover:text-veyra-text'
+                        ? 'bg-accent/10 border-accent text-accent font-semibold'
+                        : 'bg-transparent border-veyra-border text-veyra-muted hover:text-veyra-text'
                     )}
                   >
                     <Sun className="w-3.5 h-3.5" />
@@ -1019,8 +1093,8 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
           {/* PESTAÑA: RECORDATORIOS & AGENDA                               */}
           {/* ══════════════════════════════════════════════════════════════ */}
           {activeTab === 'reminders' && (
-            <div className="space-y-4">
-              <div>
+            <div className="divide-y divide-veyra-border/60">
+              <div className="pb-4">
                 <h4 className="text-sm font-semibold text-veyra-text">Recordatorios y Agenda Compartida</h4>
                 <p className="text-[11px] text-veyra-muted mt-0.5">
                   Alinea los tiempos de aviso, calendario y sonidos audibles en todos tus dispositivos conectados.
@@ -1028,7 +1102,7 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
               </div>
 
               {/* Anticipación por defecto */}
-              <div className="p-3.5 rounded-lg bg-veyra-card/60 border border-veyra-border space-y-2">
+              <div className="py-5 space-y-2.5">
                 <label className="block text-[11px] font-semibold text-veyra-muted uppercase tracking-wider">
                   Avisar con anticipación por defecto
                 </label>
@@ -1044,10 +1118,10 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
                       type="button"
                       onClick={() => updateSetting('defaultLeadMinutes', lead.val)}
                       className={cn(
-                        'py-2 px-2.5 rounded-lg border font-medium text-center transition-colors cursor-pointer text-xs',
+                        'py-2 px-2.5 rounded-md border font-medium text-center transition-colors cursor-pointer text-xs',
                         settings.defaultLeadMinutes === lead.val
-                          ? 'bg-accent/15 border-accent text-accent font-semibold'
-                          : 'bg-veyra-elevated/70 border-veyra-border text-veyra-muted hover:text-veyra-text'
+                          ? 'bg-accent/10 border-accent text-accent font-semibold'
+                          : 'bg-transparent border-veyra-border text-veyra-muted hover:text-veyra-text'
                       )}
                     >
                       {lead.label}
@@ -1056,44 +1130,15 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
                 </div>
               </div>
 
-              {/* Formato Horario & Primer día de la semana */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div className="p-3 rounded-lg bg-veyra-card/60 border border-veyra-border flex items-center justify-between">
-                  <div>
-                    <p className="font-semibold text-veyra-text">Formato 24 Horas</p>
-                    <p className="text-[10px] text-veyra-muted">Mostrar 14:00 en lugar de 2:00 PM</p>
-                  </div>
-                  <input
-                    type="checkbox"
-                    checked={settings.timeFormat24h}
-                    onChange={(e) => updateSetting('timeFormat24h', e.target.checked)}
-                    className="w-4 h-4 rounded border-veyra-border text-accent focus:ring-accent accent-accent cursor-pointer"
-                  />
-                </div>
-
-                <div className="p-3 rounded-lg bg-veyra-card/60 border border-veyra-border flex items-center justify-between">
-                  <div>
-                    <p className="font-semibold text-veyra-text">Primer día: Lunes</p>
-                    <p className="text-[10px] text-veyra-muted">En caso contrario comenzará el Domingo</p>
-                  </div>
-                  <input
-                    type="checkbox"
-                    checked={settings.firstDayMonday}
-                    onChange={(e) => updateSetting('firstDayMonday', e.target.checked)}
-                    className="w-4 h-4 rounded border-veyra-border text-accent focus:ring-accent accent-accent cursor-pointer"
-                  />
-                </div>
-              </div>
-
               {/* Sonidos y Tono de Alertas */}
-              <div className="p-3.5 rounded-lg bg-veyra-card/60 border border-veyra-border space-y-3">
+              <div className="py-5 space-y-3">
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="font-semibold text-veyra-text flex items-center gap-1.5">
                       <Volume2 className="w-3.5 h-3.5 text-accent" />
                       <span>Alertas Audibles Web</span>
                     </p>
-                    <p className="text-[10px] text-veyra-muted">Reproducir tonos sonoros al vencer un recordatorio</p>
+                    <p className="text-[10.5px] text-veyra-muted mt-0.5">Reproducir tonos sonoros al vencer un recordatorio</p>
                   </div>
                   <input
                     type="checkbox"
@@ -1104,24 +1149,52 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
                 </div>
 
                 {settings.soundAlertsEnabled && (
-                  <div className="pt-2 border-t border-veyra-border/60 flex items-center gap-2">
+                  <div className="flex items-center gap-2">
                     <span className="text-[11px] text-veyra-muted">Probar tonos:</span>
                     <button
                       type="button"
                       onClick={() => alertSoundPlayer.play('normal')}
-                      className="px-2 py-1 rounded bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 text-[10px] font-medium"
+                      className="px-2.5 py-1 rounded-md border border-emerald-500/25 text-emerald-400 hover:bg-emerald-500/10 text-[10px] font-medium cursor-pointer"
                     >
                       Normal
                     </button>
                     <button
                       type="button"
                       onClick={() => alertSoundPlayer.play('critical')}
-                      className="px-2 py-1 rounded bg-red-500/10 text-red-400 hover:bg-red-500/20 text-[10px] font-medium"
+                      className="px-2.5 py-1 rounded-md border border-red-500/25 text-red-400 hover:bg-red-500/10 text-[10px] font-medium cursor-pointer"
                     >
                       Crítico
                     </button>
                   </div>
                 )}
+              </div>
+
+              {/* Formato Horario */}
+              <div className="py-4 flex items-center justify-between">
+                <div>
+                  <p className="font-semibold text-veyra-text">Formato 24 Horas</p>
+                  <p className="text-[10.5px] text-veyra-muted mt-0.5">Mostrar 14:00 en lugar de 2:00 PM</p>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={settings.timeFormat24h}
+                  onChange={(e) => updateSetting('timeFormat24h', e.target.checked)}
+                  className="w-4 h-4 rounded border-veyra-border text-accent focus:ring-accent accent-accent cursor-pointer"
+                />
+              </div>
+
+              {/* Primer día de la semana */}
+              <div className="py-4 flex items-center justify-between">
+                <div>
+                  <p className="font-semibold text-veyra-text">Primer día: Lunes</p>
+                  <p className="text-[10.5px] text-veyra-muted mt-0.5">En caso contrario comenzará el Domingo</p>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={settings.firstDayMonday}
+                  onChange={(e) => updateSetting('firstDayMonday', e.target.checked)}
+                  className="w-4 h-4 rounded border-veyra-border text-accent focus:ring-accent accent-accent cursor-pointer"
+                />
               </div>
             </div>
           )}
@@ -1130,8 +1203,8 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
           {/* PESTAÑA: NOTAS & EDITOR                                       */}
           {/* ══════════════════════════════════════════════════════════════ */}
           {activeTab === 'notes' && (
-            <div className="space-y-4">
-              <div>
+            <div className="divide-y divide-veyra-border/60">
+              <div className="pb-4">
                 <h4 className="text-sm font-semibold text-veyra-text">Notas y Flujo de Trabajo</h4>
                 <p className="text-[11px] text-veyra-muted mt-0.5">
                   Define las preferencias iniciales para notas nuevas y la organización de carpetas.
@@ -1139,8 +1212,8 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
               </div>
 
               {/* Formato de Hoja */}
-              <div>
-                <label className="block text-[11px] font-semibold text-veyra-muted uppercase tracking-wider mb-1.5">
+              <div className="py-5 space-y-2.5">
+                <label className="block text-[11px] font-semibold text-veyra-muted uppercase tracking-wider">
                   Formato de hoja por defecto
                 </label>
                 <div className="grid grid-cols-2 gap-2">
@@ -1148,10 +1221,10 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
                     type="button"
                     onClick={() => updateSetting('notePageFormat', 'infinite')}
                     className={cn(
-                      'flex items-center justify-center gap-2 py-2 px-3 rounded-lg border font-medium transition-colors cursor-pointer',
+                      'flex items-center justify-center gap-2 py-2 px-3 rounded-md border font-medium transition-colors cursor-pointer',
                       settings.notePageFormat === 'infinite'
-                        ? 'bg-accent/15 border-accent text-accent font-semibold'
-                        : 'bg-veyra-card/60 border-veyra-border text-veyra-muted hover:text-veyra-text'
+                        ? 'bg-accent/10 border-accent text-accent font-semibold'
+                        : 'bg-transparent border-veyra-border text-veyra-muted hover:text-veyra-text'
                     )}
                   >
                     <Scroll className="w-3.5 h-3.5" />
@@ -1161,10 +1234,10 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
                     type="button"
                     onClick={() => updateSetting('notePageFormat', 'a4')}
                     className={cn(
-                      'flex items-center justify-center gap-2 py-2 px-3 rounded-lg border font-medium transition-colors cursor-pointer',
+                      'flex items-center justify-center gap-2 py-2 px-3 rounded-md border font-medium transition-colors cursor-pointer',
                       settings.notePageFormat === 'a4'
-                        ? 'bg-accent/15 border-accent text-accent font-semibold'
-                        : 'bg-veyra-card/60 border-veyra-border text-veyra-muted hover:text-veyra-text'
+                        ? 'bg-accent/10 border-accent text-accent font-semibold'
+                        : 'bg-transparent border-veyra-border text-veyra-muted hover:text-veyra-text'
                     )}
                   >
                     <FileText className="w-3.5 h-3.5" />
@@ -1174,8 +1247,8 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
               </div>
 
               {/* Orden del Explorador */}
-              <div>
-                <label className="block text-[11px] font-semibold text-veyra-muted uppercase tracking-wider mb-1.5">
+              <div className="py-5 space-y-2.5">
+                <label className="block text-[11px] font-semibold text-veyra-muted uppercase tracking-wider">
                   Orden por defecto en el explorador
                 </label>
                 <div className="grid grid-cols-2 gap-2">
@@ -1183,10 +1256,10 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
                     type="button"
                     onClick={() => updateSetting('explorerSortMode', 'alphabetical')}
                     className={cn(
-                      'flex items-center justify-center gap-2 py-2 px-3 rounded-lg border font-medium transition-colors cursor-pointer',
+                      'flex items-center justify-center gap-2 py-2 px-3 rounded-md border font-medium transition-colors cursor-pointer',
                       settings.explorerSortMode === 'alphabetical'
-                        ? 'bg-accent/15 border-accent text-accent font-semibold'
-                        : 'bg-veyra-card/60 border-veyra-border text-veyra-muted hover:text-veyra-text'
+                        ? 'bg-accent/10 border-accent text-accent font-semibold'
+                        : 'bg-transparent border-veyra-border text-veyra-muted hover:text-veyra-text'
                     )}
                   >
                     <span>Alfabético (A - Z)</span>
@@ -1195,10 +1268,10 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
                     type="button"
                     onClick={() => updateSetting('explorerSortMode', 'manual')}
                     className={cn(
-                      'flex items-center justify-center gap-2 py-2 px-3 rounded-lg border font-medium transition-colors cursor-pointer',
+                      'flex items-center justify-center gap-2 py-2 px-3 rounded-md border font-medium transition-colors cursor-pointer',
                       settings.explorerSortMode === 'manual'
-                        ? 'bg-accent/15 border-accent text-accent font-semibold'
-                        : 'bg-veyra-card/60 border-veyra-border text-veyra-muted hover:text-veyra-text'
+                        ? 'bg-accent/10 border-accent text-accent font-semibold'
+                        : 'bg-transparent border-veyra-border text-veyra-muted hover:text-veyra-text'
                     )}
                   >
                     <span>Manual (Arrastrar y Soltar)</span>
@@ -1207,8 +1280,8 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
               </div>
 
               {/* Fuente del Editor */}
-              <div>
-                <label className="block text-[11px] font-semibold text-veyra-muted uppercase tracking-wider mb-1.5">
+              <div className="py-5 space-y-2.5">
+                <label className="block text-[11px] font-semibold text-veyra-muted uppercase tracking-wider">
                   Tipografía preferida en editor
                 </label>
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
@@ -1223,10 +1296,10 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
                       type="button"
                       onClick={() => updateSetting('editorFontFamily', font.id as EditorFontFamily)}
                       className={cn(
-                        'py-2 px-2.5 rounded-lg border font-medium text-center transition-colors cursor-pointer text-xs',
+                        'py-2 px-3 rounded-md border font-medium text-center transition-colors cursor-pointer text-xs',
                         settings.editorFontFamily === font.id
-                          ? 'bg-accent/15 border-accent text-accent font-semibold'
-                          : 'bg-veyra-card/60 border-veyra-border text-veyra-muted hover:text-veyra-text'
+                          ? 'bg-accent/10 border-accent text-accent font-semibold'
+                          : 'bg-transparent border-veyra-border text-veyra-muted hover:text-veyra-text'
                       )}
                     >
                       {font.label}
@@ -1272,7 +1345,9 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
                 </span>
               </div>
 
-              {/* Estado del permiso del navegador */}
+              <div className="space-y-4">
+                <div className="space-y-4">
+                  {/* Estado del permiso del navegador */}
               {notificationPermission === 'default' && (
                 <div className="flex flex-wrap items-center justify-between gap-3 p-3.5 rounded-xl bg-accent/10 border border-accent/30">
                   <div className="flex items-start gap-3">
@@ -1427,8 +1502,10 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
                 </div>
               )}
 
+              </div>
+
               {/* Horas de Silencio (No Molestar) */}
-              <div className="p-3.5 rounded-lg bg-veyra-card/60 border border-veyra-border space-y-3">
+              <div className="py-5 border-t border-veyra-border/60 space-y-3">
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="font-semibold text-veyra-text">Horas de Silencio (No molestar)</p>
@@ -1464,6 +1541,7 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
                     </div>
                   </div>
                 )}
+              </div>
               </div>
             </div>
           )}
@@ -1722,6 +1800,6 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
           )}
         </div>
       </div>
-    </Modal>
+    </div>
   );
 };

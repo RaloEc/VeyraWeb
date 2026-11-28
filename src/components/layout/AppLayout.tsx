@@ -230,6 +230,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ user, profile, onSignOut }
             userId={user.id}
             userEmail={user.email || ''}
             userName={user.user_metadata?.full_name || user.user_metadata?.name || user.email?.split('@')[0]}
+            userAvatarUrl={user.user_metadata?.avatar_url || user.user_metadata?.picture}
             notesHook={notesState}
             remindersHook={remindersState}
             initialEventId={initialRoute.eventId}

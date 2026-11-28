@@ -3,7 +3,6 @@ import {
   Calendar,
   CheckCircle2,
   Clock,
-  RefreshCw,
   ChevronDown,
   ChevronUp,
   Layers,
@@ -104,8 +103,6 @@ export const AgendaSidebarView: React.FC<AgendaSidebarViewProps> = ({
 }) => {
   const [filter, setFilter] = useState<AgendaFilter>('all');
   const [showCompleted, setShowCompleted] = useState(false);
-  const [isSyncing, setIsSyncing] = useState(false);
-  const [syncSuccess, setSyncSuccess] = useState(false);
 
   // Quick preview popover state when viewing a note
   const [previewItem, setPreviewItem] = useState<{
@@ -287,34 +284,6 @@ export const AgendaSidebarView: React.FC<AgendaSidebarViewProps> = ({
     };
   }, [reminders, events]);
 
-  // Action: Marcar todo completado
-  const handleMarkAllCompleted = () => {
-    if (!remindersHook) return;
-    todayReminders.forEach((r) => {
-      if (r.status !== 'completed') {
-        remindersHook.toggleReminder(r.id, r.status);
-      }
-    });
-  };
-
-  // Action: Sincronizar
-  const handleSync = async () => {
-    setIsSyncing(true);
-    setSyncSuccess(false);
-    try {
-      await Promise.all([
-        remindersHook?.refresh ? remindersHook.refresh() : Promise.resolve(),
-        eventsHook?.refresh ? eventsHook.refresh() : Promise.resolve(),
-      ]);
-      setSyncSuccess(true);
-      setTimeout(() => setSyncSuccess(false), 2000);
-    } catch (err) {
-      console.error('[Agenda] Sync error:', err);
-    } finally {
-      setIsSyncing(false);
-    }
-  };
-
 
 
   // Unified Today Items (Reminders + Events sorted chronologically)
@@ -491,7 +460,7 @@ export const AgendaSidebarView: React.FC<AgendaSidebarViewProps> = ({
   };
 
   return (
-    <div className="flex-1 flex flex-col h-full overflow-hidden text-xs">
+    <div className="flex-1 min-h-0 flex flex-col overflow-hidden text-xs">
       {/* 1. Filtros rápidos: Selector compacto [Todo | Tareas | Eventos] */}
       <div className="p-2 border-b border-veyra-border shrink-0 bg-veyra-canvas/40">
         <div className="grid grid-cols-3 gap-1 p-0.5 rounded-lg bg-veyra-elevated/40 border border-veyra-border text-[11px]">
@@ -799,38 +768,6 @@ export const AgendaSidebarView: React.FC<AgendaSidebarViewProps> = ({
             )}
           </>
         )}
-      </div>
-
-      {/* 4. Pie del sidebar: Acceso rápido para Marcar todo completado y sincronización */}
-      <div className="p-2.5 border-t border-veyra-border shrink-0 bg-veyra-card/70 flex items-center justify-between gap-2">
-        <button
-          type="button"
-          onClick={handleMarkAllCompleted}
-          disabled={todayReminders.length === 0}
-          title="Marcar todas las tareas de hoy como completadas en Supabase"
-          className="flex-1 flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-lg bg-veyra-elevated border border-veyra-border text-veyra-text hover:bg-white/5 hover:border-accent/40 transition-colors text-xs font-medium cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
-        >
-          <CheckCircle2 className="w-3.5 h-3.5 text-accent" />
-          <span>Marcar todo</span>
-        </button>
-
-        <button
-          type="button"
-          onClick={handleSync}
-          disabled={isSyncing}
-          title="Sincronizar agenda con Supabase"
-          className={cn(
-            'flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-lg border text-xs font-medium transition-colors cursor-pointer',
-            syncSuccess
-              ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30'
-              : 'bg-veyra-elevated border-veyra-border text-veyra-muted hover:text-veyra-text hover:bg-white/5'
-          )}
-        >
-          <RefreshCw
-            className={cn('w-3.5 h-3.5', isSyncing && 'animate-spin text-accent')}
-          />
-          <span>{syncSuccess ? 'Al día' : 'Sincronizar'}</span>
-        </button>
       </div>
 
       {/* Modal de Recordatorios Completo (Congruente con Android) */}

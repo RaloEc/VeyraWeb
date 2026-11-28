@@ -83,7 +83,8 @@ import { cn } from '../../lib/utils';
 import type { Note, CollabUser, Folder, NoteContentPaginated, NotePage } from '../../types/notes';
 import type { CalendarEvent } from '../../hooks/useEvents';
 import { getEventCategoryTag } from './NotesSidebar';
-import { PanelLeft, X, Layers, GraduationCap, Folder as FolderIcon, Calendar, FileDown, FileText, ScrollText, Share2, Eye, MoreHorizontal, Check } from 'lucide-react';
+import { PanelLeft, ArrowLeft, Search, X, Layers, GraduationCap, Folder as FolderIcon, Calendar, FileDown, FileText, ScrollText, Share2, Eye, MoreHorizontal, Check, ChevronDown, Loader2 } from 'lucide-react';
+import { PomodoroHeaderPill } from '../../components/common/PomodoroHeaderPill';
 import { useTheme } from '../../theme/ThemeProvider';
 import { PagesSidebar, type PageMeta, type PageBlock } from './PagesSidebar';
 import { ExportPdfModal } from './pdf/ExportPdfModal';
@@ -128,6 +129,7 @@ export interface NoteEditorProps {
   onCloseNote?: () => void;
   isSidebarOpen?: boolean;
   onToggleSidebar?: () => void;
+  onOpenGlobalSearch?: () => void;
   folders?: Folder[];
   events?: CalendarEvent[];
   onSelectFolder?: (folderId: string | null) => void;
@@ -159,6 +161,7 @@ interface YjsActiveEditorProps {
   onCloseNote?: () => void;
   isSidebarOpen?: boolean;
   onToggleSidebar?: () => void;
+  onOpenGlobalSearch?: () => void;
   folders?: Folder[];
   events?: CalendarEvent[];
   onSelectFolder?: (folderId: string | null) => void;
@@ -183,6 +186,7 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
   onCloseNote,
   isSidebarOpen,
   onToggleSidebar,
+  onOpenGlobalSearch,
   folders,
   events,
   onSelectFolder,
@@ -210,6 +214,7 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
   const [saveStatus, setSaveStatus] = useState<'saved' | 'saving' | 'error'>('saved');
   const [, setLastSavedAt] = useState<Date | null>(new Date());
   const [isPagesSidebarOpen, setIsPagesSidebarOpen] = useState(false);
+  const [isFocusMode, setIsFocusMode] = useState(false);
   const [pageFormat, setPageFormat] = useState<'infinite' | 'a4'>(() => {
     // 1. Prioridad: Metadato Yjs de esta nota específica
     const metaFmt = ydoc.getMap('meta').get('pageFormat');
@@ -511,8 +516,7 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
   const isTightHeader = pageFormat === 'a4' ? headerWidth < 540 : headerWidth < 460;
   const showParentBreadcrumb = pageFormat === 'a4' ? headerWidth >= 720 : headerWidth >= 520;
   const showCompactBreadcrumbIconOnly = pageFormat === 'a4' && headerWidth < 480;
-  const showHeaderExportShortcut = headerWidth >= 360;
-  const showHeaderMenu = isTightHeader && isHeaderMenuOpen;
+  const showHeaderMenu = isHeaderMenuOpen;
 
   const updateHeaderMenuPosition = useCallback(() => {
     if (!headerMenuBtnRef.current) return;
@@ -2425,13 +2429,19 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
     }
   };
 
-  // Add new page to note
-  const handleAddPage = () => {
+  // Add new page to note (optionally at a specific index)
+  const handleAddPage = (insertAtIndex?: number) => {
     const newPageId = crypto.randomUUID();
     pageHtmlCacheRef.current.set(newPageId, '<p></p>');
     const po = ydoc.getArray<string>('pageOrder');
-    po.push([newPageId]);
-    handleSelectPage(newPageId, po.toArray().length);
+    if (typeof insertAtIndex === 'number') {
+      const clampedIdx = Math.max(0, Math.min(insertAtIndex, po.length));
+      po.insert(clampedIdx, [newPageId]);
+      handleSelectPage(newPageId, clampedIdx + 1);
+    } else {
+      po.push([newPageId]);
+      handleSelectPage(newPageId, po.toArray().length);
+    }
     triggerAutoSave();
   };
 
@@ -2528,11 +2538,11 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
         </div>
       )}
 
-      {/* Sleek Minimal Editor Header (Fase 3 & Fase 4) */}
+      {/* Unified Contextual Editor Header (~48px) */}
       <div
         ref={editorHeaderRef}
         className={cn(
-          'h-10 border-b border-veyra-border flex items-center justify-between gap-2 text-xs shrink-0 select-none bg-veyra-card/30',
+          'h-12 border-b border-veyra-border flex items-center justify-between gap-2 text-xs shrink-0 select-none bg-veyra-canvas/90 backdrop-blur-md z-20',
           isTightHeader ? 'px-2.5' : 'px-3 sm:px-4',
           animPhase === 'closing'
             ? 'veyra-note-chrome-closing'
@@ -2549,13 +2559,25 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
               type="button"
               onClick={onToggleSidebar}
               title="Mostrar barra lateral (Ctrl+\)"
-              className="p-1 rounded text-veyra-muted hover:text-accent hover:bg-white/5 transition-colors cursor-pointer flex items-center justify-center mr-0.5 shrink-0"
+              className="p-1.5 rounded-md text-veyra-muted hover:text-veyra-text hover:bg-black/5 dark:hover:bg-white/5 transition-colors cursor-pointer flex items-center justify-center shrink-0"
             >
               <PanelLeft className="w-4 h-4 text-accent" />
             </button>
           )}
 
-          {/* Breadcrumb de Ubicación Unificado (Optimización de cabecera) */}
+          {onCloseNote && (
+            <button
+              type="button"
+              onClick={handleClose}
+              title="Volver al Dashboard"
+              className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-veyra-muted hover:text-veyra-text hover:bg-black/5 dark:hover:bg-white/5 transition-colors cursor-pointer shrink-0 text-[11.5px] font-medium"
+            >
+              <ArrowLeft className="w-3.5 h-3.5 shrink-0" />
+              {!isTightHeader && <span className="hidden sm:inline">Dashboard</span>}
+            </button>
+          )}
+
+          {/* Breadcrumb de Ubicación Unificado */}
           {breadcrumb && (
             showCompactBreadcrumbIconOnly ? (
               <button
@@ -2572,7 +2594,7 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
                     ? `${breadcrumb.parentLabel ? `${breadcrumb.parentLabel} / ` : ''}${breadcrumb.eventTitle}`
                     : `${breadcrumb.parentLabel ? `${breadcrumb.parentLabel} / ` : ''}${breadcrumb.folderName}`
                 }
-                className="h-6 w-6 rounded-md bg-white/[0.04] border border-veyra-border/60 flex items-center justify-center shrink-0 hover:bg-white/[0.08] transition-colors cursor-pointer"
+                className="h-6 w-6 rounded-md hover:bg-black/5 dark:hover:bg-white/5 flex items-center justify-center shrink-0 transition-colors cursor-pointer"
               >
                 {breadcrumb.type === 'event' ? (
                   <Calendar className="w-3 h-3 shrink-0" style={{ color: breadcrumb.eventColor }} />
@@ -2586,12 +2608,13 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
             ) : (
               <div
                 className={cn(
-                  'flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-white/[0.04] border border-veyra-border/60 text-[11px] text-veyra-muted min-w-0 shrink overflow-hidden',
+                  'flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[11.5px] text-veyra-muted min-w-0 shrink overflow-hidden',
                   pageFormat === 'a4' && !showParentBreadcrumb
-                    ? 'max-w-[180px]'
-                    : 'max-w-[260px] sm:max-w-[360px]'
+                    ? 'max-w-[160px]'
+                    : 'max-w-[240px] sm:max-w-[320px]'
                 )}
               >
+                <span className="text-veyra-subtle select-none text-[10px] shrink-0">/</span>
                 {showParentBreadcrumb && breadcrumb.parentLabel && (
                   <>
                     <button
@@ -2619,7 +2642,7 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
                           style={{ color: breadcrumb.parentColor || 'var(--accent-primary)' }}
                         />
                       )}
-                      <span className="truncate max-w-[90px] font-medium">{breadcrumb.parentLabel}</span>
+                      <span className="truncate max-w-[80px] font-medium">{breadcrumb.parentLabel}</span>
                     </button>
 
                     <span className="text-veyra-subtle select-none text-[10px] shrink-0">/</span>
@@ -2638,7 +2661,7 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
                       style={{ color: breadcrumb.eventColor }}
                     />
                     <span
-                      className="font-semibold truncate max-w-[130px]"
+                      className="font-semibold truncate max-w-[120px]"
                       style={{ color: breadcrumb.eventColor }}
                     >
                       {breadcrumb.eventTitle}
@@ -2655,7 +2678,7 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
                       className="w-3 h-3 shrink-0"
                       style={{ color: breadcrumb.folderColor || 'var(--accent-primary)' }}
                     />
-                    <span className="font-semibold truncate max-w-[130px]">
+                    <span className="font-semibold truncate max-w-[120px]">
                       {breadcrumb.folderName}
                     </span>
                   </button>
@@ -2667,9 +2690,7 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
           {/* Título editable en la barra superior cuando está activo el formato Hoja A4 */}
           {pageFormat === 'a4' && (
             <>
-              {breadcrumb && (
-                <span className="text-veyra-subtle select-none text-xs shrink-0">/</span>
-              )}
+              <span className="text-veyra-subtle select-none text-xs shrink-0">/</span>
               <HashtagInput
                 value={title}
                 onChange={(newTitle) => {
@@ -2685,229 +2706,150 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
                     editor.commands.focus('start');
                   }
                 }}
-                containerClassName="flex-1 min-w-0 max-w-md"
+                containerClassName="flex-1 min-w-0 max-w-xs sm:max-w-sm"
                 inputClassName="w-full bg-transparent hover:bg-black/5 dark:hover:bg-white/5 focus:bg-veyra-surface border border-transparent focus:border-accent/40 rounded-md px-2 py-1 text-xs sm:text-[13px] font-semibold text-veyra-text placeholder:text-veyra-muted/60 focus:outline-none transition-colors truncate"
               />
             </>
           )}
         </div>
 
-        {/* Right: Presence Avatars, Status Dot & Actions */}
-        <div className={cn('flex items-center shrink-0', isTightHeader ? 'gap-1' : 'gap-1.5')}>
-          {!isTightHeader ? (
+        {/* Right: 3 Clean Grouped Blocks */}
+        <div className="flex items-center gap-1.5 shrink-0">
+          {userRole === 'viewer' && !isTightHeader && (
+            <span
+              title="Modo solo lectura"
+              className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-blue-500/15 text-blue-400 text-[10.5px] font-medium shrink-0 whitespace-nowrap"
+            >
+              <Eye className="w-3 h-3 shrink-0" />
+              {showActionLabels && <span>Solo lectura</span>}
+            </span>
+          )}
+
+          {!isTightHeader && <CollabPresence users={collabUsers} currentUserId={currentUserId} />}
+
+          {/* Bloque 1: Utilidades globales compactas (Pomodoro + Buscar + Restaurar Enfoque) */}
+          <div className="flex items-center gap-1 shrink-0">
+            <PomodoroHeaderPill />
+
+            {onOpenGlobalSearch && (
+              <button
+                type="button"
+                onClick={onOpenGlobalSearch}
+                title="Buscar (Ctrl+K)"
+                aria-label="Buscar (Ctrl+K)"
+                className="h-7 w-7 rounded-md text-veyra-muted hover:text-veyra-text hover:bg-black/5 dark:hover:bg-white/5 transition-colors cursor-pointer flex items-center justify-center shrink-0"
+              >
+                <Search className="w-3.5 h-3.5" />
+              </button>
+            )}
+
+            {isFocusMode && !(pageFormat === 'a4' && activeHeaderFooterZone !== null) && (
+              <button
+                type="button"
+                onClick={() => setIsFocusMode(false)}
+                title="Mostrar barra de herramientas (Salir de Modo Enfoque)"
+                aria-label="Mostrar barra de herramientas"
+                className="h-7 px-2 rounded-md text-accent bg-accent/10 hover:bg-accent/15 transition-colors cursor-pointer flex items-center gap-1 text-[11px] font-medium shrink-0"
+              >
+                <ChevronDown className="w-3.5 h-3.5" />
+                {!isTightHeader && <span className="hidden md:inline">Herramientas</span>}
+              </button>
+            )}
+          </div>
+
+          {!isTightHeader && (
             <>
-              {userRole === 'viewer' && (
-                <span
-                  title="Modo solo lectura"
-                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-blue-500/15 border border-blue-500/30 text-blue-400 text-[10.5px] font-medium shrink-0 whitespace-nowrap"
-                >
-                  <Eye className="w-3 h-3 shrink-0" />
-                  {showActionLabels && <span>Solo lectura</span>}
-                </span>
-              )}
-              <CollabPresence users={collabUsers} currentUserId={currentUserId} />
+              <div className="w-[1px] h-4 bg-veyra-border/70 mx-0.5 shrink-0" />
 
-              {/* Discreet 6px status dot (Combina estado de sincronización y guardado) */}
-              <div
-                className="flex items-center justify-center p-1 shrink-0"
-                title={
-                  saveStatus === 'error'
-                    ? 'Error al guardar'
-                    : saveStatus === 'saving'
-                      ? 'Guardando cambios...'
-                      : syncStatus === 'connected'
-                        ? 'Guardado · Colaboración en vivo activa'
-                        : syncStatus === 'connecting'
-                          ? 'Conectando con Supabase Realtime...'
-                          : 'Guardado localmente (Desconectado)'
-                }
-              >
-                <span
+              {/* Bloque 2: Controles de vista del documento */}
+              <div className="flex items-center gap-1 shrink-0">
+                <button
+                  type="button"
+                  onClick={handleTogglePageFormat}
+                  title={
+                    pageFormat === 'a4'
+                      ? 'Esta nota usa formato Hoja A4. Clic para cambiar a vista Infinita'
+                      : 'Esta nota usa vista Infinita. Clic para cambiar a formato Hoja A4'
+                  }
                   className={cn(
-                    'w-1.5 h-1.5 rounded-full transition-colors',
-                    saveStatus === 'error'
-                      ? 'bg-red-500'
-                      : saveStatus === 'saving' || syncStatus === 'connecting'
-                        ? 'bg-amber-500 animate-pulse'
-                        : syncStatus === 'connected'
-                          ? 'bg-emerald-500'
-                          : 'bg-zinc-600'
+                    'flex items-center gap-1.5 h-7 rounded-md text-xs transition-colors cursor-pointer shrink-0 whitespace-nowrap',
+                    showActionLabels ? 'px-2' : 'px-1.5',
+                    pageFormat === 'a4'
+                      ? 'bg-accent/12 text-accent font-medium hover:bg-accent/20'
+                      : 'text-veyra-muted hover:text-veyra-text hover:bg-black/5 dark:hover:bg-white/5'
                   )}
-                />
+                >
+                  {pageFormat === 'a4' ? (
+                    <>
+                      <FileText className="w-3.5 h-3.5 shrink-0" />
+                      {showActionLabels && <span>A4</span>}
+                    </>
+                  ) : (
+                    <>
+                      <ScrollText className="w-3.5 h-3.5 shrink-0" />
+                      {showActionLabels && <span>Infinita</span>}
+                    </>
+                  )}
+                </button>
               </div>
+            </>
+          )}
 
-              {/* Toggle Page Format Button per Note (Infinita vs Hoja A4) */}
-              <button
-                type="button"
-                onClick={handleTogglePageFormat}
-                title={
-                  pageFormat === 'a4'
-                    ? 'Esta nota usa formato Hoja A4. Clic para cambiar esta nota a vista Infinita'
-                    : 'Esta nota usa vista Infinita. Clic para cambiar esta nota a formato Hoja A4'
-                }
-                className={cn(
-                  'flex items-center gap-1.5 rounded text-xs transition-colors cursor-pointer border shrink-0 whitespace-nowrap',
-                  showActionLabels ? 'px-2 py-0.5' : 'p-1.5',
-                  pageFormat === 'a4'
-                    ? 'bg-accent/15 border-accent/40 text-accent font-semibold'
-                    : 'bg-white/5 border-veyra-border text-veyra-muted hover:text-veyra-text hover:bg-white/10'
-                )}
-              >
-                {pageFormat === 'a4' ? (
-                  <>
-                    <FileText className="w-3.5 h-3.5 shrink-0" />
-                    {showActionLabels && <span>Hoja A4</span>}
-                  </>
-                ) : (
-                  <>
-                    <ScrollText className="w-3.5 h-3.5 shrink-0" />
-                    {showActionLabels && <span>Infinita</span>}
-                  </>
-                )}
-              </button>
+          <div className="w-[1px] h-4 bg-veyra-border/70 mx-0.5 shrink-0" />
 
-              {/* Toggle Floating Pages Sidebar Button (Icon Only) */}
-              <button
-                type="button"
-                onClick={() => setIsPagesSidebarOpen(!isPagesSidebarOpen)}
-                title={isPagesSidebarOpen ? 'Ocultar panel de hojas' : 'Mostrar panel de hojas'}
-                aria-label="Panel de hojas"
-                className={cn(
-                  'p-1.5 rounded transition-colors cursor-pointer border flex items-center justify-center shrink-0',
-                  isPagesSidebarOpen
-                    ? 'bg-accent/15 border-accent/40 text-accent'
-                    : 'bg-white/5 border-veyra-border text-veyra-muted hover:text-veyra-text hover:bg-white/10'
-                )}
-              >
-                <Layers className="w-3.5 h-3.5" />
-              </button>
-
-              {/* Share Button */}
+          {/* Bloque 3: Acciones de la nota (Compartir + ••• + Cerrar discreto) */}
+          <div className="flex items-center gap-1 shrink-0">
+            {!isTightHeader && (
               <button
                 type="button"
                 onClick={() => setIsShareModalOpen(true)}
                 title="Compartir y colaborar en esta nota"
                 className={cn(
-                  'flex items-center gap-1.5 rounded text-xs transition-colors cursor-pointer border bg-white/5 border-veyra-border text-veyra-muted hover:text-veyra-text hover:bg-white/10 shrink-0 whitespace-nowrap',
-                  showActionLabels ? 'px-2.5 py-0.5' : 'p-1.5'
+                  'flex items-center gap-1.5 h-7 rounded-md text-xs transition-colors cursor-pointer text-veyra-muted hover:text-veyra-text hover:bg-black/5 dark:hover:bg-white/5 shrink-0 whitespace-nowrap',
+                  showActionLabels ? 'px-2' : 'px-1.5'
                 )}
               >
                 <Share2 className="w-3.5 h-3.5 text-accent shrink-0" />
                 {showActionLabels && <span className="font-medium">Compartir</span>}
               </button>
+            )}
 
-              {/* Export to PDF Button */}
-              <button
-                type="button"
-                onClick={handleOpenExportPdf}
-                title="Exportar a PDF / Imprimir nota (Formato Word)"
-                className={cn(
-                  'flex items-center gap-1.5 rounded text-xs transition-colors cursor-pointer border bg-white/5 border-veyra-border text-veyra-muted hover:text-veyra-text hover:bg-white/10 shrink-0 whitespace-nowrap',
-                  showActionLabels ? 'px-2.5 py-0.5' : 'p-1.5'
-                )}
-              >
-                <FileDown className="w-3.5 h-3.5 text-accent shrink-0" />
-                {showActionLabels && <span className="font-medium">Exportar PDF</span>}
-              </button>
-
-              {onCloseNote && (
-                <>
-                  <div className="w-[1px] h-3.5 bg-veyra-border mx-0.5 shrink-0" />
-                  <button
-                    type="button"
-                    onClick={handleClose}
-                    title="Cerrar nota"
-                    aria-label="Cerrar nota"
-                    className="p-1 rounded text-veyra-muted hover:text-veyra-text hover:bg-white/5 transition-colors cursor-pointer flex items-center justify-center shrink-0"
-                  >
-                    <X className="w-3.5 h-3.5" />
-                  </button>
-                </>
-              )}
-            </>
-          ) : (
-            <>
-              {/* Discreet 6px status dot */}
-              <div
-                className="flex items-center justify-center p-1 shrink-0"
-                title={
-                  saveStatus === 'error'
-                    ? 'Error al guardar'
-                    : saveStatus === 'saving'
-                      ? 'Guardando cambios...'
-                      : syncStatus === 'connected'
-                        ? 'Guardado · Colaboración en vivo activa'
-                        : syncStatus === 'connecting'
-                          ? 'Conectando con Supabase Realtime...'
-                          : 'Guardado localmente (Desconectado)'
+            <button
+              ref={headerMenuBtnRef}
+              type="button"
+              onClick={() => {
+                if (!showHeaderMenu) {
+                  updateHeaderMenuPosition();
+                  setIsHeaderMenuOpen(true);
+                } else {
+                  setIsHeaderMenuOpen(false);
                 }
-              >
-                <span
-                  className={cn(
-                    'w-1.5 h-1.5 rounded-full transition-colors',
-                    saveStatus === 'error'
-                      ? 'bg-red-500'
-                      : saveStatus === 'saving' || syncStatus === 'connecting'
-                        ? 'bg-amber-500 animate-pulse'
-                        : syncStatus === 'connected'
-                          ? 'bg-emerald-500'
-                          : 'bg-zinc-600'
-                  )}
-                />
-              </div>
-
-              {showHeaderExportShortcut && (
-                <button
-                  type="button"
-                  onClick={handleOpenExportPdf}
-                  title="Exportar a PDF / Imprimir nota (Formato Word)"
-                  aria-label="Exportar PDF"
-                  className="p-1.5 rounded border bg-white/5 border-veyra-border text-veyra-muted hover:text-veyra-text hover:bg-white/10 transition-colors cursor-pointer flex items-center justify-center shrink-0"
-                >
-                  <FileDown className="w-3.5 h-3.5 text-accent" />
-                </button>
+              }}
+              title="Más opciones de la nota"
+              aria-label="Más opciones"
+              aria-expanded={showHeaderMenu}
+              className={cn(
+                'h-7 w-7 rounded-md transition-colors cursor-pointer flex items-center justify-center shrink-0',
+                showHeaderMenu
+                  ? 'bg-accent/15 text-accent'
+                  : 'text-veyra-muted hover:text-veyra-text hover:bg-black/5 dark:hover:bg-white/5'
               )}
+            >
+              <MoreHorizontal className="w-3.5 h-3.5" />
+            </button>
 
+            {onCloseNote && (
               <button
-                ref={headerMenuBtnRef}
                 type="button"
-                onClick={() => {
-                  if (!showHeaderMenu) {
-                    updateHeaderMenuPosition();
-                    setIsHeaderMenuOpen(true);
-                  } else {
-                    setIsHeaderMenuOpen(false);
-                  }
-                }}
-                title="Más opciones de la nota"
-                aria-label="Más opciones"
-                aria-expanded={showHeaderMenu}
-                className={cn(
-                  'p-1.5 rounded border transition-colors cursor-pointer flex items-center justify-center shrink-0',
-                  showHeaderMenu
-                    ? 'bg-accent/15 border-accent/40 text-accent'
-                    : 'bg-white/5 border-veyra-border text-veyra-muted hover:text-veyra-text hover:bg-white/10'
-                )}
+                onClick={handleClose}
+                title="Cerrar nota"
+                aria-label="Cerrar nota"
+                className="h-7 w-7 rounded-md text-veyra-muted hover:text-veyra-text hover:bg-black/5 dark:hover:bg-white/10 transition-colors cursor-pointer flex items-center justify-center shrink-0"
               >
-                <MoreHorizontal className="w-3.5 h-3.5" />
+                <X className="w-3.5 h-3.5" />
               </button>
-
-              {onCloseNote && (
-                <>
-                  <div className="w-[1px] h-3.5 bg-veyra-border mx-0.5 shrink-0" />
-                  <button
-                    type="button"
-                    onClick={handleClose}
-                    title="Cerrar nota"
-                    aria-label="Cerrar nota"
-                    className="p-1 rounded text-veyra-muted hover:text-veyra-text hover:bg-white/5 transition-colors cursor-pointer flex items-center justify-center shrink-0"
-                  >
-                    <X className="w-3.5 h-3.5" />
-                  </button>
-                </>
-              )}
-            </>
-          )}
+            )}
+          </div>
         </div>
       </div>
 
@@ -3005,7 +2947,10 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
       {/* Sleek Minimal Formatting Toolbar OR Word Header/Footer Design Ribbon */}
       <div
         className={cn(
-          'shrink-0',
+          'shrink-0 overflow-hidden transition-[max-height,opacity] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)]',
+          isFocusMode && !(pageFormat === 'a4' && activeHeaderFooterZone !== null)
+            ? 'max-h-0 opacity-0 pointer-events-none'
+            : 'max-h-40 opacity-100',
           animPhase === 'closing'
             ? 'veyra-note-chrome-closing'
             : entryMode === 'open'
@@ -3063,6 +3008,8 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
             onOpenTemplates={() => setIsTemplatesModalOpen(true)}
             showFormattingMarks={showFormattingMarks}
             onToggleFormattingMarks={handleToggleFormattingMarks}
+            isFocusMode={isFocusMode}
+            onToggleFocusMode={() => setIsFocusMode((prev) => !prev)}
           />
         )}
       </div>
@@ -3074,6 +3021,70 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
           isDark && isAmoled ? 'bg-black' : 'bg-[#e4e7ec] dark:bg-[#0B0B0C]'
         )}
       >
+        <div className="flex-1 min-w-0 relative flex flex-col overflow-hidden">
+          {/* Botón flotante lateral derecho para abrir el Organizador de Hojas */}
+          <button
+            type="button"
+            onClick={() => setIsPagesSidebarOpen(true)}
+            title="Abrir organizador de hojas"
+            aria-label="Abrir organizador de hojas"
+            className={cn(
+              'absolute top-3 right-0 z-20 flex items-center gap-1.5 pl-2.5 pr-2 py-2 rounded-l-xl border border-r-0 border-black/10 dark:border-white/10 bg-veyra-card/95 backdrop-blur-sm text-veyra-muted hover:text-veyra-text hover:bg-veyra-elevated transition-all duration-200 ease-out cursor-pointer select-none',
+              isPagesSidebarOpen
+                ? 'translate-x-full opacity-0 pointer-events-none'
+                : 'translate-x-0 opacity-100'
+            )}
+          >
+            <Layers className="w-3.5 h-3.5 text-accent shrink-0" />
+            <span className="text-[11px] font-mono font-semibold text-veyra-text">
+              {pageFormat === 'a4' ? a4PageBreaks.length + 1 : pages.length}
+            </span>
+          </button>
+
+          {/* Indicador LED discreto de conexión y autoguardado en esquina inferior derecha */}
+          <div
+            title={
+              saveStatus === 'error'
+                ? 'Error al guardar'
+                : saveStatus === 'saving'
+                  ? 'Guardando cambios...'
+                  : syncStatus === 'connected'
+                    ? 'Guardado · Colaboración en vivo activa'
+                    : syncStatus === 'connecting'
+                      ? 'Conectando con Supabase Realtime...'
+                      : 'Guardado'
+            }
+            className="group/sync absolute bottom-3 right-3 z-20 flex items-center gap-1.5 px-2 py-1.5 rounded-full border border-black/10 dark:border-white/10 bg-veyra-card/85 backdrop-blur-sm text-[10.5px] text-veyra-muted select-none transition-all duration-200"
+          >
+            <span
+              className={cn(
+                'w-2 h-2 rounded-full shrink-0 transition-colors',
+                saveStatus === 'error'
+                  ? 'bg-red-500'
+                  : saveStatus === 'saving' || syncStatus === 'connecting'
+                    ? 'bg-amber-500 animate-pulse'
+                    : syncStatus === 'connected'
+                      ? 'bg-emerald-500'
+                      : 'bg-emerald-500/80'
+              )}
+            />
+            <span
+              className={cn(
+                'overflow-hidden whitespace-nowrap transition-all duration-200 font-medium',
+                saveStatus === 'error' || saveStatus === 'saving' || syncStatus === 'connecting'
+                  ? 'max-w-[110px] opacity-100'
+                  : 'max-w-0 opacity-0 group-hover/sync:max-w-[90px] group-hover/sync:opacity-100'
+              )}
+            >
+              {saveStatus === 'error'
+                ? 'Error al guardar'
+                : saveStatus === 'saving'
+                  ? 'Guardando...'
+                  : syncStatus === 'connecting'
+                    ? 'Conectando...'
+                    : 'Guardado'}
+            </span>
+          </div>
         {/* Visual Resting Canvas Margins (Lienzo exterior: más oscuro que el documento) */}
         <div
           ref={scrollContainerRef}
@@ -3330,6 +3341,7 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
             </div>
           )}
         </div>
+        </div>
 
         {/* Mobile Backdrop for Right Pages Sidebar */}
         {isPagesSidebarOpen && (
@@ -3340,11 +3352,11 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
           />
         )}
 
-        {/* Docked Right Pages Sidebar (Overlay drawer on mobile, docked on md+) */}
+        {/* Docked Right Pages Sidebar (Slide right-to-left) */}
         <div
           className={cn(
             'absolute inset-y-0 right-0 z-30 md:relative md:z-auto h-full border-l border-veyra-border bg-veyra-card flex flex-col shrink-0 overflow-hidden transition-[width,opacity] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] shadow-2xl md:shadow-none',
-            isPagesSidebarOpen ? 'w-80 max-w-[85vw] opacity-100' : 'w-0 opacity-0 pointer-events-none',
+            isPagesSidebarOpen ? 'w-80 max-w-[85vw] opacity-100' : 'w-0 opacity-0 pointer-events-none border-l-0',
             animPhase === 'closing'
               ? 'veyra-note-pages-closing'
               : entryMode === 'open' && isPagesSidebarOpen
@@ -3354,7 +3366,13 @@ const YjsActiveEditor: React.FC<YjsActiveEditorProps> = ({
                 : undefined
           )}
         >
-          <div style={{ width: '320px' }} className="h-full max-w-[85vw] flex flex-col">
+          <div
+            style={{ width: '320px' }}
+            className={cn(
+              'h-full max-w-[85vw] flex flex-col transition-transform duration-300 ease-[cubic-bezier(0.16,1,0.3,1)]',
+              isPagesSidebarOpen ? 'translate-x-0' : 'translate-x-full'
+            )}
+          >
             <PagesSidebar
               onClose={() => setIsPagesSidebarOpen(false)}
               pages={pages}
@@ -3438,6 +3456,7 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
   onCloseNote,
   isSidebarOpen,
   onToggleSidebar,
+  onOpenGlobalSearch,
   folders,
   events,
   onSelectFolder,
@@ -3450,6 +3469,7 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
   } | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const latestNoteRef = useRef<Note | null>(note);
+  const { isDark, isAmoled } = useTheme();
 
   useEffect(() => {
     latestNoteRef.current = note;
@@ -3585,7 +3605,173 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
   }
 
   if (!displayedState) {
-    return <div className="flex-1 min-w-0 flex flex-col h-full bg-veyra-canvas" />;
+    let cachedFormat: 'infinite' | 'a4' = 'infinite';
+    if (typeof window !== 'undefined') {
+      try {
+        const perNote = localStorage.getItem(`veyra_note_page_format_${note.id}`);
+        if (perNote === 'a4' || perNote === 'infinite') {
+          cachedFormat = perNote;
+        } else {
+          const defFmt = localStorage.getItem('veyra_notes_default_page_format');
+          if (defFmt === 'a4' || defFmt === 'infinite') cachedFormat = defFmt;
+        }
+      } catch {
+        // Ignore storage errors
+      }
+    }
+
+    const isPaperLight = !isDark || cachedFormat === 'a4';
+    const linkedEvent = events?.find(
+      (e) => e.id === note.event_id || (note.id && e.note_id === note.id)
+    );
+    const linkedFolder = folders?.find((f) => f.id === note.folder_id);
+
+    return (
+      <div className="flex-1 min-w-0 flex flex-col h-full bg-veyra-canvas select-none">
+        {/* Instant Contextual Header */}
+        <div className="h-12 border-b border-veyra-border px-3 sm:px-4 flex items-center justify-between gap-2 text-xs shrink-0 bg-veyra-canvas/90 backdrop-blur-md">
+          <div className="flex items-center gap-1.5 min-w-0 flex-1">
+            {!isSidebarOpen && onToggleSidebar && (
+              <button
+                type="button"
+                onClick={onToggleSidebar}
+                title="Mostrar barra lateral (Ctrl+\)"
+                className="p-1.5 rounded-md text-veyra-muted hover:text-veyra-text hover:bg-black/5 dark:hover:bg-white/5 transition-colors cursor-pointer flex items-center justify-center shrink-0"
+              >
+                <PanelLeft className="w-4 h-4 text-accent" />
+              </button>
+            )}
+            {onCloseNote && (
+              <button
+                type="button"
+                onClick={onCloseNote}
+                title="Volver al Dashboard"
+                className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-veyra-muted hover:text-veyra-text hover:bg-black/5 dark:hover:bg-white/5 transition-colors cursor-pointer shrink-0 text-[11.5px] font-medium"
+              >
+                <ArrowLeft className="w-3.5 h-3.5 shrink-0" />
+                <span className="hidden sm:inline">Dashboard</span>
+              </button>
+            )}
+            {(linkedEvent || linkedFolder) && (
+              <div className="flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[11.5px] text-veyra-muted min-w-0 truncate">
+                <span className="text-veyra-subtle select-none text-[10px] shrink-0">/</span>
+                {linkedEvent ? (
+                  <span className="flex items-center gap-1 font-semibold truncate" style={{ color: linkedEvent.color }}>
+                    <Calendar className="w-3 h-3 shrink-0" />
+                    <span className="truncate max-w-[120px]">{linkedEvent.title}</span>
+                  </span>
+                ) : linkedFolder ? (
+                  <span className="flex items-center gap-1 font-semibold text-veyra-text truncate">
+                    <FolderIcon className="w-3 h-3 shrink-0" style={{ color: linkedFolder.color || 'var(--accent-primary)' }} />
+                    <span className="truncate max-w-[120px]">{linkedFolder.name}</span>
+                  </span>
+                ) : null}
+              </div>
+            )}
+            {cachedFormat === 'a4' && (
+              <>
+                <span className="text-veyra-subtle select-none text-xs shrink-0">/</span>
+                <span className="text-xs sm:text-[13px] font-semibold text-veyra-text truncate px-2">
+                  {note.title || 'Sin título'}
+                </span>
+              </>
+            )}
+          </div>
+
+          <div className="flex items-center gap-1.5 shrink-0">
+            <PomodoroHeaderPill />
+            {onOpenGlobalSearch && (
+              <button
+                type="button"
+                onClick={onOpenGlobalSearch}
+                title="Buscar (Ctrl+K)"
+                className="h-7 w-7 rounded-md text-veyra-muted hover:text-veyra-text hover:bg-black/5 dark:hover:bg-white/5 transition-colors cursor-pointer flex items-center justify-center shrink-0"
+              >
+                <Search className="w-3.5 h-3.5" />
+              </button>
+            )}
+            <div className="w-[1px] h-4 bg-veyra-border/70 mx-0.5 shrink-0 hidden sm:block" />
+            <div className="hidden sm:flex items-center gap-1.5 h-7 px-2 rounded-md text-xs text-veyra-muted opacity-60">
+              {cachedFormat === 'a4' ? <FileText className="w-3.5 h-3.5" /> : <ScrollText className="w-3.5 h-3.5" />}
+              <span>{cachedFormat === 'a4' ? 'A4' : 'Infinita'}</span>
+            </div>
+            <div className="w-[1px] h-4 bg-veyra-border/70 mx-0.5 shrink-0 hidden sm:block" />
+            <div className="hidden sm:flex items-center gap-1.5 h-7 px-2 rounded-md text-xs text-veyra-muted opacity-60">
+              <Share2 className="w-3.5 h-3.5 text-accent" />
+              <span>Compartir</span>
+            </div>
+            {onCloseNote && (
+              <button
+                type="button"
+                onClick={onCloseNote}
+                title="Cerrar nota"
+                className="h-7 w-7 rounded-md text-veyra-muted hover:text-veyra-text hover:bg-black/5 dark:hover:bg-white/10 transition-colors cursor-pointer flex items-center justify-center shrink-0"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Instant Full Toolbar (inert while Yjs content hydrates) */}
+        <EditorToolbar
+          editor={null}
+          onOpenTemplates={() => setIsTemplatesModalOpen(true)}
+          showFormattingMarks={false}
+          onToggleFormattingMarks={() => {}}
+        />
+
+        {/* Instant Canvas & Sheet Content Skeleton */}
+        <div
+          className={cn(
+            'flex-1 relative overflow-hidden flex flex-col',
+            isDark && isAmoled ? 'bg-black' : 'bg-[#e4e7ec] dark:bg-[#0B0B0C]'
+          )}
+        >
+          <div className="flex-1 overflow-y-auto px-4 sm:px-8 py-6 sm:py-8">
+            <div
+              className={cn(
+                'mx-auto w-full rounded-xl border transition-colors',
+                cachedFormat === 'a4'
+                  ? 'max-w-[794px] min-h-[720px] p-10 sm:p-14 bg-white text-slate-900 border-slate-300/80 shadow-md'
+                  : cn(
+                      'max-w-4xl min-h-[calc(100vh-14rem)] px-8 sm:px-14 py-10 sm:py-12',
+                      isPaperLight
+                        ? 'bg-white border-slate-200/90 shadow-sm'
+                        : isDark && isAmoled
+                          ? 'bg-[#050505] border-white/[0.06]'
+                          : 'bg-[#18181b] border-white/[0.07]'
+                    )
+              )}
+            >
+              {cachedFormat === 'infinite' && (
+                <h1
+                  className={cn(
+                    'text-2xl sm:text-3xl font-bold tracking-tight mb-6',
+                    isPaperLight ? 'text-slate-900' : 'text-veyra-text'
+                  )}
+                >
+                  {note.title || 'Sin título'}
+                </h1>
+              )}
+
+              <div className="space-y-3.5 animate-pulse">
+                <div className="h-3.5 w-3/4 rounded bg-black/[0.06] dark:bg-white/[0.07]" />
+                <div className="h-3.5 w-full rounded bg-black/[0.05] dark:bg-white/[0.06]" />
+                <div className="h-3.5 w-5/6 rounded bg-black/[0.05] dark:bg-white/[0.05]" />
+                <div className="h-3.5 w-2/3 rounded bg-black/[0.04] dark:bg-white/[0.04]" />
+              </div>
+            </div>
+          </div>
+
+          {/* Bottom-right loading status LED pill */}
+          <div className="absolute bottom-3 right-3 z-20 flex items-center gap-1.5 px-2.5 py-1.5 rounded-full border border-black/10 dark:border-white/10 bg-veyra-card/85 backdrop-blur-sm text-[10.5px] text-veyra-muted">
+            <Loader2 className="w-3 h-3 animate-spin text-amber-500" />
+            <span className="font-medium">Cargando contenido...</span>
+          </div>
+        </div>
+      </div>
+    );
   }
 
   const isSwitchingNote = displayedState.data.noteId !== note.id;
@@ -3609,6 +3795,7 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
       onCloseNote={onCloseNote}
       isSidebarOpen={isSidebarOpen}
       onToggleSidebar={onToggleSidebar}
+      onOpenGlobalSearch={onOpenGlobalSearch}
       folders={folders}
       events={events}
       onSelectFolder={onSelectFolder}

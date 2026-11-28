@@ -1,14 +1,10 @@
 import React from 'react';
 import {
   Calendar,
-  Clock,
-  MapPin,
-  Repeat,
   FileText,
   CalendarPlus,
   Trash2,
   ExternalLink,
-  Paperclip,
 } from 'lucide-react';
 import type { CalendarEvent } from '../../hooks/useEvents';
 import { cn } from '../../lib/utils';
@@ -50,13 +46,14 @@ function extractLocationUrl(location?: string | null): string | null {
   return match ? match[1] : null;
 }
 
-function formatDuration(startMs: number, endMs: number): string {
-  if (!startMs || !endMs || endMs <= startMs) return '';
-  const diffMinutes = Math.round((endMs - startMs) / 60000);
-  if (diffMinutes < 60) return `${diffMinutes}m`;
-  const hours = Math.floor(diffMinutes / 60);
-  const remMinutes = diffMinutes % 60;
-  return remMinutes > 0 ? `${hours}h ${remMinutes}m` : `${hours}h`;
+function formatLocationLabel(location?: string | null, locationUrl?: string | null): string | null {
+  if (!location) return null;
+  const trimmed = location.trim();
+  if (!trimmed) return null;
+  if (locationUrl || /meet\.google|zoom\.us|teams\.microsoft/i.test(trimmed)) {
+    return 'Virtual';
+  }
+  return trimmed;
 }
 
 function formatTimeRange(startMs: number, endMs: number, isAllDay?: boolean | null): string {
@@ -73,7 +70,7 @@ function formatTimeRange(startMs: number, endMs: number, isAllDay?: boolean | nu
   let prefix = '';
   if (!isToday) {
     const months = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
-    prefix = `${start.getDate()} ${months[start.getMonth()]} • `;
+    prefix = `${start.getDate()} ${months[start.getMonth()]} · `;
   }
 
   if (isAllDay) {
@@ -85,7 +82,7 @@ function formatTimeRange(startMs: number, endMs: number, isAllDay?: boolean | nu
   if (!e || e <= s) return `${prefix}${startStr}`;
   const end = new Date(e);
   const endStr = end.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
-  return `${prefix}${startStr}–${endStr}`;
+  return `${prefix}${startStr} - ${endStr}`;
 }
 
 export const EventCard: React.FC<EventCardProps> = ({
@@ -99,35 +96,20 @@ export const EventCard: React.FC<EventCardProps> = ({
   isSelected,
 }) => {
   const { palette } = useTheme();
-
-  // Color from event or fallback
   const eventColor = normalizeHex(event.color, palette.primary || '#3B82F6');
 
   const now = Date.now();
   const isHappeningNow = now >= event.start_time_ms && now <= event.end_time_ms;
-
   const isRecurring =
     parseRecurrenceRule(event.recurrence_rule || event.repeat_rule).type !== 'none';
 
-  const durationStr = event.is_all_day ? '' : formatDuration(event.start_time_ms, event.end_time_ms);
   const timeRangeStr = formatTimeRange(event.start_time_ms, event.end_time_ms, event.is_all_day);
   const locationUrl = extractLocationUrl(event.location);
+  const locationLabel = formatLocationLabel(event.location, locationUrl);
+  const hasLinkedNote = Boolean(event.note_id || linkedNoteTitle);
 
   const containerBg = isHappeningNow ? `${eventColor}1c` : `${eventColor}0c`;
   const containerBorder = isHappeningNow ? `${eventColor}60` : `${eventColor}30`;
-
-  const attachmentsCount = (() => {
-    const raw = (event as any).attachments;
-    if (!raw) return 0;
-    try {
-      const parsed = JSON.parse(raw);
-      return Array.isArray(parsed) ? parsed.length : 0;
-    } catch {
-      return 0;
-    }
-  })();
-
-  const hasChips = Boolean(event.location || isRecurring || event.note_id || linkedNoteTitle || attachmentsCount > 0);
 
   return (
     <div
@@ -153,8 +135,8 @@ export const EventCard: React.FC<EventCardProps> = ({
       />
 
       {/* 2. Main content container */}
-      <div className="flex-1 min-w-0 flex flex-col justify-center gap-1.5 overflow-hidden">
-        {/* Row 1: Calendar box + Title + Status Badge + Actions */}
+      <div className="flex-1 min-w-0 flex flex-col justify-center gap-1 overflow-hidden">
+        {/* Row 1: Calendar box + Title + Status / Hover Actions */}
         <div className="flex items-center justify-between gap-1.5 min-w-0">
           <div className="flex items-center gap-2 flex-1 min-w-0">
             <div
@@ -173,7 +155,7 @@ export const EventCard: React.FC<EventCardProps> = ({
           </div>
 
           <div className="flex items-center gap-1 shrink-0">
-            {isHappeningNow ? (
+            {isHappeningNow && (
               <span
                 style={{
                   backgroundColor: `${eventColor}24`,
@@ -187,19 +169,19 @@ export const EventCard: React.FC<EventCardProps> = ({
                 />
                 EN CURSO
               </span>
-            ) : null}
+            )}
 
-            {/* Hover Actions (compact) */}
+            {/* Hover Actions */}
             <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-              {event.location && (
+              {locationUrl && (
                 <button
                   type="button"
                   onClick={(e) => {
                     e.stopPropagation();
-                    window.open(locationUrl || 'https://meet.google.com/new', '_blank', 'noopener,noreferrer');
+                    window.open(locationUrl, '_blank', 'noopener,noreferrer');
                   }}
                   title="Unirse a reunión"
-                  className="p-0.5 rounded text-slate-400 hover:text-white transition-colors"
+                  className="p-0.5 rounded text-slate-400 hover:text-veyra-text transition-colors cursor-pointer"
                 >
                   <ExternalLink className="w-3 h-3" />
                 </button>
@@ -213,7 +195,7 @@ export const EventCard: React.FC<EventCardProps> = ({
                     onSnooze(event.id);
                   }}
                   title="Posponer 1 día (+24h)"
-                  className="p-0.5 rounded text-slate-400 hover:text-white transition-colors"
+                  className="p-0.5 rounded text-slate-400 hover:text-veyra-text transition-colors cursor-pointer"
                 >
                   <CalendarPlus className="w-3 h-3" />
                 </button>
@@ -229,7 +211,7 @@ export const EventCard: React.FC<EventCardProps> = ({
                   <button
                     type="button"
                     title="Eliminar evento"
-                    className="p-0.5 rounded text-slate-400 hover:text-red-400 transition-colors"
+                    className="p-0.5 rounded text-slate-400 hover:text-red-400 transition-colors cursor-pointer"
                   >
                     <Trash2 className="w-3 h-3" />
                   </button>
@@ -239,96 +221,40 @@ export const EventCard: React.FC<EventCardProps> = ({
           </div>
         </div>
 
-        {/* Row 2: Clock & Full Time (unclipped) + Duration Pill */}
-        <div className="flex items-center gap-1.5 text-[11px] text-slate-600 dark:text-zinc-300 font-mono leading-none flex-wrap">
-          <div className="flex items-center gap-1 shrink-0">
-            <Clock className="w-2.5 h-2.5 text-slate-400 dark:text-white/40 shrink-0" />
-            <span className="whitespace-nowrap font-medium">{timeRangeStr}</span>
-          </div>
-          {durationStr && (
-            <span
-              style={{
-                backgroundColor: `${eventColor}18`,
-                color: eventColor,
-                borderColor: `${eventColor}30`,
+        {/* Row 2: Single clean metadata line + discreet linked note icon */}
+        <div className="flex items-center justify-between gap-2 min-w-0">
+          <p className="text-[11px] text-slate-600 dark:text-zinc-300/80 truncate leading-tight">
+            <span>{timeRangeStr}</span>
+            {locationLabel && (
+              <>
+                <span> · </span>
+                <span>{locationLabel}</span>
+              </>
+            )}
+            {isRecurring && (
+              <>
+                <span> · </span>
+                <span title="Evento recurrente">↻</span>
+              </>
+            )}
+          </p>
+
+          {hasLinkedNote && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                if (event.note_id && onSelectNote) {
+                  onSelectNote(event.note_id);
+                }
               }}
-              className="px-1.5 py-0.5 rounded text-[9px] font-sans font-bold border tracking-wider shrink-0"
+              title={linkedNoteTitle ? `Nota: ${linkedNoteTitle}` : 'Abrir nota vinculada'}
+              className="p-0.5 rounded text-slate-400 dark:text-zinc-400 hover:text-accent transition-colors shrink-0 cursor-pointer"
             >
-              {durationStr}
-            </span>
+              <FileText className="w-3 h-3" />
+            </button>
           )}
         </div>
-
-        {/* Row 3: Chips that wrap onto next line when space is constrained */}
-        {hasChips && (
-          <div className="flex items-center gap-1.5 flex-wrap pt-0.5">
-            {event.location &&
-              (locationUrl ? (
-                <span
-                  role="link"
-                  tabIndex={-1}
-                  onClick={(e) => {
-                    if (e.ctrlKey || e.metaKey) {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      window.open(locationUrl, '_blank', 'noopener,noreferrer');
-                    }
-                  }}
-                  title={`Ctrl + clic para abrir enlace\n${locationUrl}`}
-                  className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9.5px] font-sans text-slate-600 dark:text-zinc-300 bg-black/5 dark:bg-white/[0.06] border border-black/5 dark:border-white/[0.08] hover:underline hover:border-accent/50 hover:text-accent transition-colors max-w-full truncate"
-                >
-                  <MapPin style={{ color: eventColor }} className="w-2.5 h-2.5 shrink-0" />
-                  <span className="truncate">{event.location}</span>
-                  <ExternalLink className="w-2.5 h-2.5 shrink-0 opacity-65" />
-                </span>
-              ) : (
-                <span
-                  title={`Ubicación: ${event.location}`}
-                  className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9.5px] font-sans text-slate-600 dark:text-zinc-300 bg-black/5 dark:bg-white/[0.06] border border-black/5 dark:border-white/[0.08] max-w-full truncate"
-                >
-                  <MapPin style={{ color: eventColor }} className="w-2.5 h-2.5 shrink-0" />
-                  <span className="truncate">{event.location}</span>
-                </span>
-              ))}
-
-            {isRecurring && (
-              <span
-                title="Evento recurrente"
-                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9.5px] font-sans text-slate-600 dark:text-zinc-300 bg-black/5 dark:bg-white/[0.06] border border-black/5 dark:border-white/[0.08] shrink-0"
-              >
-                <Repeat style={{ color: eventColor }} className="w-2.5 h-2.5 shrink-0" />
-                <span>Repetir</span>
-              </span>
-            )}
-
-            {(event.note_id || linkedNoteTitle) && (
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  if (event.note_id && onSelectNote) {
-                    onSelectNote(event.note_id);
-                  }
-                }}
-                title={linkedNoteTitle ? `Nota: ${linkedNoteTitle}` : 'Abrir nota vinculada'}
-                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9.5px] font-sans text-slate-600 dark:text-zinc-300 bg-black/5 dark:bg-white/[0.06] border border-black/5 dark:border-white/[0.08] hover:border-accent hover:text-accent transition-colors max-w-full truncate cursor-pointer"
-              >
-                <FileText style={{ color: eventColor }} className="w-2.5 h-2.5 shrink-0" />
-                <span className="truncate">{linkedNoteTitle || 'Nota vinculada'}</span>
-              </button>
-            )}
-
-            {attachmentsCount > 0 && (
-              <span
-                title={`Adjuntos: ${attachmentsCount}`}
-                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9.5px] font-sans text-slate-600 dark:text-zinc-300 bg-black/5 dark:bg-white/[0.06] border border-black/5 dark:border-white/[0.08] shrink-0"
-              >
-                <Paperclip style={{ color: eventColor }} className="w-2.5 h-2.5 shrink-0" />
-                <span>{attachmentsCount}</span>
-              </span>
-            )}
-          </div>
-        )}
       </div>
     </div>
   );
